@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::process::Command;
 
 /// Git state detected from the working directory.
 #[derive(Debug)]
@@ -12,20 +11,13 @@ pub struct GitState {
 /// Detect git state from the given directory.
 /// Returns `None` if not inside a git repository.
 pub fn detect(cwd: &Path) -> Option<GitState> {
-    let branch = Command::new("git")
-        .args(["symbolic-ref", "--short", "HEAD"])
-        .current_dir(cwd)
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())?;
+    let repo = gix::discover(cwd).ok()?;
+
+    let head = repo.head().ok()?;
+    let branch = head.referent_name()?.shorten().to_string();
 
     let is_main = branch == "main" || branch == "master";
-
-    // In a worktree, .git is a file (not a directory) containing "gitdir: ..."
-    let dot_git = cwd.join(".git");
-    let is_worktree = dot_git.is_file();
+    let is_worktree = repo.kind() == gix::repository::Kind::LinkedWorkTree;
 
     Some(GitState {
         branch,
