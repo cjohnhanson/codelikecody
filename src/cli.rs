@@ -14,6 +14,8 @@ pub struct Cli {
 pub enum Command {
     /// Initialize clc in the current project directory.
     Init,
+    /// Process a hook event from stdin (called by agent hooks).
+    Hook,
     /// View and manage clc configuration.
     Config {
         #[command(subcommand)]

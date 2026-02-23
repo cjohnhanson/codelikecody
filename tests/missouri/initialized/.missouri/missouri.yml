@@ -29,6 +29,35 @@ assertions:
   - name: "config show exits 0 with no config file"
     command: "clc config show"
 
+  - name: "hook handles SessionStart and produces JSON output"
+    command: >
+      echo '{"hook_event_name":"SessionStart","session_id":"test","cwd":"/tmp","source":"startup"}' |
+      clc hook | jq -e '.hookSpecificOutput.hookEventName == "SessionStart"'
+
+  - name: "hook SessionStart includes additionalContext"
+    command: >
+      echo '{"hook_event_name":"SessionStart","session_id":"test","cwd":"/tmp","source":"startup"}' |
+      clc hook | jq -e '.hookSpecificOutput.additionalContext'
+
+  - name: "hook PreToolUse Read passes through (exit 0)"
+    command: >
+      echo '{"hook_event_name":"PreToolUse","session_id":"test","cwd":"/tmp","tool_name":"Read","tool_input":{"file_path":"/tmp/foo"}}' |
+      clc hook
+
+  - name: "hook PreToolUse Bash passes through (exit 0, no guard yet)"
+    command: >
+      echo '{"hook_event_name":"PreToolUse","session_id":"test","cwd":"/tmp","tool_name":"Bash","tool_input":{"command":"ls"}}' |
+      clc hook
+
+  - name: "hook exits non-zero on invalid JSON stdin"
+    command: >
+      echo 'not json' | clc hook; test $? -ne 0
+
+  - name: "hook handles unknown event gracefully (exit 0)"
+    command: >
+      echo '{"hook_event_name":"FutureEvent","session_id":"test","cwd":"/tmp"}' |
+      clc hook
+
 transitions:
   - name: "add custom config"
     command: "printf 'main_branch: trunk\\n' > .clc/config.yml"

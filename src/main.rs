@@ -1,6 +1,9 @@
+mod adapter;
 mod cli;
 mod config;
 mod error;
+mod event;
+mod hook;
 mod init;
 
 use error::Error;
@@ -8,9 +11,20 @@ use error::Error;
 fn main() {
     let cli = <cli::Cli as clap::Parser>::parse();
 
+    if matches!(cli.command, cli::Command::Hook) {
+        match hook::run() {
+            Ok(code) => std::process::exit(code),
+            Err(e) => {
+                eprintln!("clc: {e}");
+                std::process::exit(e.exit_code());
+            }
+        }
+    }
+
     let result = match cli.command {
         cli::Command::Init => cmd_init(),
         cli::Command::Config { ref action } => cmd_config(action),
+        cli::Command::Hook => unreachable!(),
     };
 
     if let Err(e) = result {
