@@ -1,6 +1,7 @@
 use thiserror::Error;
 
 #[derive(Debug, Error)]
+#[allow(dead_code)]
 pub enum Error {
     #[error("{0}")]
     Block(String),
@@ -16,9 +17,9 @@ pub enum Error {
 }
 
 impl Error {
-    pub fn exit_code(&self) -> i32 {
+    pub const fn exit_code(&self) -> i32 {
         match self {
-            Error::Block(_) => 2,
+            Self::Block(_) => 2,
             _ => 1,
         }
     }

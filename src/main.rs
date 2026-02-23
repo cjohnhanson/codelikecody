@@ -12,15 +12,12 @@ fn main() {
     };
 
     if let Err(e) = result {
-        match &e {
-            Error::Block(msg) => {
-                eprintln!("{msg}");
-                std::process::exit(2);
-            }
-            _ => {
-                eprintln!("clc: {e}");
-                std::process::exit(e.exit_code());
-            }
+        if let Error::Block(msg) = &e {
+            eprintln!("{msg}");
+            std::process::exit(2);
+        } else {
+            eprintln!("clc: {e}");
+            std::process::exit(e.exit_code());
         }
     }
 }

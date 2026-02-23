@@ -51,7 +51,7 @@ pub fn init(project_dir: &Path) -> Result<(), Error> {
     let settings_path = claude_dir.join("settings.local.json");
     let settings = if settings_path.exists() {
         let existing: Value = serde_json::from_str(&std::fs::read_to_string(&settings_path)?)?;
-        merge_hooks(existing, generate_settings(&clc_command))
+        merge_hooks(existing, &generate_settings(&clc_command))
     } else {
         generate_settings(&clc_command)
     };
@@ -64,15 +64,14 @@ pub fn init(project_dir: &Path) -> Result<(), Error> {
 
 fn resolve_hook_command() -> String {
     std::env::current_exe()
-        .map(|p| format!("{} hook", p.display()))
-        .unwrap_or_else(|_| "clc hook".to_string())
+        .map_or_else(|_| "clc hook".to_string(), |p| format!("{} hook", p.display()))
 }
 
-fn merge_hooks(mut existing: Value, new: Value) -> Value {
-    if let (Some(existing_obj), Some(new_obj)) = (existing.as_object_mut(), new.as_object()) {
-        if let Some(new_hooks) = new_obj.get("hooks") {
-            existing_obj.insert("hooks".to_string(), new_hooks.clone());
-        }
+fn merge_hooks(mut existing: Value, new: &Value) -> Value {
+    if let (Some(existing_obj), Some(new_obj)) = (existing.as_object_mut(), new.as_object())
+        && let Some(new_hooks) = new_obj.get("hooks")
+    {
+        existing_obj.insert("hooks".to_string(), new_hooks.clone());
     }
     existing
 }
