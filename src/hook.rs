@@ -10,6 +10,7 @@ use crate::error::Error;
 use crate::event::Response;
 use crate::git;
 use crate::guard;
+use crate::phase;
 
 /// Run the hook: read JSON from stdin, process event, write response to stdout.
 /// Returns the exit code to use.
@@ -27,8 +28,9 @@ pub fn run() -> Result<i32, Error> {
         .map_or_else(|| Path::new("."), Path::new);
     let cfg = config::load(cwd).unwrap_or_default();
     let git_state = git::detect(cwd, &cfg.main_branch);
+    let current_phase = phase::load(cwd).unwrap_or(None);
 
-    let response = guard::evaluate(&event, git_state.as_ref());
+    let response = guard::evaluate(&event, git_state.as_ref(), current_phase);
 
     let (output, exit_code) = adapter.format_response(&event, &response);
 

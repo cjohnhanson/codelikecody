@@ -5,6 +5,15 @@ assertions:
   - name: "status reports phase implementing"
     command: "clc status 2>&1 | grep 'phase: implementing'"
 
+  - name: "phase guard allows Edit in src on feature branch"
+    command: "git init -q -b main && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init && git checkout -q -B feat-xyz && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"src/main.rs\"}}' | clc hook"
+
+  - name: "phase guard allows Edit in tests/missouri on feature branch"
+    command: "git init -q -b main && (git checkout -B feat-xyz 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"tests/missouri/foo/.missouri/missouri.yml\"}}' | clc hook"
+
+  - name: "phase guard allows Write to Cargo.toml on feature branch"
+    command: "git init -q -b main && (git checkout -B feat-xyz 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"Cargo.toml\"}}' | clc hook"
+
 transitions:
   - name: "advance to green"
     command: "clc status set green"
