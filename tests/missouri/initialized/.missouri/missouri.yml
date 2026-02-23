@@ -30,33 +30,40 @@ assertions:
     command: "clc config show"
 
   - name: "hook handles SessionStart and produces JSON output"
-    command: >
-      echo '{"hook_event_name":"SessionStart","session_id":"test","cwd":"/tmp","source":"startup"}' |
-      clc hook | jq -e '.hookSpecificOutput.hookEventName == "SessionStart"'
+    command: "echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\"/tmp\",\"source\":\"startup\"}' | clc hook | jq -e '.hookSpecificOutput.hookEventName == \"SessionStart\"'"
 
   - name: "hook SessionStart includes additionalContext"
-    command: >
-      echo '{"hook_event_name":"SessionStart","session_id":"test","cwd":"/tmp","source":"startup"}' |
-      clc hook | jq -e '.hookSpecificOutput.additionalContext'
+    command: "echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\"/tmp\",\"source\":\"startup\"}' | clc hook | jq -e '.hookSpecificOutput.additionalContext'"
 
   - name: "hook PreToolUse Read passes through (exit 0)"
-    command: >
-      echo '{"hook_event_name":"PreToolUse","session_id":"test","cwd":"/tmp","tool_name":"Read","tool_input":{"file_path":"/tmp/foo"}}' |
-      clc hook
+    command: "echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\"/tmp\",\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\"/tmp/foo\"}}' | clc hook"
 
   - name: "hook PreToolUse Bash passes through (exit 0, no guard yet)"
-    command: >
-      echo '{"hook_event_name":"PreToolUse","session_id":"test","cwd":"/tmp","tool_name":"Bash","tool_input":{"command":"ls"}}' |
-      clc hook
+    command: "echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\"/tmp\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}' | clc hook"
 
   - name: "hook exits non-zero on invalid JSON stdin"
-    command: >
-      echo 'not json' | clc hook; test $? -ne 0
+    command: "echo 'not json' | clc hook; test $? -ne 0"
 
   - name: "hook handles unknown event gracefully (exit 0)"
-    command: >
-      echo '{"hook_event_name":"FutureEvent","session_id":"test","cwd":"/tmp"}' |
-      clc hook
+    command: "echo '{\"hook_event_name\":\"FutureEvent\",\"session_id\":\"test\",\"cwd\":\"/tmp\"}' | clc hook"
+
+  - name: "status reports branch on main"
+    command: "git init -q -b main && clc status 2>&1 | grep 'branch: main'"
+
+  - name: "status reports is_main true on main"
+    command: "git init -q -b main && clc status 2>&1 | grep 'is_main: true'"
+
+  - name: "status reports is_main true on master"
+    command: "git init -q -b master && clc status 2>&1 | grep 'is_main: true'"
+
+  - name: "status reports branch on feature branch"
+    command: "git init -q -b main && git -c user.name=test -c user.email=test@test commit -q --allow-empty -m init && git checkout -q -B feat-xyz && clc status 2>&1 | grep 'branch: feat-xyz'"
+
+  - name: "status reports is_main false on feature branch"
+    command: "git init -q -b main && git -c user.name=test -c user.email=test@test commit -q --allow-empty -m init && git checkout -q -B feat-xyz && clc status 2>&1 | grep 'is_main: false'"
+
+  - name: "status reports not a git repo gracefully"
+    command: "TMPD=$(mktemp -d) && cd \"$TMPD\" && clc status 2>&1 | grep -i 'no git'; RET=$?; rm -rf \"$TMPD\"; exit $RET"
 
 transitions:
   - name: "add custom config"

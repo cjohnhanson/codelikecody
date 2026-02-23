@@ -3,6 +3,7 @@ mod cli;
 mod config;
 mod error;
 mod event;
+mod git;
 mod hook;
 mod init;
 
@@ -23,6 +24,7 @@ fn main() {
 
     let result = match cli.command {
         cli::Command::Init => cmd_init(),
+        cli::Command::Status => cmd_status(),
         cli::Command::Config { ref action } => cmd_config(action),
         cli::Command::Hook => unreachable!(),
     };
@@ -36,6 +38,18 @@ fn main() {
             std::process::exit(e.exit_code());
         }
     }
+}
+
+fn cmd_status() -> Result<(), Error> {
+    let cwd = std::env::current_dir()?;
+    if let Some(state) = git::detect(&cwd) {
+        println!("branch: {}", state.branch);
+        println!("is_main: {}", state.is_main);
+        println!("is_worktree: {}", state.is_worktree);
+    } else {
+        println!("no git repository detected");
+    }
+    Ok(())
 }
 
 fn cmd_config(action: &cli::ConfigAction) -> Result<(), Error> {
