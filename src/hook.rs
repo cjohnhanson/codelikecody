@@ -5,6 +5,7 @@ use serde_json::Value;
 
 use crate::adapter::Adapter;
 use crate::adapter::claude_code::ClaudeCodeAdapter;
+use crate::config;
 use crate::error::Error;
 use crate::event::Response;
 use crate::git;
@@ -24,7 +25,8 @@ pub fn run() -> Result<i32, Error> {
         .get("cwd")
         .and_then(Value::as_str)
         .map_or_else(|| Path::new("."), Path::new);
-    let git_state = git::detect(cwd);
+    let cfg = config::load(cwd).unwrap_or_default();
+    let git_state = git::detect(cwd, &cfg.main_branch);
 
     let response = guard::evaluate(&event, git_state.as_ref());
 

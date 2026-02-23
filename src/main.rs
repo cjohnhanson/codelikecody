@@ -43,7 +43,13 @@ fn main() {
 
 fn cmd_status() -> Result<(), Error> {
     let cwd = std::env::current_dir()?;
-    if let Some(state) = git::detect(&cwd) {
+    let cfg = config::load(&cwd).unwrap_or_default();
+    let initialized = cwd.join(".clc").is_dir();
+
+    println!("initialized: {initialized}");
+    println!("main_branch: {}", cfg.main_branch);
+
+    if let Some(state) = git::detect(&cwd, &cfg.main_branch) {
         println!("branch: {}", state.branch);
         println!("is_main: {}", state.is_main);
         println!("is_worktree: {}", state.is_worktree);
