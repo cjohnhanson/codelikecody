@@ -6,3 +6,5 @@ transitions:
       files:
         - path: ".claude/settings.local.json"
           command: "validate-settings"
+        - path: ".clc"
+          ignore: true
