@@ -66,34 +66,34 @@ assertions:
     command: "TMPD=$(mktemp -d) && cd \"$TMPD\" && clc status 2>&1 | grep -i 'no git'; RET=$?; rm -rf \"$TMPD\"; exit $RET"
 
   - name: "guard allows Read on main"
-    command: "git init -q -b main && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\"/tmp/foo\"}}' | clc hook"
+    command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\"/tmp/foo\"}}' | clc hook"
 
   - name: "guard allows Glob on main"
-    command: "git init -q -b main && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Glob\",\"tool_input\":{}}' | clc hook"
+    command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Glob\",\"tool_input\":{}}' | clc hook"
 
   - name: "guard allows Grep on main"
-    command: "git init -q -b main && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Grep\",\"tool_input\":{}}' | clc hook"
+    command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Grep\",\"tool_input\":{}}' | clc hook"
 
   - name: "guard blocks Edit on main"
-    command: "git init -q -b main && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Edit\",\"tool_input\":{}}' | clc hook 2>/dev/null; test $? -eq 2"
+    command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Edit\",\"tool_input\":{}}' | clc hook 2>/dev/null; test $? -eq 2"
 
   - name: "guard blocks Write on main"
-    command: "git init -q -b main && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Write\",\"tool_input\":{}}' | clc hook 2>/dev/null; test $? -eq 2"
+    command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Write\",\"tool_input\":{}}' | clc hook 2>/dev/null; test $? -eq 2"
 
   - name: "guard blocks Bash on main"
-    command: "git init -q -b main && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}' | clc hook 2>/dev/null; test $? -eq 2"
+    command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}' | clc hook 2>/dev/null; test $? -eq 2"
 
   - name: "guard blocks Task on main"
-    command: "git init -q -b main && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Task\",\"tool_input\":{}}' | clc hook 2>/dev/null; test $? -eq 2"
+    command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Task\",\"tool_input\":{}}' | clc hook 2>/dev/null; test $? -eq 2"
 
   - name: "guard block message mentions worktree"
-    command: "git init -q -b main && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Edit\",\"tool_input\":{}}' | clc hook 2>&1 >/dev/null | grep -i 'worktree'"
+    command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Edit\",\"tool_input\":{}}' | clc hook 2>&1 >/dev/null | grep -i 'worktree'"
 
   - name: "guard passes through all tools on feature branch"
     command: "git init -q -b main && git -c user.name=test -c user.email=test@test commit -q --allow-empty -m init && git checkout -q -B feat-xyz && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Edit\",\"tool_input\":{}}' | clc hook"
 
   - name: "SessionStart on main mentions worktree workflow"
-    command: "git init -q -b main && echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook | jq -e '.hookSpecificOutput.additionalContext' | grep -i 'worktree'"
+    command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook | jq -e '.hookSpecificOutput.additionalContext' | grep -i 'worktree'"
 
 transitions:
   - name: "add custom config"
