@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::error::Error;
 
@@ -63,8 +63,10 @@ pub fn init(project_dir: &Path) -> Result<(), Error> {
 }
 
 fn resolve_hook_command() -> String {
-    std::env::current_exe()
-        .map_or_else(|_| "clc hook".to_string(), |p| format!("{} hook", p.display()))
+    std::env::current_exe().map_or_else(
+        |_| "clc hook".to_string(),
+        |p| format!("{} hook", p.display()),
+    )
 }
 
 fn merge_hooks(mut existing: Value, new: &Value) -> Value {
