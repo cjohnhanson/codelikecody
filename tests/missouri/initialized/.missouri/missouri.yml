@@ -1,0 +1,24 @@
+assertions:
+  - name: ".clc directory exists"
+    command: "test -d .clc"
+
+  - name: ".claude directory exists"
+    command: "test -d .claude"
+
+  - name: "settings.local.json exists"
+    command: "test -f .claude/settings.local.json"
+
+  - name: "settings.local.json is valid JSON"
+    command: "jq empty .claude/settings.local.json"
+
+  - name: "hooks object has 14 events"
+    command: "test $(jq '.hooks | keys | length' .claude/settings.local.json) -eq 14"
+
+  - name: "SessionStart hook is wired"
+    command: "jq -e '.hooks.SessionStart' .claude/settings.local.json"
+
+  - name: "PreToolUse hook is wired"
+    command: "jq -e '.hooks.PreToolUse' .claude/settings.local.json"
+
+  - name: "Stop hook is wired"
+    command: "jq -e '.hooks.Stop' .claude/settings.local.json"

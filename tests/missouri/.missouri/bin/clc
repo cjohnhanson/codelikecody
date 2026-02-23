@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Wrapper that finds the clc binary relative to this script's location.
+# Script is at: tests/missouri/.missouri/bin/clc
+# Binary is at: target/debug/clc (4 levels up from this script)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+exec "$SCRIPT_DIR/../../../../target/debug/clc" "$@"

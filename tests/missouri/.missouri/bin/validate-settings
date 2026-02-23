@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Custom comparator for .claude/settings.local.json
+# Validates structure without checking exact binary path.
+#
+# Missouri passes: $1 = actual file, $2 = expected file
+set -euo pipefail
+
+ACTUAL="$1"
+
+# Must be valid JSON
+if ! jq empty "$ACTUAL" 2>/dev/null; then
+  echo "FAIL: not valid JSON"
+  exit 1
+fi
+
+# Must have a "hooks" object
+if ! jq -e '.hooks' "$ACTUAL" >/dev/null 2>&1; then
+  echo "FAIL: missing 'hooks' key"
+  exit 1
+fi
+
+# Must have all 14 hook events
+EXPECTED_EVENTS=(
+  SessionStart UserPromptSubmit PreToolUse PermissionRequest
+  PostToolUse PostToolUseFailure Notification SubagentStart
+  SubagentStop Stop TeammateIdle TaskCompleted PreCompact SessionEnd
+)
+
+HOOK_COUNT=$(jq '.hooks | keys | length' "$ACTUAL")
+if [ "$HOOK_COUNT" -ne 14 ]; then
+  echo "FAIL: expected 14 hook events, got $HOOK_COUNT"
+  exit 1
+fi
+
+for event in "${EXPECTED_EVENTS[@]}"; do
+  if ! jq -e ".hooks.\"$event\"" "$ACTUAL" >/dev/null 2>&1; then
+    echo "FAIL: missing hook event: $event"
+    exit 1
+  fi
+done
+
+# Each event must have a hook with type=command and command ending in "clc hook"
+for event in "${EXPECTED_EVENTS[@]}"; do
+  CMD=$(jq -r ".hooks.\"$event\"[0].hooks[0].command" "$ACTUAL")
+  if [[ ! "$CMD" =~ clc\ hook$ ]]; then
+    echo "FAIL: $event command does not end with 'clc hook': $CMD"
+    exit 1
+  fi
+  TYPE=$(jq -r ".hooks.\"$event\"[0].hooks[0].type" "$ACTUAL")
+  if [ "$TYPE" != "command" ]; then
+    echo "FAIL: $event hook type is '$TYPE', expected 'command'"
+    exit 1
+  fi
+done
+
+exit 0

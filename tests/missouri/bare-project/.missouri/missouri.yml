@@ -1,0 +1,8 @@
+transitions:
+  - name: "initialize clc"
+    command: "clc init"
+    target: "../initialized"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
