@@ -7,6 +7,7 @@ mod git;
 mod guard;
 mod hook;
 mod init;
+mod missouri;
 mod phase;
 
 use error::Error;
@@ -64,6 +65,20 @@ fn cmd_status() -> Result<(), Error> {
     } else {
         println!("no git repository detected");
     }
+
+    match missouri::run_tests(&cwd) {
+        Ok(Some(summary)) => {
+            println!("tests: {}/{} passed", summary.passed, summary.total);
+            println!("tests_green: {}", summary.all_green);
+        }
+        Ok(None) => {
+            println!("tests: none");
+        }
+        Err(e) => {
+            println!("tests: error ({e})");
+        }
+    }
+
     Ok(())
 }
 

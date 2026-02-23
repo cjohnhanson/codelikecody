@@ -1,0 +1,6 @@
+assertions:
+  - name: "status reports tests failing"
+    command: "clc status 2>&1 | grep 'tests: 0/1 passed'"
+
+  - name: "status reports tests_green false"
+    command: "clc status 2>&1 | grep 'tests_green: false'"
