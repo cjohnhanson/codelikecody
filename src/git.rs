@@ -10,13 +10,16 @@ pub struct GitState {
 
 /// Detect git state from the given directory.
 /// Returns `None` if not inside a git repository.
-pub fn detect(cwd: &Path) -> Option<GitState> {
+///
+/// The `main_branch` parameter specifies the configured main branch name.
+/// The branch is considered "main" if it matches `main_branch` or `master`.
+pub fn detect(cwd: &Path, main_branch: &str) -> Option<GitState> {
     let repo = gix::discover(cwd).ok()?;
 
     let head = repo.head().ok()?;
     let branch = head.referent_name()?.shorten().to_string();
 
-    let is_main = branch == "main" || branch == "master";
+    let is_main = branch == main_branch || branch == "master";
     let is_worktree = repo.kind() == gix::repository::Kind::LinkedWorkTree;
 
     Some(GitState {

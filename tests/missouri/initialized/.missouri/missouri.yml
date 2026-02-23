@@ -47,6 +47,12 @@ assertions:
   - name: "hook handles unknown event gracefully (exit 0)"
     command: "echo '{\"hook_event_name\":\"FutureEvent\",\"session_id\":\"test\",\"cwd\":\"/tmp\"}' | clc hook"
 
+  - name: "status reports initialized true"
+    command: "clc status 2>&1 | grep 'initialized: true'"
+
+  - name: "status reports default main_branch"
+    command: "clc status 2>&1 | grep 'main_branch: main'"
+
   - name: "status reports branch on main"
     command: "git init -q -b main && clc status 2>&1 | grep 'branch: main'"
 

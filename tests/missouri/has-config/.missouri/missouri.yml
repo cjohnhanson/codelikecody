@@ -7,3 +7,12 @@ assertions:
 
   - name: "config show does not show default main_branch"
     command: "! clc config show 2>&1 | grep 'main_branch: main'"
+
+  - name: "status reports configured main_branch"
+    command: "clc status 2>&1 | grep 'main_branch: trunk'"
+
+  - name: "status reports is_main true on configured trunk branch"
+    command: "git init -q -b trunk && clc status 2>&1 | grep 'is_main: true'"
+
+  - name: "status reports is_main false on default main when trunk is configured"
+    command: "git init -q -b main && clc status 2>&1 | grep 'is_main: false'"
