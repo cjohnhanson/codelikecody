@@ -6,7 +6,7 @@ use crate::error::Error;
 
 const STATE_FILENAME: &str = "state";
 
-/// Ordered workflow phases. The sequence is fixed and forward-only.
+/// Ordered workflow phases. Forward one step, backwards to any earlier phase.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
     TestsUnwritten,
@@ -108,15 +108,21 @@ pub fn set(project_dir: &Path, target: &str) -> Result<(), Error> {
             }
         }
         Some(current_phase) => {
-            let expected_next = current_phase.next().ok_or_else(|| {
-                Error::NonBlocking(format!(
-                    "cannot advance from '{current_phase}': already at terminal phase"
-                ))
-            })?;
+            let current_ord = current_phase.ordinal();
+            let target_ord = target_phase.ordinal();
 
-            if target_phase != expected_next {
+            if target_ord == current_ord {
                 return Err(Error::NonBlocking(format!(
-                    "cannot transition from '{current_phase}' to '{target}': next valid phase is '{expected_next}'"
+                    "already at phase '{current_phase}'"
+                )));
+            }
+
+            // Backwards to any earlier phase is fine.
+            // Forward is only allowed one step at a time.
+            if target_ord > current_ord + 1 {
+                let expected_next = current_phase.next().expect("checked above");
+                return Err(Error::NonBlocking(format!(
+                    "cannot skip from '{current_phase}' to '{target}': next forward phase is '{expected_next}'"
                 )));
             }
         }

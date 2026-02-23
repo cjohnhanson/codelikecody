@@ -5,9 +5,6 @@ assertions:
   - name: "status reports phase tests-written"
     command: "clc status 2>&1 | grep 'phase: tests-written'"
 
-  - name: "status set backwards to tests-unwritten is rejected"
-    command: "clc status set tests-unwritten 2>&1; test $? -ne 0"
-
   - name: "status set to same phase is rejected"
     command: "clc status set tests-written 2>&1; test $? -ne 0"
 
@@ -18,6 +15,16 @@ transitions:
   - name: "advance to red"
     command: "clc status set red"
     target: "../phase-red"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc"
+          ignore: true
+
+  - name: "go back to tests-unwritten"
+    command: "clc status set tests-unwritten"
+    target: "../phase-tests-unwritten"
     comparators:
       files:
         - path: ".claude/settings.local.json"

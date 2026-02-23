@@ -5,8 +5,16 @@ assertions:
   - name: "status reports phase green"
     command: "clc status 2>&1 | grep 'phase: green'"
 
-  - name: "status set backwards to implementing is rejected"
-    command: "clc status set implementing 2>&1; test $? -ne 0"
-
-  - name: "status set to any phase after green is rejected"
+  - name: "status set to same phase is rejected"
     command: "clc status set green 2>&1; test $? -ne 0"
+
+transitions:
+  - name: "go back to red"
+    command: "clc status set red"
+    target: "../phase-red"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc"
+          ignore: true
