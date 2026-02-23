@@ -16,6 +16,8 @@ pub enum Command {
     Init,
     /// Process a hook event from stdin (called by agent hooks).
     Hook,
+    /// Show current clc state (branch, phase, etc.).
+    Status,
     /// View and manage clc configuration.
     Config {
         #[command(subcommand)]
