@@ -7,6 +7,7 @@ mod git;
 mod guard;
 mod hook;
 mod init;
+mod phase;
 
 use error::Error;
 
@@ -25,7 +26,10 @@ fn main() {
 
     let result = match cli.command {
         cli::Command::Init => cmd_init(),
-        cli::Command::Status => cmd_status(),
+        cli::Command::Status { action: None } => cmd_status(),
+        cli::Command::Status {
+            action: Some(cli::StatusAction::Set { ref phase }),
+        } => cmd_status_set(phase),
         cli::Command::Config { ref action } => cmd_config(action),
         cli::Command::Hook => unreachable!(),
     };
@@ -49,6 +53,10 @@ fn cmd_status() -> Result<(), Error> {
     println!("initialized: {initialized}");
     println!("main_branch: {}", cfg.main_branch);
 
+    if let Some(p) = phase::load(&cwd)? {
+        println!("phase: {p}");
+    }
+
     if let Some(state) = git::detect(&cwd, &cfg.main_branch) {
         println!("branch: {}", state.branch);
         println!("is_main: {}", state.is_main);
@@ -57,6 +65,11 @@ fn cmd_status() -> Result<(), Error> {
         println!("no git repository detected");
     }
     Ok(())
+}
+
+fn cmd_status_set(target: &str) -> Result<(), Error> {
+    let cwd = std::env::current_dir()?;
+    phase::set(&cwd, target)
 }
 
 fn cmd_config(action: &cli::ConfigAction) -> Result<(), Error> {

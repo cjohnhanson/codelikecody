@@ -1,0 +1,23 @@
+assertions:
+  - name: "state file exists"
+    command: "test -f .clc/state"
+
+  - name: "status reports phase red"
+    command: "clc status 2>&1 | grep 'phase: red'"
+
+  - name: "status set backwards to tests-written is rejected"
+    command: "clc status set tests-written 2>&1; test $? -ne 0"
+
+  - name: "status set skipping to green is rejected"
+    command: "clc status set green 2>&1; test $? -ne 0"
+
+transitions:
+  - name: "advance to implementing"
+    command: "clc status set implementing"
+    target: "../phase-implementing"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc"
+          ignore: true

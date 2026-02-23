@@ -1,0 +1,12 @@
+assertions:
+  - name: "state file exists"
+    command: "test -f .clc/state"
+
+  - name: "status reports phase green"
+    command: "clc status 2>&1 | grep 'phase: green'"
+
+  - name: "status set backwards to implementing is rejected"
+    command: "clc status set implementing 2>&1; test $? -ne 0"
+
+  - name: "status set to any phase after green is rejected"
+    command: "clc status set green 2>&1; test $? -ne 0"

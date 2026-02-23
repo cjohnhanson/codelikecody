@@ -1,0 +1,29 @@
+assertions:
+  - name: "state file exists"
+    command: "test -f .clc/state"
+
+  - name: "status reports phase tests-unwritten"
+    command: "clc status 2>&1 | grep 'phase: tests-unwritten'"
+
+  - name: "status set to same phase is rejected"
+    command: "clc status set tests-unwritten 2>&1; test $? -ne 0"
+
+  - name: "status set to unknown phase is rejected"
+    command: "clc status set bogus-phase 2>&1; test $? -ne 0"
+
+  - name: "status set skipping ahead to red is rejected"
+    command: "clc status set red 2>&1; test $? -ne 0"
+
+  - name: "status set skipping to green is rejected"
+    command: "clc status set green 2>&1; test $? -ne 0"
+
+transitions:
+  - name: "advance to tests-written"
+    command: "clc status set tests-written"
+    target: "../phase-tests-written"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc"
+          ignore: true

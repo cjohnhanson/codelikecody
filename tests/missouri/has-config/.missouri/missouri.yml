@@ -12,7 +12,7 @@ assertions:
     command: "clc status 2>&1 | grep 'main_branch: trunk'"
 
   - name: "status reports is_main true on configured trunk branch"
-    command: "git init -q -b trunk && clc status 2>&1 | grep 'is_main: true'"
+    command: "git init -q -b trunk && (git checkout -B trunk 2>/dev/null || true) && clc status 2>&1 | grep 'is_main: true'"
 
   - name: "status reports is_main false on default main when trunk is configured"
-    command: "git init -q -b main && clc status 2>&1 | grep 'is_main: false'"
+    command: "git init -q -b main && (git checkout -B main 2>/dev/null || true) && clc status 2>&1 | grep 'is_main: false'"

@@ -17,11 +17,23 @@ pub enum Command {
     /// Process a hook event from stdin (called by agent hooks).
     Hook,
     /// Show current clc state (branch, phase, etc.).
-    Status,
+    Status {
+        #[command(subcommand)]
+        action: Option<StatusAction>,
+    },
     /// View and manage clc configuration.
     Config {
         #[command(subcommand)]
         action: ConfigAction,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum StatusAction {
+    /// Set the current workflow phase.
+    Set {
+        /// The phase to transition to.
+        phase: String,
     },
 }
 

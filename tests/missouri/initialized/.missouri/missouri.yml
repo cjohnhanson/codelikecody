@@ -101,6 +101,12 @@ assertions:
   - name: "SessionStart on main mentions worktree workflow"
     command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook | jq -e '.hookSpecificOutput.additionalContext' | grep -i 'worktree'"
 
+  - name: "status reports no phase when no state file"
+    command: "! clc status 2>&1 | grep 'phase:'"
+
+  - name: "status set without state file rejects non-first phase"
+    command: "clc status set tests-written 2>&1; test $? -ne 0"
+
 transitions:
   - name: "add custom config"
     command: "printf 'main_branch: trunk\\n' > .clc/config.yml"
@@ -115,6 +121,16 @@ transitions:
   - name: "add invalid config"
     command: "printf '][not valid yaml{{{\\n' > .clc/config.yml"
     target: "../has-bad-config"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc"
+          ignore: true
+
+  - name: "set initial phase"
+    command: "clc status set tests-unwritten"
+    target: "../phase-tests-unwritten"
     comparators:
       files:
         - path: ".claude/settings.local.json"
