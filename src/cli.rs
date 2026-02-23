@@ -14,4 +14,15 @@ pub struct Cli {
 pub enum Command {
     /// Initialize clc in the current project directory.
     Init,
+    /// View and manage clc configuration.
+    Config {
+        #[command(subcommand)]
+        action: ConfigAction,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ConfigAction {
+    /// Print the effective configuration.
+    Show,
 }

@@ -1,0 +1,9 @@
+assertions:
+  - name: "config file exists"
+    command: "test -f .clc/config.yml"
+
+  - name: "config show reflects custom main_branch"
+    command: "clc config show 2>&1 | grep 'main_branch: trunk'"
+
+  - name: "config show does not show default main_branch"
+    command: "! clc config show 2>&1 | grep 'main_branch: main'"

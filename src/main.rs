@@ -1,4 +1,5 @@
 mod cli;
+mod config;
 mod error;
 mod init;
 
@@ -9,6 +10,7 @@ fn main() {
 
     let result = match cli.command {
         cli::Command::Init => cmd_init(),
+        cli::Command::Config { ref action } => cmd_config(action),
     };
 
     if let Err(e) = result {
@@ -19,6 +21,13 @@ fn main() {
             eprintln!("clc: {e}");
             std::process::exit(e.exit_code());
         }
+    }
+}
+
+fn cmd_config(action: &cli::ConfigAction) -> Result<(), Error> {
+    let project_dir = std::env::current_dir()?;
+    match action {
+        cli::ConfigAction::Show => config::show(&project_dir),
     }
 }
 
