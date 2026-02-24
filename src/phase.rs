@@ -14,6 +14,7 @@ pub enum Phase {
     Red,
     Implementing,
     Green,
+    Done,
 }
 
 impl Phase {
@@ -23,6 +24,7 @@ impl Phase {
         Self::Red,
         Self::Implementing,
         Self::Green,
+        Self::Done,
     ];
 
     fn ordinal(self) -> usize {
@@ -44,6 +46,7 @@ impl fmt::Display for Phase {
             Self::Red => "red",
             Self::Implementing => "implementing",
             Self::Green => "green",
+            Self::Done => "done",
         };
         f.write_str(s)
     }
@@ -59,6 +62,7 @@ impl FromStr for Phase {
             "red" => Ok(Self::Red),
             "implementing" => Ok(Self::Implementing),
             "green" => Ok(Self::Green),
+            "done" => Ok(Self::Done),
             _ => Err(Error::NonBlocking(format!("unknown phase: {s}"))),
         }
     }

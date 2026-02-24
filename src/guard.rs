@@ -61,7 +61,7 @@ fn check_tool_use(
 
     match current_phase {
         Phase::Implementing => Response::Passthrough,
-        Phase::TestsUnwritten | Phase::TestsWritten | Phase::Red | Phase::Green => {
+        Phase::TestsUnwritten | Phase::TestsWritten | Phase::Red | Phase::Green | Phase::Done => {
             check_phase_restricted(tool_name, tool_input, current_phase)
         }
     }
