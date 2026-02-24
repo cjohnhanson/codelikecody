@@ -43,7 +43,7 @@ fn check_tool_use(
             message: format!(
                 "Blocked: {tool_name} is not allowed on the main branch.\n\
                  Only read operations (Read, Glob, Grep) are permitted on main.\n\
-                 Create a worktree to make changes: git worktree add .worktrees/<name> -b <branch>"
+                 Pick up a tisket to begin work: clc pickup <issue-id>"
             ),
         };
     }
@@ -110,7 +110,7 @@ fn session_context(git: Option<&GitState>) -> Response {
             context: Some(format!(
                 "clc is active. On branch '{}' (main). \
                  Write operations are blocked. \
-                 Pick up a tisket and create a worktree to begin work.",
+                 Pick up a tisket to begin work: clc pickup <issue-id>",
                 state.branch
             )),
         }

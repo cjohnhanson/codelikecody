@@ -92,14 +92,14 @@ assertions:
   - name: "guard blocks Task on main"
     command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Task\",\"tool_input\":{}}' | clc hook 2>/dev/null; test $? -eq 2"
 
-  - name: "guard block message mentions worktree"
-    command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Edit\",\"tool_input\":{}}' | clc hook 2>&1 >/dev/null | grep -i 'worktree'"
+  - name: "guard block message mentions pickup"
+    command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Edit\",\"tool_input\":{}}' | clc hook 2>&1 >/dev/null | grep -i 'pickup'"
 
   - name: "guard passes through all tools on feature branch"
     command: "git init -q -b main && git -c user.name=test -c user.email=test@test commit -q --allow-empty -m init && git checkout -q -B feat-xyz && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Edit\",\"tool_input\":{}}' | clc hook"
 
-  - name: "SessionStart on main mentions worktree workflow"
-    command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook | jq -e '.hookSpecificOutput.additionalContext' | grep -i 'worktree'"
+  - name: "SessionStart on main mentions pickup"
+    command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook | jq -e '.hookSpecificOutput.additionalContext' | grep -i 'pickup'"
 
   - name: "status reports no phase when no state file"
     command: "! clc status 2>&1 | grep 'phase:'"
