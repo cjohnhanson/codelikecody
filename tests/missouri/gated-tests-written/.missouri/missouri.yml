@@ -1,0 +1,20 @@
+assertions:
+  - name: "phase is tests-written"
+    command: "clc status 2>&1 | grep 'phase: tests-written'"
+
+  - name: "config has required_attempts 2"
+    command: "clc config show 2>&1 | grep 'required_attempts: 2'"
+
+  - name: "no attempts recorded yet"
+    command: "! grep -q 'attempts:' .clc/state || grep -q 'attempts: 0' .clc/state"
+
+transitions:
+  - name: "first attempt to advance to red (gated)"
+    command: "clc status set red 2>&1; test $? -ne 0"
+    target: "../gated-attempted-once"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true

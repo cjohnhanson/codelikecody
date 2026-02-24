@@ -66,6 +66,22 @@ impl FromStr for Phase {
 
 /// Load the current phase from `.clc/state`, if it exists.
 pub fn load(project_dir: &Path) -> Result<Option<Phase>, Error> {
+    let state = load_state(project_dir)?;
+    Ok(state.map(|s| s.phase))
+}
+
+/// Load the current attempts count from `.clc/state`.
+pub fn load_attempts(project_dir: &Path) -> Result<u32, Error> {
+    let state = load_state(project_dir)?;
+    Ok(state.map_or(0, |s| s.attempts))
+}
+
+struct State {
+    phase: Phase,
+    attempts: u32,
+}
+
+fn load_state(project_dir: &Path) -> Result<Option<State>, Error> {
     let state_path = project_dir.join(".clc").join(STATE_FILENAME);
 
     if !state_path.exists() {
@@ -79,7 +95,6 @@ pub fn load(project_dir: &Path) -> Result<Option<Phase>, Error> {
         ))
     })?;
 
-    // Parse "phase: <name>\n"
     let phase_str = contents
         .lines()
         .find_map(|line| line.strip_prefix("phase:").map(str::trim))
@@ -90,53 +105,106 @@ pub fn load(project_dir: &Path) -> Result<Option<Phase>, Error> {
             ))
         })?;
 
-    phase_str.parse().map(Some)
+    let attempts = contents
+        .lines()
+        .find_map(|line| line.strip_prefix("attempts:").map(str::trim))
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+
+    let phase = phase_str.parse()?;
+    Ok(Some(State { phase, attempts }))
 }
 
 /// Validate and perform a phase transition, writing the new state file.
-pub fn set(project_dir: &Path, target: &str) -> Result<(), Error> {
+/// Forward transitions are gated by `required_attempts`.
+pub fn set(project_dir: &Path, target: &str, required_attempts: u32) -> Result<(), Error> {
     let target_phase: Phase = target.parse()?;
-    let current = load(project_dir)?;
+    let current_state = load_state(project_dir)?;
 
-    match current {
+    let is_forward = match &current_state {
         None => {
-            // No state file — only the first phase is valid.
             if target_phase != Phase::TestsUnwritten {
                 return Err(Error::NonBlocking(format!(
                     "cannot set phase to '{target}': no current phase, must start with 'tests-unwritten'"
                 )));
             }
+            true
         }
-        Some(current_phase) => {
-            let current_ord = current_phase.ordinal();
+        Some(state) => {
+            let current_ord = state.phase.ordinal();
             let target_ord = target_phase.ordinal();
 
             if target_ord == current_ord {
                 return Err(Error::NonBlocking(format!(
-                    "already at phase '{current_phase}'"
+                    "already at phase '{}'",
+                    state.phase
                 )));
             }
 
-            // Backwards to any earlier phase is fine.
-            // Forward is only allowed one step at a time.
             if target_ord > current_ord + 1 {
-                let expected_next = current_phase.next().expect("checked above");
+                let expected_next = state.phase.next().expect("checked above");
                 return Err(Error::NonBlocking(format!(
-                    "cannot skip from '{current_phase}' to '{target}': next forward phase is '{expected_next}'"
+                    "cannot skip from '{}' to '{target}': next forward phase is '{expected_next}'",
+                    state.phase
                 )));
             }
+
+            target_ord > current_ord
+        }
+    };
+
+    // Attempt gating: only applies to forward transitions from an existing phase.
+    if is_forward && required_attempts > 1 && current_state.is_some() {
+        let current_attempts = current_state.as_ref().map_or(0, |s| s.attempts);
+        let next_attempt = current_attempts + 1;
+
+        if next_attempt < required_attempts {
+            // Not enough attempts yet — increment and reject.
+            let current_phase = current_state
+                .as_ref()
+                .map_or(Phase::TestsUnwritten, |s| s.phase);
+            write_state(project_dir, current_phase, next_attempt)?;
+            return Err(Error::NonBlocking(format!(
+                "attempt {next_attempt}/{required_attempts} to advance to '{target}': \
+                 reconsider before trying again"
+            )));
         }
     }
 
-    // Write the state file.
+    // Transition succeeds — write new phase with attempts reset.
+    write_state(project_dir, target_phase, 0)
+}
+
+fn write_state(project_dir: &Path, phase: Phase, attempts: u32) -> Result<(), Error> {
+    use std::fmt::Write;
+
     let state_path = project_dir.join(".clc").join(STATE_FILENAME);
-    let content = format!("phase: {target_phase}\n");
+
+    // Preserve non-phase/non-attempts lines (e.g., "untracked: true").
+    let existing = if state_path.exists() {
+        std::fs::read_to_string(&state_path).unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    let mut content = String::new();
+    let _ = writeln!(content, "phase: {phase}");
+    if attempts > 0 {
+        let _ = writeln!(content, "attempts: {attempts}");
+    }
+
+    // Carry forward lines that aren't phase or attempts.
+    for line in existing.lines() {
+        if !line.starts_with("phase:") && !line.starts_with("attempts:") && !line.is_empty() {
+            content.push_str(line);
+            content.push('\n');
+        }
+    }
+
     std::fs::write(&state_path, content).map_err(|e| {
         Error::NonBlocking(format!(
             "failed to write state {}: {e}",
             state_path.display()
         ))
-    })?;
-
-    Ok(())
+    })
 }

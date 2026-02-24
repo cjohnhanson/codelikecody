@@ -10,14 +10,22 @@ const CONFIG_FILENAME: &str = "config.yml";
 pub struct Config {
     #[serde(default = "default_main_branch")]
     pub main_branch: String,
+
+    #[serde(default = "default_required_attempts")]
+    pub required_attempts: u32,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             main_branch: default_main_branch(),
+            required_attempts: default_required_attempts(),
         }
     }
+}
+
+const fn default_required_attempts() -> u32 {
+    1
 }
 
 fn default_main_branch() -> String {

@@ -166,6 +166,16 @@ transitions:
         - path: ".clc"
           ignore: true
 
+  - name: "set phase with gating config"
+    command: "printf 'main_branch: main\\nrequired_attempts: 2\\n' > .clc/config.yml && clc status set tests-unwritten && (clc status set tests-written || true) && clc status set tests-written"
+    target: "../gated-tests-written"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+
   - name: "add failing missouri tests"
     command: "mkdir -p tests/missouri/.missouri tests/missouri/start/.missouri tests/missouri/done/.missouri && printf 'env:\\n  PATH: \"/usr/local/bin:/usr/bin:/bin\"\\n' > tests/missouri/.missouri/missouri.yml && printf 'transitions:\\n  - name: \"do nothing\"\\n    command: \"true\"\\n    target: \"../done\"\\n' > tests/missouri/start/.missouri/missouri.yml && printf 'assertions:\\n  - name: \"always fails\"\\n    command: \"false\"\\n' > tests/missouri/done/.missouri/missouri.yml"
     target: "../has-failing-tests"

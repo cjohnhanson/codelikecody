@@ -1,0 +1,9 @@
+assertions:
+  - name: "phase is red"
+    command: "clc status 2>&1 | grep 'phase: red'"
+
+  - name: "attempts reset to 0"
+    command: "! grep -q 'attempts:' .clc/state || grep -q 'attempts: 0' .clc/state"
+
+  - name: "backwards transition ignores gating"
+    command: "clc status set tests-written && clc status 2>&1 | grep 'phase: tests-written'"

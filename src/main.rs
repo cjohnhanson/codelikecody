@@ -68,6 +68,10 @@ fn cmd_status() -> Result<(), Error> {
 
     if let Some(p) = phase::load(&cwd)? {
         println!("phase: {p}");
+        if cfg.required_attempts > 1 {
+            let attempts = phase::load_attempts(&cwd)?;
+            println!("attempts: {attempts}/{}", cfg.required_attempts);
+        }
     }
 
     let git_state = git::detect(&cwd, &cfg.main_branch);
@@ -112,7 +116,8 @@ fn cmd_status() -> Result<(), Error> {
 
 fn cmd_status_set(target: &str) -> Result<(), Error> {
     let cwd = std::env::current_dir()?;
-    phase::set(&cwd, target)
+    let cfg = config::load(&cwd).unwrap_or_default();
+    phase::set(&cwd, target, cfg.required_attempts)
 }
 
 fn cmd_config(action: &cli::ConfigAction) -> Result<(), Error> {

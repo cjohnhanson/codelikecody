@@ -61,7 +61,7 @@ pub fn run_tests(project_dir: &Path) -> Result<Option<TestSummary>, Error> {
         }
     }
 
-    let results = missouri::executor::run_all_paths(&graph, &paths, &opts);
+    let results = missouri::executor::run_all_paths(&graph, &paths, &opts, None);
 
     let passed = results.iter().filter(|r| r.passed).count();
     let total = results.len();
