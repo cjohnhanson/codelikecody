@@ -9,6 +9,7 @@ mod hook;
 mod init;
 mod missouri;
 mod phase;
+mod tisket;
 
 use error::Error;
 
@@ -58,12 +59,28 @@ fn cmd_status() -> Result<(), Error> {
         println!("phase: {p}");
     }
 
-    if let Some(state) = git::detect(&cwd, &cfg.main_branch) {
+    let git_state = git::detect(&cwd, &cfg.main_branch);
+    if let Some(ref state) = git_state {
         println!("branch: {}", state.branch);
         println!("is_main: {}", state.is_main);
         println!("is_worktree: {}", state.is_worktree);
     } else {
         println!("no git repository detected");
+    }
+
+    let branch = git_state.as_ref().map(|s| s.branch.as_str());
+    match tisket::detect(&cwd, branch) {
+        Ok(state) => {
+            println!("tisket: {}", state.has_repo);
+            if let Some(ref issue) = state.current_issue {
+                println!("tisket_issue: {}", issue.id);
+                println!("tisket_title: {}", issue.title);
+                println!("tisket_status: {}", issue.status);
+            }
+        }
+        Err(e) => {
+            println!("tisket: error ({e})");
+        }
     }
 
     match missouri::run_tests(&cwd) {

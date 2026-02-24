@@ -110,6 +110,9 @@ assertions:
   - name: "status reports no tests when no test dir"
     command: "clc status 2>&1 | grep 'tests: none'"
 
+  - name: "status reports tisket false when no tisket.yml"
+    command: "clc status 2>&1 | grep 'tisket: false'"
+
 transitions:
   - name: "add custom config"
     command: "printf 'main_branch: trunk\\n' > .clc/config.yml"
@@ -151,6 +154,16 @@ transitions:
         - path: ".clc"
           ignore: true
         - path: "tests/"
+          ignore: true
+
+  - name: "initialize tisket"
+    command: "printf 'tisket_dir: .tisket\\nadditional_instructions: \"\"\\n' > tisket.yml && mkdir -p .tisket/v0.1.0 && printf 'name: v0.1.0\\nstatuses:\\n  active:\\n    - backlog\\n    - todo\\n    - in_progress\\n  terminal:\\n    - done\\n    - cancelled\\n' > .tisket/v0.1.0/project.yml && printf -- '---\\ntitle: \"Test feature\"\\nstatus: in_progress\\npriority:\\nassignee:\\nlabels: [feature]\\ndepends_on: []\\ncreated: \"2025-01-01T00:00:00Z\"\\nupdated: \"2025-01-01T00:00:00Z\"\\n---\\n' > .tisket/v0.1.0/test-feature.md"
+    target: "../has-tisket"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc"
           ignore: true
 
   - name: "add failing missouri tests"

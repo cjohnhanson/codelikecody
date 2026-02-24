@@ -1,0 +1,12 @@
+assertions:
+  - name: "status reports tisket true"
+    command: "clc status 2>&1 | grep 'tisket: true'"
+
+  - name: "status reports tisket issue on matching branch"
+    command: "git init -q -b main && git -c user.name=test -c user.email=test@test commit -q --allow-empty -m init && git checkout -q -B test-feature && clc status 2>&1 | grep 'tisket_issue: test-feature'"
+
+  - name: "status reports tisket title on matching branch"
+    command: "git init -q -b main && git -c user.name=test -c user.email=test@test commit -q --allow-empty -m init && git checkout -q -B test-feature && clc status 2>&1 | grep 'tisket_title: Test feature'"
+
+  - name: "status reports no tisket issue when branch does not match"
+    command: "git init -q -b main && git -c user.name=test -c user.email=test@test commit -q --allow-empty -m init && git checkout -q -B unrelated-branch && ! clc status 2>&1 | grep 'tisket_issue:'"
