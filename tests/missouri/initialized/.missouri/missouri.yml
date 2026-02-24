@@ -176,6 +176,22 @@ transitions:
         - path: ".clc/"
           ignore: true
 
+  - name: "setup git repo and tisket for pickup"
+    command: "git init -q -b main && git -c user.name=test -c user.email=test@test add -A && git -c user.name=test -c user.email=test@test commit -q -m init && printf 'tisket_dir: .tisket\\nadditional_instructions: \"\"\\n' > tisket.yml && mkdir -p .tisket/v0.1.0 && printf 'name: v0.1.0\\nstatuses:\\n  active:\\n    - backlog\\n    - todo\\n    - in_progress\\n  terminal:\\n    - done\\n    - cancelled\\n' > .tisket/v0.1.0/project.yml && printf -- '---\\ntitle: \"Test feature\"\\nstatus: todo\\npriority:\\nassignee:\\nlabels: [feature]\\ndepends_on: []\\ncreated: \"2025-01-01T00:00:00Z\"\\nupdated: \"2025-01-01T00:00:00Z\"\\n---\\n' > .tisket/v0.1.0/test-feature.md"
+    target: "../ready-to-pickup"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true
+
   - name: "add failing missouri tests"
     command: "mkdir -p tests/missouri/.missouri tests/missouri/start/.missouri tests/missouri/done/.missouri && printf 'env:\\n  PATH: \"/usr/local/bin:/usr/bin:/bin\"\\n' > tests/missouri/.missouri/missouri.yml && printf 'transitions:\\n  - name: \"do nothing\"\\n    command: \"true\"\\n    target: \"../done\"\\n' > tests/missouri/start/.missouri/missouri.yml && printf 'assertions:\\n  - name: \"always fails\"\\n    command: \"false\"\\n' > tests/missouri/done/.missouri/missouri.yml"
     target: "../has-failing-tests"

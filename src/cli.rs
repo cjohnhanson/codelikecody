@@ -25,6 +25,11 @@ pub enum Command {
         #[command(subcommand)]
         action: Option<StatusAction>,
     },
+    /// Pick up a tisket: create worktree, set status, initialize phase.
+    Pickup {
+        /// The tisket issue ID to pick up.
+        id: String,
+    },
     /// View and manage clc configuration.
     Config {
         #[command(subcommand)]

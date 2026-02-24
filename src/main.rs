@@ -9,6 +9,7 @@ mod hook;
 mod init;
 mod missouri;
 mod phase;
+mod pickup;
 mod tisket;
 
 use std::path::Path;
@@ -41,6 +42,7 @@ fn main() {
         cli::Command::Status {
             action: Some(cli::StatusAction::Set { ref phase }),
         } => cmd_status_set(phase),
+        cli::Command::Pickup { ref id } => cmd_pickup(id),
         cli::Command::Config { ref action } => cmd_config(action),
         cli::Command::Hook => unreachable!(),
     };
@@ -125,6 +127,14 @@ fn cmd_config(action: &cli::ConfigAction) -> Result<(), Error> {
     match action {
         cli::ConfigAction::Show => config::show(&project_dir),
     }
+}
+
+fn cmd_pickup(id: &str) -> Result<(), Error> {
+    let project_dir = std::env::current_dir()?;
+    let cfg = config::load(&project_dir).unwrap_or_default();
+    pickup::pickup(&project_dir, id, &cfg.main_branch)?;
+    eprintln!("picked up '{id}' — worktree at .worktrees/{id}");
+    Ok(())
 }
 
 fn cmd_init(untracked: bool) -> Result<(), Error> {

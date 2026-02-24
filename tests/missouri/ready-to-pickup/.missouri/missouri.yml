@@ -1,0 +1,40 @@
+assertions:
+  - name: "is a git repo"
+    command: "git rev-parse --git-dir"
+
+  - name: "on main branch"
+    command: "test $(git rev-parse --abbrev-ref HEAD) = main"
+
+  - name: "tisket repo exists"
+    command: "test -f tisket.yml"
+
+  - name: "todo issue exists"
+    command: "test -f .tisket/v0.1.0/test-feature.md"
+
+  - name: "issue is in todo status"
+    command: "grep -q 'status: todo' .tisket/v0.1.0/test-feature.md"
+
+  - name: "pickup fails for non-existent tisket"
+    command: "clc pickup no-such-issue 2>&1; test $? -ne 0"
+
+  - name: "pickup fails when not on main"
+    command: "git checkout -q -B some-branch && clc pickup test-feature 2>&1; RET=$?; git checkout -q main; test $RET -ne 0"
+
+transitions:
+  - name: "pickup a tisket"
+    command: "clc pickup test-feature"
+    target: "../picked-up"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".worktrees/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true
