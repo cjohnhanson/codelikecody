@@ -21,7 +21,7 @@ impl Adapter for ClaudeCodeAdapter {
                     .and_then(Value::as_str)
                     .unwrap_or("unknown")
                     .to_string();
-                Ok(Event::SessionStarting { source })
+                Ok(Event::SessionStart { source })
             }
             "UserPromptSubmit" => {
                 let prompt = input
@@ -29,7 +29,7 @@ impl Adapter for ClaudeCodeAdapter {
                     .and_then(Value::as_str)
                     .unwrap_or("")
                     .to_string();
-                Ok(Event::PromptSubmitted { prompt })
+                Ok(Event::UserPromptSubmit { prompt })
             }
             "PreToolUse" => {
                 let tool_name = input
@@ -38,7 +38,7 @@ impl Adapter for ClaudeCodeAdapter {
                     .unwrap_or("unknown")
                     .to_string();
                 let tool_input = input.get("tool_input").cloned().unwrap_or(Value::Null);
-                Ok(Event::AboutToUseTool {
+                Ok(Event::PreToolUse {
                     tool_name,
                     tool_input,
                 })
@@ -51,7 +51,7 @@ impl Adapter for ClaudeCodeAdapter {
                     .to_string();
                 let tool_input = input.get("tool_input").cloned().unwrap_or(Value::Null);
                 let tool_response = input.get("tool_response").cloned().unwrap_or(Value::Null);
-                Ok(Event::AfterToolUse {
+                Ok(Event::PostToolUse {
                     tool_name,
                     tool_input,
                     tool_response,
@@ -68,9 +68,9 @@ impl Adapter for ClaudeCodeAdapter {
                     .and_then(Value::as_str)
                     .unwrap_or("")
                     .to_string();
-                Ok(Event::AfterToolFailure { tool_name, error })
+                Ok(Event::PostToolUseFailure { tool_name, error })
             }
-            "Stop" | "SubagentStop" => Ok(Event::AgentStopping),
+            "Stop" | "SubagentStop" => Ok(Event::Stop),
             _ => Ok(Event::Unknown {
                 name: event_name.to_string(),
             }),
@@ -88,7 +88,7 @@ impl Adapter for ClaudeCodeAdapter {
 
 fn format_allow(event: &Event, context: Option<&str>) -> (Option<Value>, i32) {
     match event {
-        Event::SessionStarting { .. } => {
+        Event::SessionStart { .. } => {
             let ctx = context.unwrap_or("clc is active.");
             (
                 Some(json!({
@@ -100,7 +100,7 @@ fn format_allow(event: &Event, context: Option<&str>) -> (Option<Value>, i32) {
                 0,
             )
         }
-        Event::AboutToUseTool { .. } => context.map_or((None, 0), |ctx| {
+        Event::PreToolUse { .. } => context.map_or((None, 0), |ctx| {
             (
                 Some(json!({
                     "hookSpecificOutput": {
@@ -112,7 +112,7 @@ fn format_allow(event: &Event, context: Option<&str>) -> (Option<Value>, i32) {
                 0,
             )
         }),
-        Event::PromptSubmitted { .. } => context.map_or((None, 0), |ctx| {
+        Event::UserPromptSubmit { .. } => context.map_or((None, 0), |ctx| {
             (
                 Some(json!({
                     "hookSpecificOutput": {

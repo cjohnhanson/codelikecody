@@ -15,11 +15,11 @@ const FILE_TARGETING_TOOLS: &[&str] = &["Edit", "Write", "NotebookEdit"];
 /// Evaluate an event against the current git state and phase.
 pub fn evaluate(event: &Event, git: Option<&GitState>, phase: Option<Phase>) -> Response {
     match event {
-        Event::AboutToUseTool {
+        Event::PreToolUse {
             tool_name,
             tool_input,
         } => check_tool_use(tool_name, tool_input, git, phase),
-        Event::SessionStarting { .. } => session_context(git),
+        Event::SessionStart { .. } => session_context(git),
         _ => Response::Passthrough,
     }
 }

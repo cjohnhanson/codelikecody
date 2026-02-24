@@ -4,26 +4,26 @@ use serde_json::Value;
 #[derive(Debug)]
 #[allow(dead_code)]
 pub enum Event {
-    SessionStarting {
+    SessionStart {
         source: String,
     },
-    PromptSubmitted {
+    UserPromptSubmit {
         prompt: String,
     },
-    AboutToUseTool {
+    PreToolUse {
         tool_name: String,
         tool_input: Value,
     },
-    AfterToolUse {
+    PostToolUse {
         tool_name: String,
         tool_input: Value,
         tool_response: Value,
     },
-    AfterToolFailure {
+    PostToolUseFailure {
         tool_name: String,
         error: String,
     },
-    AgentStopping,
+    Stop,
     Unknown {
         name: String,
     },
