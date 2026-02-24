@@ -1,0 +1,34 @@
+assertions:
+  - name: "phase is green"
+    command: "clc status 2>&1 | grep 'phase: green'"
+
+  - name: "on feature branch"
+    command: "test $(git rev-parse --abbrev-ref HEAD) = test-feature"
+
+  - name: "tisket is in_progress"
+    command: "grep -q 'status: in_progress' .tisket/v0.1.0/test-feature.md"
+
+  - name: "missouri tests pass"
+    command: "clc status 2>&1 | grep 'tests_green: true'"
+
+  - name: "done fails on main branch"
+    command: "git checkout -q main && clc done 2>&1; RET=$?; git checkout -q test-feature; test $RET -ne 0"
+
+transitions:
+  - name: "finalize work"
+    command: "clc done"
+    target: "../done-completed"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true
+        - path: "tests/"
+          ignore: true

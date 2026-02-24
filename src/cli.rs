@@ -30,6 +30,8 @@ pub enum Command {
         /// The tisket issue ID to pick up.
         id: String,
     },
+    /// Finalize work: advance phase to done, close tisket.
+    Done,
     /// View and manage clc configuration.
     Config {
         #[command(subcommand)]

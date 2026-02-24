@@ -1,0 +1,9 @@
+assertions:
+  - name: "phase is done"
+    command: "clc status 2>&1 | grep 'phase: done'"
+
+  - name: "tisket is closed"
+    command: "test -f .tisket/v0.1.0/.closed/test-feature.md"
+
+  - name: "done fails when already done"
+    command: "clc done 2>&1; test $? -ne 0"
