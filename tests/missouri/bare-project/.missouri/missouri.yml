@@ -8,3 +8,15 @@ transitions:
           command: "validate-settings"
         - path: ".clc"
           ignore: true
+
+  - name: "initialize clc untracked"
+    command: "git init -q -b main && clc init --untracked"
+    target: "../initialized-untracked"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true

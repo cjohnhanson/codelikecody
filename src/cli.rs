@@ -13,7 +13,11 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Command {
     /// Initialize clc in the current project directory.
-    Init,
+    Init {
+        /// Keep clc files invisible to git via .git/info/exclude.
+        #[arg(long)]
+        untracked: bool,
+    },
     /// Process a hook event from stdin (called by agent hooks).
     Hook,
     /// Show current clc state (branch, phase, etc.).

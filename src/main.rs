@@ -11,7 +11,16 @@ mod missouri;
 mod phase;
 mod tisket;
 
+use std::path::Path;
+
 use error::Error;
+
+fn is_untracked(project_dir: &Path) -> bool {
+    let state_path = project_dir.join(".clc").join("state");
+    std::fs::read_to_string(state_path)
+        .map(|content| content.lines().any(|line| line.trim() == "untracked: true"))
+        .unwrap_or(false)
+}
 
 fn main() {
     let cli = <cli::Cli as clap::Parser>::parse();
@@ -27,7 +36,7 @@ fn main() {
     }
 
     let result = match cli.command {
-        cli::Command::Init => cmd_init(),
+        cli::Command::Init { untracked } => cmd_init(untracked),
         cli::Command::Status { action: None } => cmd_status(),
         cli::Command::Status {
             action: Some(cli::StatusAction::Set { ref phase }),
@@ -52,7 +61,9 @@ fn cmd_status() -> Result<(), Error> {
     let cfg = config::load(&cwd).unwrap_or_default();
     let initialized = cwd.join(".clc").is_dir();
 
+    let untracked = is_untracked(&cwd);
     println!("initialized: {initialized}");
+    println!("untracked: {untracked}");
     println!("main_branch: {}", cfg.main_branch);
 
     if let Some(p) = phase::load(&cwd)? {
@@ -111,9 +122,13 @@ fn cmd_config(action: &cli::ConfigAction) -> Result<(), Error> {
     }
 }
 
-fn cmd_init() -> Result<(), Error> {
+fn cmd_init(untracked: bool) -> Result<(), Error> {
     let project_dir = std::env::current_dir()?;
-    init::init(&project_dir)?;
-    eprintln!("initialized clc in {}", project_dir.display());
+    init::init(&project_dir, untracked)?;
+    if untracked {
+        eprintln!("initialized clc (untracked) in {}", project_dir.display());
+    } else {
+        eprintln!("initialized clc in {}", project_dir.display());
+    }
     Ok(())
 }

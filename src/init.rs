@@ -37,7 +37,7 @@ pub fn generate_settings(clc_command: &str) -> Value {
     json!({ "hooks": hooks })
 }
 
-pub fn init(project_dir: &Path) -> Result<(), Error> {
+pub fn init(project_dir: &Path, untracked: bool) -> Result<(), Error> {
     let clc_command = resolve_hook_command();
 
     // Create .clc/ state directory
@@ -59,6 +59,71 @@ pub fn init(project_dir: &Path) -> Result<(), Error> {
     let formatted = serde_json::to_string_pretty(&settings)?;
     std::fs::write(&settings_path, formatted)?;
 
+    if untracked {
+        write_git_excludes(project_dir)?;
+        write_untracked_state(project_dir)?;
+    }
+
+    Ok(())
+}
+
+const EXCLUDE_PATTERNS: &[&str] = &[
+    ".clc/",
+    ".claude/settings.local.json",
+    "tisket.yml",
+    ".tisket/",
+];
+
+fn write_git_excludes(project_dir: &Path) -> Result<(), Error> {
+    let exclude_path = project_dir.join(".git").join("info").join("exclude");
+    let info_dir = exclude_path.parent().expect("exclude has parent");
+
+    if !project_dir.join(".git").is_dir() {
+        return Err(Error::NonBlocking(
+            "--untracked requires a git repository".into(),
+        ));
+    }
+
+    std::fs::create_dir_all(info_dir)?;
+
+    let existing = if exclude_path.exists() {
+        std::fs::read_to_string(&exclude_path)?
+    } else {
+        String::new()
+    };
+
+    let mut content = existing;
+    for pattern in EXCLUDE_PATTERNS {
+        if !content.lines().any(|line| line == *pattern) {
+            if !content.is_empty() && !content.ends_with('\n') {
+                content.push('\n');
+            }
+            content.push_str(pattern);
+            content.push('\n');
+        }
+    }
+
+    std::fs::write(&exclude_path, content)?;
+    Ok(())
+}
+
+fn write_untracked_state(project_dir: &Path) -> Result<(), Error> {
+    let state_path = project_dir.join(".clc").join("state");
+
+    let mut content = if state_path.exists() {
+        std::fs::read_to_string(&state_path)?
+    } else {
+        String::new()
+    };
+
+    if !content.lines().any(|line| line.starts_with("untracked:")) {
+        if !content.is_empty() && !content.ends_with('\n') {
+            content.push('\n');
+        }
+        content.push_str("untracked: true\n");
+    }
+
+    std::fs::write(&state_path, content)?;
     Ok(())
 }
 
