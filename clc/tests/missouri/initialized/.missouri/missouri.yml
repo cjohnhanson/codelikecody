@@ -108,10 +108,10 @@ assertions:
     command: "clc status set tests-written 2>&1; test $? -ne 0"
 
   - name: "status reports no tests when no test dir"
-    command: "clc status 2>&1 | grep 'tests: none'"
+    command: "clc status 2>&1 | grep 'missouri: no tests'"
 
-  - name: "status reports tisket false when no tisket.yml"
-    command: "clc status 2>&1 | grep 'tisket: false'"
+  - name: "status reports tisket not initialized when no tisket.yml"
+    command: "clc status 2>&1 | grep 'tisket: not initialized'"
 
 transitions:
   - name: "add custom config"

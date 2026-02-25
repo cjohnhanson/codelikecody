@@ -9,7 +9,7 @@ assertions:
     command: "grep -q 'status: in_progress' .tisket/v0.1.0/test-feature.md"
 
   - name: "missouri tests pass"
-    command: "clc status 2>&1 | grep 'tests_green: true'"
+    command: "clc status 2>&1 | grep 'missouri: 1/1 passing'"
 
   - name: "done fails on main branch"
     command: "git checkout -q main && clc done 2>&1; RET=$?; git checkout -q test-feature; test $RET -ne 0"

@@ -1,6 +1,6 @@
 assertions:
-  - name: "status reports tisket true"
-    command: "clc status 2>&1 | grep 'tisket: true'"
+  - name: "status reports tisket with open count"
+    command: "clc status 2>&1 | grep 'tisket:.*open'"
 
   - name: "status reports tisket issue on matching branch"
     command: "git init -q -b main && git -c user.name=test -c user.email=test@test commit -q --allow-empty -m init && git checkout -q -B test-feature && clc status 2>&1 | grep 'tisket_issue: test-feature'"

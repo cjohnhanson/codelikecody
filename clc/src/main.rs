@@ -15,6 +15,7 @@ mod tisket;
 
 use std::path::Path;
 
+use clc_sdk::ClcTool;
 use error::Error;
 
 fn is_untracked(project_dir: &Path) -> bool {
@@ -90,7 +91,7 @@ fn cmd_status() -> Result<(), Error> {
     let branch = git_state.as_ref().map(|s| s.branch.as_str());
     match tisket::detect(&cwd, branch) {
         Ok(state) => {
-            println!("tisket: {}", state.has_repo);
+            println!("{}", state.status_basic());
             if let Some(ref issue) = state.current_issue {
                 println!("tisket_issue: {}", issue.id);
                 println!("tisket_title: {}", issue.title);
@@ -104,14 +105,21 @@ fn cmd_status() -> Result<(), Error> {
 
     match missouri::run_tests(&cwd) {
         Ok(Some(summary)) => {
-            println!("tests: {}/{} passed", summary.passed, summary.total);
-            println!("tests_green: {}", summary.all_green);
+            println!("{}", summary.status_basic());
         }
         Ok(None) => {
-            println!("tests: none");
+            println!(
+                "{}",
+                missouri::MissouriState {
+                    has_tests: false,
+                    path_count: 0,
+                    state_count: 0,
+                }
+                .status_basic()
+            );
         }
         Err(e) => {
-            println!("tests: error ({e})");
+            println!("missouri: error ({e})");
         }
     }
 

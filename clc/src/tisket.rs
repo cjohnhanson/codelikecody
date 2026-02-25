@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::path::Path;
 
 use camino::Utf8Path;
@@ -9,6 +10,7 @@ use crate::error::Error;
 pub struct TisketState {
     pub has_repo: bool,
     pub current_issue: Option<CurrentIssue>,
+    pub open_count: usize,
 }
 
 /// An issue that appears to be the active one for this branch.
@@ -17,6 +19,8 @@ pub struct CurrentIssue {
     pub id: String,
     pub title: String,
     pub status: String,
+    pub body: String,
+    pub scratch: String,
 }
 
 /// Detect tisket state for the given project directory.
@@ -35,6 +39,7 @@ pub fn detect(project_dir: &Path, branch: Option<&str>) -> Result<TisketState, E
             return Ok(TisketState {
                 has_repo: false,
                 current_issue: None,
+                open_count: 0,
             });
         }
         Err(e) => {
@@ -42,11 +47,17 @@ pub fn detect(project_dir: &Path, branch: Option<&str>) -> Result<TisketState, E
         }
     };
 
+    let open_count = repo
+        .list_issues(None, None, false)
+        .map(|issues| issues.len())
+        .unwrap_or(0);
+
     let current_issue = branch.and_then(|name| find_issue_for_branch(&repo, name));
 
     Ok(TisketState {
         has_repo: true,
         current_issue,
+        open_count,
     })
 }
 
@@ -60,5 +71,51 @@ fn find_issue_for_branch(repo: &tisket::Repo, branch: &str) -> Option<CurrentIss
         id: issue.id,
         title: issue.frontmatter.title,
         status: issue.frontmatter.status,
+        body: issue.body,
+        scratch: issue.scratch,
     })
+}
+
+impl clc_sdk::ClcTool for TisketState {
+    fn prime(&self) -> String {
+        String::new()
+    }
+
+    fn status_basic(&self) -> String {
+        if !self.has_repo {
+            return "tisket: not initialized".to_string();
+        }
+        self.current_issue.as_ref().map_or_else(
+            || format!("tisket: no active issue — {} open", self.open_count),
+            |issue| {
+                format!(
+                    "tisket: {} ({}) — {} open",
+                    issue.id, issue.status, self.open_count
+                )
+            },
+        )
+    }
+
+    fn status_full(&self) -> String {
+        if !self.has_repo {
+            return "tisket: not initialized".to_string();
+        }
+        let mut out = String::new();
+        if let Some(issue) = &self.current_issue {
+            let _ = write!(out, "# tisket: {} ({})\n\n", issue.id, issue.status);
+            let _ = write!(out, "**{}**\n\n", issue.title);
+            if !issue.body.is_empty() {
+                out.push_str(&issue.body);
+                out.push('\n');
+            }
+            if !issue.scratch.is_empty() {
+                out.push_str("\n## Scratch\n\n");
+                out.push_str(&issue.scratch);
+                out.push('\n');
+            }
+        } else {
+            let _ = writeln!(out, "tisket: no active issue — {} open", self.open_count);
+        }
+        out
+    }
 }
