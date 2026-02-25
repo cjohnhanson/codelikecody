@@ -77,10 +77,15 @@ pub fn init(project_dir: &Path, untracked: bool, force: bool) -> Result<(), Erro
 }
 
 fn has_existing_hooks(settings: &Value) -> bool {
-    settings
-        .get("hooks")
-        .and_then(Value::as_object)
-        .is_some_and(|h| !h.is_empty())
+    let Some(hooks) = settings.get("hooks").and_then(Value::as_object) else {
+        return false;
+    };
+    // Only counts as "existing" if there are non-clc hooks present.
+    hooks.values().any(|event_array| {
+        event_array
+            .as_array()
+            .is_some_and(|arr| arr.iter().any(|matcher| !is_clc_matcher(matcher)))
+    })
 }
 
 const EXCLUDE_PATTERNS: &[&str] = &[
@@ -150,11 +155,51 @@ fn resolve_hook_command() -> String {
     )
 }
 
+/// Check whether a matcher object contains a clc hook command.
+fn is_clc_matcher(matcher: &Value) -> bool {
+    matcher
+        .get("hooks")
+        .and_then(Value::as_array)
+        .is_some_and(|hooks| {
+            hooks.iter().any(|h| {
+                h.get("command")
+                    .and_then(Value::as_str)
+                    .is_some_and(|cmd| cmd.contains("clc") && cmd.contains("hook"))
+            })
+        })
+}
+
 fn merge_hooks(mut existing: Value, new: &Value) -> Value {
-    if let (Some(existing_obj), Some(new_obj)) = (existing.as_object_mut(), new.as_object())
-        && let Some(new_hooks) = new_obj.get("hooks")
-    {
-        existing_obj.insert("hooks".to_string(), new_hooks.clone());
+    let (Some(existing_obj), Some(new_obj)) = (existing.as_object_mut(), new.as_object()) else {
+        return existing;
+    };
+    let Some(new_hooks) = new_obj.get("hooks").and_then(Value::as_object) else {
+        return existing;
+    };
+
+    let existing_hooks = existing_obj
+        .entry("hooks")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .expect("hooks is an object");
+
+    for (event, new_matchers) in new_hooks {
+        let Some(new_arr) = new_matchers.as_array() else {
+            continue;
+        };
+
+        let event_arr = existing_hooks
+            .entry(event)
+            .or_insert_with(|| json!([]))
+            .as_array_mut()
+            .expect("event is an array");
+
+        // Strip any previous clc matchers (handles re-init / upgrades).
+        event_arr.retain(|m| !is_clc_matcher(m));
+
+        // Append the new clc matchers.
+        event_arr.extend(new_arr.iter().cloned());
     }
+
     existing
 }
