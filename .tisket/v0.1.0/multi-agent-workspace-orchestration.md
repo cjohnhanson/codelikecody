@@ -36,25 +36,35 @@ Implementations:
 
 The trait abstracts over both the environment and the agent control mechanism.
 
-## Workers are fully autonomous
+## Workers are hook-governed but coordinator-supervised
 
 Workers are complete clc-managed agents. They have the full hook stack — phase
 enforcement, stop hook, missouri tests, UserPromptSubmit reinforcement, PostToolUse
-nudges. The coordinator does not puppeteer workers. clc's existing enforcement
-machinery keeps them on track.
+nudges. The hooks keep workers on track for the common case.
+
+But the coordinator is not fire-and-forget. It actively supervises:
+
+- **Approve or deny tool uses** — the coordinator fills the "human in the loop"
+  role for the worker. Tool use confirmations route to the coordinator rather
+  than a human.
+- **Course correct** — if a worker is going off track, the coordinator can send
+  a prompt to redirect.
+- **Re-prompt on premature stop** — if a worker stops before work is complete
+  (stop hook blocks, but the coordinator can also re-prompt to continue).
+- **Provide context** — the coordinator can answer questions or provide
+  additional input when the worker needs guidance.
+
+The hooks handle enforcement. The coordinator handles judgment.
 
 ## Coordinator role
 
-The coordinator agent runs on trunk (read-only). Its job:
+The coordinator agent runs on trunk (read-only). Its loop:
 
 1. Pick a tisket
 2. Create a workspace (`clc pickup` or equivalent)
 3. Start a worker agent in the workspace
-4. Wait for completion signal
-5. Collect result
-
-The coordinator dispatches and collects. It does not manage worker progress —
-that's what the hooks and phases are for.
+4. Supervise: approve tool uses, course correct, re-prompt as needed
+5. Collect result when worker completes
 
 ## Agent control interface
 
@@ -66,8 +76,9 @@ workspace. For the first implementation:
 - Agent runs autonomously under clc hook governance
 - Completion is signaled by the agent finishing (phase=done, `clc done` runs)
 
-The control interface is for starting the worker and potentially intervening on
-failure — not for step-by-step management.
+The control interface supports ongoing interaction — reading worker output,
+sending prompts, approving/denying tool use requests. The coordinator is an
+active supervisor, not a one-shot launcher.
 
 ## Refactoring needed
 
