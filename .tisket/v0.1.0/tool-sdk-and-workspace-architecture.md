@@ -4,9 +4,9 @@ status: discovery
 priority:
 assignee:
 labels: [architecture]
-depends_on: []
-created: "2026-02-24T14:37:55Z"
-updated: "2026-02-24T14:37:55Z"
+depends_on: [workspace-restructuring, subcommand-mounting, clc-sdk-crate-with-agent-detection, prime-system, status-reporting-traits, bundled-docs-diataxis]
+created: 2026-02-24T14:37:55Z
+updated: "2026-02-24T14:52:20Z"
 ---
 
 Restructure codelikecody into a Cargo workspace with a shared SDK crate that
