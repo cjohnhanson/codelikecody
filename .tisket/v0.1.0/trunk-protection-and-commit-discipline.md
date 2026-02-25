@@ -36,10 +36,19 @@ checkpoints.
 ## Commit discipline
 
 - clc could expose `clc commit` that stages, commits, and runs prek in one step
-- PostToolUse after Edit/Write could nudge about committing if N edits have
-  accumulated without a commit
 - UserPromptSubmit reinforcement could include "uncommitted changes: N files"
   to keep it visible
+- Commit nudging should be smart, not just "N edits since last commit":
+  - Edit count is the dumb-but-works v1 starting point
+  - Better signals: a test just went green, a phase transition happened, a
+    logical unit of work completed, the agent is about to context-switch to a
+    different file cluster
+  - Phase system already provides some of this — green transition is a natural
+    commit point
+  - Missouri test results changing (pass→fail, fail→pass) are meaningful
+    checkpoint moments
+  - Hard to detect "logical unit complete" without understanding intent, but
+    the workflow structure gives proxies for it
 
 ## Branch types
 
