@@ -81,28 +81,25 @@ impl clc_sdk::ClcTool for TisketState {
         use std::fmt::Write;
 
         let mut out = String::new();
-        out.push_str("# Tisket Issue Tracker\n\n");
+        out.push_str("## Tisket (issue tracker)\n\n");
 
         if !self.has_repo {
-            out.push_str("Tisket is not initialized in this project.\n\n");
-            out.push_str("Tisket tracks issues as markdown files with YAML frontmatter.\n");
-            out.push_str("Issues live in `.tisket/<project>/` with one file per issue.\n");
+            out.push_str(
+                "Tisket is not initialized in this project.\n\
+                 Issues live as markdown files in `.tisket/`. Each has a status, priority,\n\
+                 and optional dependencies. Tisket is where tasks come from.\n",
+            );
             return out;
         }
 
-        out.push_str("This project uses tisket for issue tracking.\n");
         out.push_str(
-            "Issues are markdown files with YAML frontmatter in `.tisket/<project>/`.\n\n",
+            "Issues live as markdown files in `.tisket/`. Each has a status, priority,\n\
+             and optional dependencies. Tisket is where tasks come from —\n\
+             don't invent work, pick up what's there.\n\n",
         );
 
-        out.push_str("## Commands\n\n");
-        out.push_str("  tisket issue list              List open issues\n");
-        out.push_str("  tisket issue show <id>          Show issue details\n");
-        out.push_str("  tisket issue edit <id> -s <s>   Update issue status\n");
-        out.push_str("  tisket issue close <id>         Close an issue\n\n");
-
         if let Some(issue) = &self.current_issue {
-            let _ = write!(out, "## Active Issue: {} ({})\n\n", issue.id, issue.status);
+            let _ = write!(out, "### Active: {} ({})\n\n", issue.id, issue.status);
             let _ = writeln!(out, "**{}**\n", issue.title);
 
             if !issue.body.is_empty() {
@@ -111,7 +108,7 @@ impl clc_sdk::ClcTool for TisketState {
             }
 
             if !issue.scratch.is_empty() {
-                out.push_str("### Scratch\n\n");
+                out.push_str("### Scratch Notes\n\n");
                 out.push_str(&issue.scratch);
                 out.push('\n');
             }
@@ -119,23 +116,20 @@ impl clc_sdk::ClcTool for TisketState {
             // Phase-adapted directives when an issue is active.
             match ctx.phase.as_deref() {
                 Some("tests-unwritten" | "tests-written" | "red") => {
-                    out.push_str("\n## What to Do\n\n");
                     out.push_str(
-                        "This issue defines the work. Review the requirements above before \
+                        "\nThis issue defines the work. Review the requirements above before \
                          implementing.\n",
                     );
                 }
                 Some("implementing") => {
-                    out.push_str("\n## What to Do\n\n");
                     out.push_str(
-                        "All work in this session relates to this issue.\n\
-                         Update the scratch section with progress as work proceeds.\n",
+                        "\nAll work in this session relates to this issue.\n\
+                         Update the scratch notes with progress as work proceeds.\n",
                     );
                 }
                 Some("green") => {
-                    out.push_str("\n## What to Do\n\n");
                     out.push_str(
-                        "Update the scratch section with a summary of what was done.\n\
+                        "\nUpdate the scratch notes with a summary of what was done.\n\
                          Run `clc done` to finalize.\n",
                     );
                 }
@@ -144,10 +138,13 @@ impl clc_sdk::ClcTool for TisketState {
         } else {
             let _ = writeln!(
                 out,
-                "{} open issues. No active issue on this branch.\n",
+                "{} open issues. No active issue on this branch.",
                 self.open_count
             );
-            out.push_str("Pick up an issue with `clc pickup <id>` to begin work.\n");
+            out.push_str(
+                "\nBrowse with `tisket issue list` or `tisket issue show <id>`.\n\
+                 Pick up work with `clc pickup <id>`.\n",
+            );
         }
 
         out

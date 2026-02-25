@@ -184,65 +184,64 @@ fn append_authoring_detail(out: &mut String) {
 impl clc_sdk::ClcTool for MissouriState {
     fn prime(&self, ctx: &clc_sdk::PrimeContext) -> String {
         let mut out = String::new();
-        out.push_str("# Missouri Testing\n\n");
+        out.push_str("## Missouri (test runner)\n\n");
 
         if !self.has_tests {
             out.push_str(
-                "Missouri is a filesystem state graph testing tool.\n\
-                 No test suite exists yet in this project.\n\n",
+                "Missouri validates work via filesystem state graph tests in `tests/missouri/`.\n\
+                 No test suite exists in this project yet.\n\n",
             );
 
             // In tests_unwritten, provide authoring detail even when no tests exist.
             if ctx.phase.as_deref() == Some("tests-unwritten") {
                 append_authoring_detail(&mut out);
-                out.push_str("\n## What to Do\n\n");
                 out.push_str(
-                    "Write tests that define the expected behavior for this issue.\n\
+                    "\nWrite tests that define the expected behavior for this issue.\n\
                      Do not write implementation code yet. Define the state graph first.\n\
                      Advance phase: `clc status set tests-written`\n",
                 );
             } else {
-                out.push_str("Tests belong in `tests/missouri/` as filesystem state graphs.\n");
+                out.push_str(
+                    "When a test suite exists, run it with `missouri run`. Test results\n\
+                     affect phase advancement — you can't reach `green` without passing tests.\n",
+                );
             }
 
             return out;
         }
 
-        out.push_str("This project uses missouri for end-to-end testing.\n");
         let _ = write!(
             out,
-            "{} test paths across {} states.\n\n",
+            "Missouri validates work via filesystem state graph tests in `tests/missouri/`.\n\
+             {} test paths across {} states.\n\n",
             self.path_count, self.state_count
         );
 
         match ctx.phase.as_deref() {
             Some("tests-unwritten") => {
                 append_authoring_detail(&mut out);
-                out.push_str("\n## What to Do\n\n");
                 out.push_str(
-                    "Write tests that define the expected behavior for this issue.\n\
+                    "\nWrite tests that define the expected behavior for this issue.\n\
                      Do not write implementation code yet. Define the state graph first.\n\
                      Advance phase: `clc status set tests-written`\n",
                 );
             }
             Some("tests-written") => {
-                out.push_str("## What to Do\n\n");
                 out.push_str(
                     "Tests are written. Run them to confirm they fail as expected.\n\
                      Advance phase: `clc status set red`\n",
                 );
             }
             Some("red") => {
-                out.push_str("## What to Do\n\n");
                 out.push_str(
                     "Tests exist and should be failing. Begin implementation to make them pass.\n\
                      Advance phase: `clc status set implementing`\n",
                 );
             }
             Some("implementing") => {
-                out.push_str("Run `clc status` to check test results.\n");
                 out.push_str(
-                    "Fix failing tests before advancing. When all paths pass:\n\
+                    "Run `missouri run` or `clc status` to check test results.\n\
+                     Fix failing tests before advancing. When all paths pass:\n\
                      `clc status set green`\n",
                 );
             }

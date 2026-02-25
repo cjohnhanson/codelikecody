@@ -56,16 +56,13 @@ fn check_tool_use(
         return Response::Passthrough;
     };
 
-    // Main branch guard: only read tools allowed.
-    if state.is_main {
-        if READ_ONLY_TOOLS.contains(&tool_name) {
-            return Response::Passthrough;
-        }
+    // Main branch guard: block file-writing tools only.
+    if state.is_main && FILE_TARGETING_TOOLS.contains(&tool_name) {
         return Response::Block {
             message: format!(
-                "Blocked: {tool_name} is not allowed on the main branch.\n\
-                 Only read operations (Read, Glob, Grep) are permitted on main.\n\
-                 Pick up a tisket to begin work: clc pickup <issue-id>"
+                "Blocked: {tool_name} is not allowed on trunk.\n\
+                 File modifications are not permitted on the main branch.\n\
+                 Pick up a tisket to begin work: `clc pickup <issue-id>`"
             ),
         };
     }

@@ -73,6 +73,7 @@ pub fn run() -> Result<i32, Error> {
 }
 
 /// Assemble the full prime text from clc header + tisket + missouri.
+#[allow(clippy::too_many_lines)]
 fn assemble_prime(cwd: &Path, git: Option<&git::GitState>, phase: Option<phase::Phase>) -> String {
     let ctx = clc_sdk::PrimeContext {
         phase: phase.map(|p| p.to_string()),
@@ -80,12 +81,26 @@ fn assemble_prime(cwd: &Path, git: Option<&git::GitState>, phase: Option<phase::
 
     let mut out = String::new();
 
-    // clc header
-    out.push_str("# clc — codelikecody workflow engine\n\n");
+    // --- clc header: what the agent is inside of ---
+    out.push_str("# clc workflow engine\n\n");
+    out.push_str(
+        "This session is governed by clc via Claude Code hooks.\n\n\
+         Hooks fire on every event in this session:\n\
+         - **SessionStart**: injects this context\n\
+         - **PreToolUse**: blocks file writes on trunk, enforces phase constraints on branches\n\
+         - **PostToolUse**: reminds you of phase obligations after edits\n\
+         - **UserPromptSubmit**: reinforces current state on every prompt\n\
+         - **Stop**: prevents you from stopping if work is incomplete\n\n\
+         These are not suggestions. The hooks will reject tool calls that violate\n\
+         workflow constraints. Work with them, not around them.\n\n",
+    );
+
+    // --- current state ---
+    out.push_str("## Current state\n\n");
     if let Some(state) = git {
         let _ = write!(out, "Branch: `{}`", state.branch);
         if state.is_main {
-            out.push_str(" (main)");
+            out.push_str(" (trunk)");
         }
         if state.is_worktree {
             out.push_str(" [worktree]");
@@ -94,24 +109,71 @@ fn assemble_prime(cwd: &Path, git: Option<&git::GitState>, phase: Option<phase::
     } else {
         out.push_str("No git repository detected.\n");
     }
-
     if let Some(ref p) = ctx.phase {
         let _ = writeln!(out, "Phase: `{p}`");
     }
-
     out.push('\n');
 
-    // Branch-specific directives
+    // --- trunk directives ---
     if let Some(state) = git
         && state.is_main
     {
         out.push_str(
-            "Write operations are blocked on the main branch.\n\
-             Pick up a tisket to begin work: `clc pickup <issue-id>`\n\n",
+            "## What to do on trunk\n\n\
+             Trunk is read-only for file modifications. Edit, Write, and NotebookEdit\n\
+             tools are blocked. Bash, Read, Glob, Grep, and other tools work normally.\n\
+             Use trunk for triage, planning, and picking up work.\n\n\
+             To begin work, pick up a tisket:\n\n\
+             \x20   clc pickup <issue-id>\n\n\
+             This creates a worktree on a dedicated branch and sets the initial phase.\n\
+             All implementation happens in worktrees, never on trunk.\n\n",
         );
     }
 
-    // Tisket section
+    // --- workflow loop ---
+    out.push_str(
+        "## The workflow loop\n\n\
+         1. `clc pickup <id>` — creates a worktree, checks out a branch, sets phase\n\
+         2. Write tests first — phase gates prevent implementation until tests exist\n\
+         3. Implement — phase advances to `implementing`, all edits unlocked\n\
+         4. Get green — run tests, reach `green` phase\n\
+         5. `clc done` — finalize the work\n\n\
+         Phases constrain what you can edit and whether you can stop. The hooks\n\
+         enforce this automatically. Run `clc status` to see where you are.\n\n",
+    );
+
+    // --- working memory ---
+    out.push_str(
+        "## Working memory\n\n\
+         Your active tisket contains a `## Scratch Notes` section — working memory\n\
+         that persists across sessions.\n\n\
+         Write to it as you work: decisions made, approaches tried, files consulted,\n\
+         what turned out irrelevant, next steps. On session start, read the scratch\n\
+         notes to recover context.\n\n\
+         To find the file: `tisket issue path <id>`\n\n\
+         The scratch section is tracked separately from the issue body and is not\n\
+         shown by `tisket issue show`. It is internal working state, not task\n\
+         description.\n\n",
+    );
+
+    // --- commit discipline ---
+    out.push_str(
+        "## Commit discipline\n\n\
+         Commit frequently. Commits are checkpoints, not milestones. Good pre-commit\n\
+         hooks mean every commit is a validated state. Don't accumulate large\n\
+         uncommitted diffs — stage and commit as you go.\n\n",
+    );
+
+    // --- capturing discovered work ---
+    out.push_str(
+        "## Capturing discovered work\n\n\
+         If you discover work that needs doing — a bug, a missing feature, a refactor —\n\
+         don't go off on a tangent. Create a tisket for it:\n\n\
+         \x20   tisket issue create -t \"title\" -b \"description\"\n\n\
+         Tisket is scratch paper for future work. Capture it and move on.\n\n",
+    );
+
+    // --- tisket section ---
     let branch = git.map(|s| s.branch.as_str());
     match tisket::detect(cwd, branch) {
         Ok(tisket_state) => {
@@ -122,11 +184,11 @@ fn assemble_prime(cwd: &Path, git: Option<&git::GitState>, phase: Option<phase::
             }
         }
         Err(e) => {
-            let _ = write!(out, "# Tisket\n\ntisket error: {e}\n\n");
+            let _ = write!(out, "## Tisket\n\ntisket error: {e}\n\n");
         }
     }
 
-    // Missouri section
+    // --- missouri section ---
     match missouri::detect(cwd) {
         Ok(missouri_state) => {
             let section = missouri_state.prime(&ctx);
@@ -136,7 +198,7 @@ fn assemble_prime(cwd: &Path, git: Option<&git::GitState>, phase: Option<phase::
             }
         }
         Err(e) => {
-            let _ = write!(out, "# Missouri\n\nmissouri error: {e}\n\n");
+            let _ = write!(out, "## Missouri\n\nmissouri error: {e}\n\n");
         }
     }
 
