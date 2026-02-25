@@ -1,6 +1,6 @@
 ---
 title: "Context reinforcement strategy"
-status: discovery
+status: done
 priority:
 assignee:
 labels: [research]

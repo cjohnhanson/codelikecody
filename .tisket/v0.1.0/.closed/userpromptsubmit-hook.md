@@ -1,6 +1,6 @@
 ---
 title: "UserPromptSubmit hook"
-status: discovery
+status: done
 priority:
 assignee:
 labels: [feature]

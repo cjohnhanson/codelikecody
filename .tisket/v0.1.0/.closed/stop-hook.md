@@ -1,6 +1,6 @@
 ---
 title: "Stop hook"
-status: discovery
+status: done
 priority:
 assignee:
 labels: [feature]

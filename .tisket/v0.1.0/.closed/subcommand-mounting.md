@@ -1,6 +1,6 @@
 ---
 title: "Subcommand mounting"
-status: discovery
+status: done
 priority:
 assignee:
 labels: [architecture]
