@@ -1,12 +1,12 @@
 ---
 title: "Tool SDK and workspace architecture"
-status: discovery
+status: done
 priority:
 assignee:
 labels: [architecture]
 depends_on: [workspace-restructuring, subcommand-mounting, clc-sdk-crate-with-agent-detection, prime-system, status-reporting-traits, bundled-docs-diataxis]
 created: 2026-02-24T14:37:55Z
-updated: "2026-02-24T14:52:20Z"
+updated: "2026-02-25T04:17:37Z"
 ---
 
 Restructure codelikecody into a Cargo workspace with a shared SDK crate that

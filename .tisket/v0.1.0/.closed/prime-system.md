@@ -1,12 +1,12 @@
 ---
 title: "Prime system"
-status: discovery
+status: done
 priority:
 assignee:
 labels: [architecture]
 depends_on: [clc-sdk-crate-with-agent-detection]
-created: "2026-02-24T14:52:06Z"
-updated: "2026-02-24T14:52:06Z"
+created: 2026-02-24T14:52:06Z
+updated: "2026-02-25T04:17:18Z"
 ---
 
 Implement the `prime` subcommand and `ClcTool::prime()` trait method across the

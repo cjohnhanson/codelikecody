@@ -1,12 +1,12 @@
 ---
 title: "SessionStart context"
-status: discovery
+status: done
 priority:
 assignee:
 labels: [feature]
 depends_on: [clc-init, git-state-detection, event-system-and-agent-adapter]
-created: "2026-02-23T02:23:25Z"
-updated: "2026-02-23T02:23:25Z"
+created: 2026-02-23T02:23:25Z
+updated: "2026-02-25T04:17:24Z"
 ---
 
 SessionStart hook injects workflow-aware context. What gets primed depends on

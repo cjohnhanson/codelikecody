@@ -1,12 +1,12 @@
 ---
 title: "Strict compiler and clippy settings"
-status: discovery
+status: done
 priority:
 assignee:
 labels: [admin]
 depends_on: []
-created: "2026-02-23T00:12:02Z"
-updated: "2026-02-23T00:12:02Z"
+created: 2026-02-23T00:12:02Z
+updated: "2026-02-25T04:17:49Z"
 ---
 
 Maximize strictness on rustc and clippy. Deny warnings, dead code, unused

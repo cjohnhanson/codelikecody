@@ -1,12 +1,12 @@
 ---
 title: "Status reporting traits"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: [architecture]
 depends_on: [clc-sdk-crate-with-agent-detection]
 created: 2026-02-24T14:52:06Z
-updated: "2026-02-25T01:51:49Z"
+updated: "2026-02-25T04:17:30Z"
 ---
 
 Implement `ClcTool::status_basic()` and `ClcTool::status_full()` across the
