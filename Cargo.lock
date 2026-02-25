@@ -277,6 +277,7 @@ version = "0.1.0"
 dependencies = [
  "camino",
  "clap",
+ "clc-sdk",
  "gix",
  "missouri",
  "serde",
@@ -285,6 +286,10 @@ dependencies = [
  "thiserror",
  "tisket",
 ]
+
+[[package]]
+name = "clc-sdk"
+version = "0.1.0"
 
 [[package]]
 name = "clru"

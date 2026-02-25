@@ -18,6 +18,7 @@ missing_panics_doc = "allow"
 [dependencies]
 camino = "1"
 clap = { version = "4", features = ["derive"] }
+clc-sdk = { path = "../clc-sdk" }
 gix = { version = "0.80.0", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
