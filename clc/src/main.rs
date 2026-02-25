@@ -46,6 +46,7 @@ fn main() {
         } => cmd_status_set(phase),
         cli::Command::Pickup { ref id } => cmd_pickup(id),
         cli::Command::Done => cmd_done(),
+        cli::Command::Prime => cmd_prime(),
         cli::Command::Config { ref action } => cmd_config(action),
         cli::Command::Hook => unreachable!(),
     };
@@ -152,6 +153,12 @@ fn cmd_done() -> Result<(), Error> {
     let cfg = config::load(&cwd).unwrap_or_default();
     done::done(&cwd, &cfg.main_branch)?;
     eprintln!("done — work finalized");
+    Ok(())
+}
+
+fn cmd_prime() -> Result<(), Error> {
+    let text = hook::prime_text()?;
+    print!("{text}");
     Ok(())
 }
 

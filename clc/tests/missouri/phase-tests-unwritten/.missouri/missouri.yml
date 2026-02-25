@@ -29,6 +29,24 @@ assertions:
   - name: "phase guard allows Read anywhere on feature branch"
     command: "git init -q -b main && (git checkout -B feat-xyz 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\"src/main.rs\"}}' | clc hook"
 
+  - name: "prime includes missouri authoring detail"
+    command: "clc prime | grep 'missouri.yml'"
+
+  - name: "prime includes directory structure"
+    command: "clc prime | grep 'tests/missouri'"
+
+  - name: "prime directive says write tests"
+    command: "clc prime | grep -i 'write test'"
+
+  - name: "prime shows current phase"
+    command: "clc prime | grep 'tests-unwritten'"
+
+  - name: "prime includes state graph concepts"
+    command: "clc prime | grep -i 'transition'"
+
+  - name: "prime does not include implementing directive"
+    command: "! clc prime | grep -i 'fix failing'"
+
 transitions:
   - name: "advance to tests-written"
     command: "clc status set tests-written"

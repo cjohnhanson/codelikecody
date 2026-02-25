@@ -14,6 +14,21 @@ assertions:
   - name: "done fails on main branch"
     command: "git checkout -q main && clc done 2>&1; RET=$?; git checkout -q test-feature; test $RET -ne 0"
 
+  - name: "prime includes all three sections"
+    command: "clc prime | grep -i 'workflow' && clc prime | grep -i 'tisket' && clc prime | grep -i 'missouri'"
+
+  - name: "prime includes issue details on matching branch"
+    command: "clc prime | grep 'Test feature'"
+
+  - name: "prime mentions finalize or done"
+    command: "clc prime | grep -iE 'done|finalize'"
+
+  - name: "prime mentions updating scratch"
+    command: "clc prime | grep -i 'scratch'"
+
+  - name: "SessionStart hook includes full prime"
+    command: "echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook | jq -r '.hookSpecificOutput.additionalContext' | grep -i 'tisket' && echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook | jq -r '.hookSpecificOutput.additionalContext' | grep -i 'missouri'"
+
 transitions:
   - name: "finalize work"
     command: "clc done"

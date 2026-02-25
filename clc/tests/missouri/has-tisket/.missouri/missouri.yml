@@ -10,3 +10,15 @@ assertions:
 
   - name: "status reports no tisket issue when branch does not match"
     command: "git init -q -b main && git -c user.name=test -c user.email=test@test commit -q --allow-empty -m init && git checkout -q -B unrelated-branch && ! clc status 2>&1 | grep 'tisket_issue:'"
+
+  - name: "prime includes tisket orientation"
+    command: "clc prime | grep -i 'issue tracking'"
+
+  - name: "prime includes issue details when branch matches"
+    command: "git init -q -b main && git -c user.name=test -c user.email=test@test commit -q --allow-empty -m init && git checkout -q -B test-feature && clc prime | grep 'Test feature'"
+
+  - name: "prime shows open count when branch does not match"
+    command: "git init -q -b main && git -c user.name=test -c user.email=test@test commit -q --allow-empty -m init && git checkout -q -B unrelated-branch && clc prime | grep -i 'open'"
+
+  - name: "prime includes tisket commands"
+    command: "clc prime | grep 'tisket issue'"

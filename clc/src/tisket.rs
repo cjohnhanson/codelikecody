@@ -77,8 +77,80 @@ fn find_issue_for_branch(repo: &tisket::Repo, branch: &str) -> Option<CurrentIss
 }
 
 impl clc_sdk::ClcTool for TisketState {
-    fn prime(&self) -> String {
-        String::new()
+    fn prime(&self, ctx: &clc_sdk::PrimeContext) -> String {
+        use std::fmt::Write;
+
+        let mut out = String::new();
+        out.push_str("# Tisket Issue Tracker\n\n");
+
+        if !self.has_repo {
+            out.push_str("Tisket is not initialized in this project.\n\n");
+            out.push_str("Tisket tracks issues as markdown files with YAML frontmatter.\n");
+            out.push_str("Issues live in `.tisket/<project>/` with one file per issue.\n");
+            return out;
+        }
+
+        out.push_str("This project uses tisket for issue tracking.\n");
+        out.push_str(
+            "Issues are markdown files with YAML frontmatter in `.tisket/<project>/`.\n\n",
+        );
+
+        out.push_str("## Commands\n\n");
+        out.push_str("  tisket issue list              List open issues\n");
+        out.push_str("  tisket issue show <id>          Show issue details\n");
+        out.push_str("  tisket issue edit <id> -s <s>   Update issue status\n");
+        out.push_str("  tisket issue close <id>         Close an issue\n\n");
+
+        if let Some(issue) = &self.current_issue {
+            let _ = write!(out, "## Active Issue: {} ({})\n\n", issue.id, issue.status);
+            let _ = writeln!(out, "**{}**\n", issue.title);
+
+            if !issue.body.is_empty() {
+                out.push_str(&issue.body);
+                out.push_str("\n\n");
+            }
+
+            if !issue.scratch.is_empty() {
+                out.push_str("### Scratch\n\n");
+                out.push_str(&issue.scratch);
+                out.push('\n');
+            }
+
+            // Phase-adapted directives when an issue is active.
+            match ctx.phase.as_deref() {
+                Some("tests-unwritten" | "tests-written" | "red") => {
+                    out.push_str("\n## What to Do\n\n");
+                    out.push_str(
+                        "This issue defines the work. Review the requirements above before \
+                         implementing.\n",
+                    );
+                }
+                Some("implementing") => {
+                    out.push_str("\n## What to Do\n\n");
+                    out.push_str(
+                        "All work in this session relates to this issue.\n\
+                         Update the scratch section with progress as work proceeds.\n",
+                    );
+                }
+                Some("green") => {
+                    out.push_str("\n## What to Do\n\n");
+                    out.push_str(
+                        "Update the scratch section with a summary of what was done.\n\
+                         Run `clc done` to finalize.\n",
+                    );
+                }
+                _ => {}
+            }
+        } else {
+            let _ = writeln!(
+                out,
+                "{} open issues. No active issue on this branch.\n",
+                self.open_count
+            );
+            out.push_str("Pick up an issue with `clc pickup <id>` to begin work.\n");
+        }
+
+        out
     }
 
     fn status_basic(&self) -> String {

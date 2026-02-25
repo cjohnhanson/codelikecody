@@ -4,9 +4,7 @@ use crate::event::{Event, Response};
 use crate::git::GitState;
 use crate::phase::Phase;
 
-const ALLOWED_ON_MAIN: &[&str] = &["Read", "Glob", "Grep"];
-
-/// Read-only tools that are always allowed regardless of phase.
+/// Read-only tools: always allowed regardless of branch or phase.
 const READ_ONLY_TOOLS: &[&str] = &["Read", "Glob", "Grep"];
 
 /// Tools that target a file via `file_path` in `tool_input`.
@@ -19,7 +17,6 @@ pub fn evaluate(event: &Event, git: Option<&GitState>, phase: Option<Phase>) -> 
             tool_name,
             tool_input,
         } => check_tool_use(tool_name, tool_input, git, phase),
-        Event::SessionStart { .. } => session_context(git),
         _ => Response::Passthrough,
     }
 }
@@ -36,7 +33,7 @@ fn check_tool_use(
 
     // Main branch guard: only read tools allowed.
     if state.is_main {
-        if ALLOWED_ON_MAIN.contains(&tool_name) {
+        if READ_ONLY_TOOLS.contains(&tool_name) {
             return Response::Passthrough;
         }
         return Response::Block {
@@ -96,27 +93,4 @@ fn check_phase_restricted(tool_name: &str, tool_input: &Value, phase: Phase) -> 
 fn is_test_path(path: &str) -> bool {
     // Match both relative and absolute paths containing tests/missouri/
     path.contains("tests/missouri/") || path.starts_with("tests/missouri")
-}
-
-fn session_context(git: Option<&GitState>) -> Response {
-    let Some(state) = git else {
-        return Response::Allow {
-            context: Some("clc is active. No git repository detected.".to_string()),
-        };
-    };
-
-    if state.is_main {
-        Response::Allow {
-            context: Some(format!(
-                "clc is active. On branch '{}' (main). \
-                 Write operations are blocked. \
-                 Pick up a tisket to begin work: clc pickup <issue-id>",
-                state.branch
-            )),
-        }
-    } else {
-        Response::Allow {
-            context: Some(format!("clc is active. On branch '{}'.", state.branch)),
-        }
-    }
 }

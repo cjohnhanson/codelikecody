@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::io::Read;
 use std::path::Path;
 
@@ -7,10 +8,14 @@ use crate::adapter::Adapter;
 use crate::adapter::claude_code::ClaudeCodeAdapter;
 use crate::config;
 use crate::error::Error;
-use crate::event::Response;
+use crate::event::{Event, Response};
 use crate::git;
 use crate::guard;
+use crate::missouri;
 use crate::phase;
+use crate::tisket;
+
+use clc_sdk::ClcTool;
 
 /// Run the hook: read JSON from stdin, process event, write response to stdout.
 /// Returns the exit code to use.
@@ -30,7 +35,15 @@ pub fn run() -> Result<i32, Error> {
     let git_state = git::detect(cwd, &cfg.main_branch);
     let current_phase = phase::load(cwd).unwrap_or(None);
 
-    let response = guard::evaluate(&event, git_state.as_ref(), current_phase);
+    let response = match event {
+        Event::SessionStart { .. } => {
+            let prime = assemble_prime(cwd, git_state.as_ref(), current_phase);
+            Response::Allow {
+                context: Some(prime),
+            }
+        }
+        _ => guard::evaluate(&event, git_state.as_ref(), current_phase),
+    };
 
     let (output, exit_code) = adapter.format_response(&event, &response);
 
@@ -45,6 +58,86 @@ pub fn run() -> Result<i32, Error> {
     }
 
     Ok(exit_code)
+}
+
+/// Assemble the full prime text from clc header + tisket + missouri.
+fn assemble_prime(cwd: &Path, git: Option<&git::GitState>, phase: Option<phase::Phase>) -> String {
+    let ctx = clc_sdk::PrimeContext {
+        phase: phase.map(|p| p.to_string()),
+    };
+
+    let mut out = String::new();
+
+    // clc header
+    out.push_str("# clc — codelikecody workflow engine\n\n");
+    if let Some(state) = git {
+        let _ = write!(out, "Branch: `{}`", state.branch);
+        if state.is_main {
+            out.push_str(" (main)");
+        }
+        if state.is_worktree {
+            out.push_str(" [worktree]");
+        }
+        out.push('\n');
+    } else {
+        out.push_str("No git repository detected.\n");
+    }
+
+    if let Some(ref p) = ctx.phase {
+        let _ = writeln!(out, "Phase: `{p}`");
+    }
+
+    out.push('\n');
+
+    // Branch-specific directives
+    if let Some(state) = git
+        && state.is_main
+    {
+        out.push_str(
+            "Write operations are blocked on the main branch.\n\
+             Pick up a tisket to begin work: `clc pickup <issue-id>`\n\n",
+        );
+    }
+
+    // Tisket section
+    let branch = git.map(|s| s.branch.as_str());
+    match tisket::detect(cwd, branch) {
+        Ok(tisket_state) => {
+            let section = tisket_state.prime(&ctx);
+            if !section.is_empty() {
+                out.push_str(&section);
+                out.push('\n');
+            }
+        }
+        Err(e) => {
+            let _ = write!(out, "# Tisket\n\ntisket error: {e}\n\n");
+        }
+    }
+
+    // Missouri section
+    match missouri::detect(cwd) {
+        Ok(missouri_state) => {
+            let section = missouri_state.prime(&ctx);
+            if !section.is_empty() {
+                out.push_str(&section);
+                out.push('\n');
+            }
+        }
+        Err(e) => {
+            let _ = write!(out, "# Missouri\n\nmissouri error: {e}\n\n");
+        }
+    }
+
+    out
+}
+
+/// Build and return the prime text for CLI output.
+pub fn prime_text() -> Result<String, Error> {
+    let cwd = std::env::current_dir()?;
+    let cfg = config::load(&cwd).unwrap_or_default();
+    let git_state = git::detect(&cwd, &cfg.main_branch);
+    let current_phase = phase::load(&cwd).unwrap_or(None);
+    Ok(assemble_prime(&cwd, git_state.as_ref(), current_phase))
 }
 
 fn read_stdin() -> Result<String, Error> {

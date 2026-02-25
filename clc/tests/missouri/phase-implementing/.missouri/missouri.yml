@@ -14,6 +14,15 @@ assertions:
   - name: "phase guard allows Write to Cargo.toml on feature branch"
     command: "git init -q -b main && (git checkout -B feat-xyz 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"Cargo.toml\"}}' | clc hook"
 
+  - name: "prime is lean — no authoring detail"
+    command: "! clc prime | grep 'missouri.yml'"
+
+  - name: "prime directive mentions running tests"
+    command: "clc prime | grep -i 'test'"
+
+  - name: "prime shows current phase"
+    command: "clc prime | grep 'implementing'"
+
 transitions:
   - name: "advance to green"
     command: "clc status set green"

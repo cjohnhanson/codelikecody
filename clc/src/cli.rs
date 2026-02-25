@@ -32,6 +32,8 @@ pub enum Command {
     },
     /// Finalize work: advance phase to done, close tisket.
     Done,
+    /// Print the assembled prime text (agent orientation + directives).
+    Prime,
     /// View and manage clc configuration.
     Config {
         #[command(subcommand)]

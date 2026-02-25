@@ -8,6 +8,12 @@ assertions:
   - name: "status set skipping to green is rejected"
     command: "clc status set green 2>&1; test $? -ne 0"
 
+  - name: "prime does not include authoring detail"
+    command: "! clc prime | grep 'missouri.yml'"
+
+  - name: "prime shows current phase"
+    command: "clc prime | grep 'red'"
+
 transitions:
   - name: "advance to implementing"
     command: "clc status set implementing"

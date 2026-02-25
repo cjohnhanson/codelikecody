@@ -1,3 +1,6 @@
 assertions:
   - name: "status reports tests failing"
     command: "clc status 2>&1 | grep 'missouri: 0/1 passing'"
+
+  - name: "prime mentions missouri is present"
+    command: "clc prime | grep -i 'missouri'"
