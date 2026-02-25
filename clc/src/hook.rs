@@ -42,6 +42,18 @@ pub fn run() -> Result<i32, Error> {
                 context: Some(prime),
             }
         }
+        Event::UserPromptSubmit { .. } => {
+            let reinforcement = assemble_reinforcement(cwd, git_state.as_ref(), current_phase);
+            Response::Allow {
+                context: Some(reinforcement),
+            }
+        }
+        Event::PostToolUse { ref tool_name, .. } => {
+            let nudge = post_tool_nudge(tool_name, current_phase);
+            nudge.map_or(Response::Passthrough, |text| Response::Allow {
+                context: Some(text),
+            })
+        }
         _ => guard::evaluate(&event, git_state.as_ref(), current_phase),
     };
 
@@ -138,6 +150,55 @@ pub fn prime_text() -> Result<String, Error> {
     let git_state = git::detect(&cwd, &cfg.main_branch);
     let current_phase = phase::load(&cwd).unwrap_or(None);
     Ok(assemble_prime(&cwd, git_state.as_ref(), current_phase))
+}
+
+/// Assemble lean status reinforcement for `UserPromptSubmit`.
+fn assemble_reinforcement(
+    cwd: &Path,
+    git: Option<&git::GitState>,
+    phase: Option<phase::Phase>,
+) -> String {
+    let mut out = String::new();
+
+    let branch = git.map(|s| s.branch.as_str());
+    if let Ok(tisket_state) = tisket::detect(cwd, branch) {
+        let line = tisket_state.status_basic();
+        if !line.is_empty() {
+            out.push_str(&line);
+            out.push('\n');
+        }
+    }
+
+    if let Ok(missouri_state) = missouri::detect(cwd) {
+        let line = missouri_state.status_basic();
+        if !line.is_empty() {
+            out.push_str(&line);
+            out.push('\n');
+        }
+    }
+
+    if let Some(p) = phase {
+        let _ = writeln!(out, "phase: {p}");
+    }
+
+    out
+}
+
+/// File-modifying tools that trigger post-tool nudges.
+const WRITE_TOOLS: &[&str] = &["Edit", "Write", "NotebookEdit"];
+
+/// Return a phase-aware nudge after a tool use, if applicable.
+fn post_tool_nudge(tool_name: &str, phase: Option<phase::Phase>) -> Option<String> {
+    if !WRITE_TOOLS.contains(&tool_name) {
+        return None;
+    }
+
+    match phase {
+        Some(phase::Phase::Implementing) => {
+            Some("phase: implementing — run tests before advancing".to_string())
+        }
+        _ => None,
+    }
 }
 
 fn read_stdin() -> Result<String, Error> {

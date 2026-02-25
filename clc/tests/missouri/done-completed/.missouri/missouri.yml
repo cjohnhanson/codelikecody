@@ -7,3 +7,6 @@ assertions:
 
   - name: "done fails when already done"
     command: "clc done 2>&1; test $? -ne 0"
+
+  - name: "Stop hook allowed in done"
+    command: "echo '{\"hook_event_name\":\"Stop\",\"session_id\":\"test\",\"cwd\":\".\"}' | clc hook"

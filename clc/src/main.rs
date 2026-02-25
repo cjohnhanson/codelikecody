@@ -48,6 +48,8 @@ fn main() {
         cli::Command::Done => cmd_done(),
         cli::Command::Prime => cmd_prime(),
         cli::Command::Config { ref action } => cmd_config(action),
+        cli::Command::Tisket { command } => cmd_tisket(command),
+        cli::Command::Missouri { command } => cmd_missouri(command),
         cli::Command::Hook => unreachable!(),
     };
 
@@ -160,6 +162,23 @@ fn cmd_prime() -> Result<(), Error> {
     let text = hook::prime_text()?;
     print!("{text}");
     Ok(())
+}
+
+fn cmd_tisket(command: ::tisket::cli::Command) -> Result<(), Error> {
+    let cwd = std::env::current_dir()?;
+    let root = camino::Utf8PathBuf::try_from(cwd)
+        .map_err(|e| Error::NonBlocking(format!("non-UTF8 path: {e}")))?;
+    ::tisket::cli::run_command(&root, command)
+        .map_err(|e: ::tisket::Error| Error::NonBlocking(e.to_string()))
+}
+
+fn cmd_missouri(command: ::missouri::cli::Command) -> Result<(), Error> {
+    let config_dir = ".missouri";
+    match ::missouri::cli::run_command(config_dir, command) {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(Error::Block("missouri: tests failed".to_string())),
+        Err(e) => Err(Error::NonBlocking(format!("{e}"))),
+    }
 }
 
 fn cmd_init(untracked: bool) -> Result<(), Error> {

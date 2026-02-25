@@ -1,5 +1,6 @@
 use camino::Utf8PathBuf;
 use clap::Parser;
+use miette::IntoDiagnostic;
 
 #[derive(Parser)]
 #[command(
@@ -174,4 +175,211 @@ pub struct ServeArgs {
     /// Port to serve on
     #[arg(long, default_value = "8080")]
     pub port: u16,
+}
+
+/// Run missouri with the given arguments. Handles -C directory change.
+pub fn run(args: Args) -> miette::Result<bool> {
+    if let Some(dir) = &args.directory {
+        std::env::set_current_dir(dir.as_std_path()).into_diagnostic()?;
+    }
+    run_command(&args.config_dir, args.command)
+}
+
+/// Run a missouri subcommand with the given config directory.
+pub fn run_command(config_dir: &str, command: Command) -> miette::Result<bool> {
+    match command {
+        Command::Run(run_args) => {
+            let dir = resolve_dir(&run_args.dir)?;
+            let graph = crate::graph::StateGraph::discover(&dir, config_dir).into_diagnostic()?;
+
+            let roots = graph.roots();
+            if roots.is_empty() {
+                return Err(crate::error::Error::NoRoots.into());
+            }
+
+            let paths = crate::paths::enumerate_paths(&graph);
+            if paths.is_empty() {
+                eprintln!("no test paths found");
+                return Ok(true);
+            }
+
+            let sandbox =
+                crate::executor::detect_sandbox(&graph).map_err(|e| miette::miette!("{e}"))?;
+
+            let check_mode = if run_args.check_only {
+                crate::executor::CheckMode::CheckOnly
+            } else if run_args.no_check {
+                crate::executor::CheckMode::NoCheck
+            } else {
+                crate::executor::CheckMode::Full
+            };
+
+            let recording = if run_args.record {
+                let run_id = run_args.run_id.unwrap_or_else(|| {
+                    chrono::Local::now().format("%Y-%m-%dT%H-%M-%S").to_string()
+                });
+                let output_dir = dir.join(config_dir).join("runs").join(&run_id);
+                Some(crate::executor::RecordingConfig { output_dir, run_id })
+            } else {
+                None
+            };
+
+            let opts = crate::executor::RunOptions {
+                keep_temp: run_args.keep_temp,
+                verbose: run_args.verbose > 0,
+                sandbox,
+                check_mode,
+                recording: recording.clone(),
+            };
+
+            // Run setup commands before test paths (if any)
+            if !graph.setup.is_empty() {
+                let setup_results = crate::executor::run_setup_phase(&graph, &opts);
+                let setup_passed =
+                    crate::report::print_setup_results(&setup_results, run_args.verbose > 0);
+                if !setup_passed {
+                    return Ok(false);
+                }
+            }
+
+            let progress = crate::report::ProgressReporter::new();
+            progress.prepare(&paths, &graph);
+            let results = crate::executor::run_all_paths(
+                &graph,
+                &paths,
+                &opts,
+                Some(&|event| progress.on_event(event)),
+            );
+            progress.finish();
+            let all_passed = crate::report::print_results(&results, run_args.verbose > 0);
+
+            // Write results.json if recording
+            if let Some(rc) = &recording {
+                let mut recorded_paths = Vec::new();
+                for (path_idx, (path, result)) in paths.iter().zip(results.iter()).enumerate() {
+                    let mut recorded_steps = Vec::new();
+                    for (step_idx, step) in result.steps.iter().enumerate() {
+                        recorded_steps.push(crate::recorder::RecordedStep {
+                            index: step_idx,
+                            transition_name: step.transition_name.clone(),
+                            source: step.source_name.clone(),
+                            target: step.target_name.clone(),
+                            passed: step.passed,
+                            exit_code: step.exit_code,
+                            cast_file: format!("path-{path_idx}/step-{step_idx}.cast"),
+                        });
+                    }
+                    recorded_paths.push(crate::recorder::RecordedPath {
+                        name: path.display(&graph),
+                        passed: result.passed,
+                        steps: recorded_steps,
+                    });
+                }
+
+                let run_results = crate::recorder::RunResults {
+                    run_id: rc.run_id.clone(),
+                    passed: results.iter().filter(|r| r.passed).count(),
+                    failed: results.iter().filter(|r| !r.passed).count(),
+                    paths: recorded_paths,
+                };
+
+                crate::recorder::write_results(&rc.output_dir, &run_results).into_diagnostic()?;
+            }
+
+            Ok(all_passed)
+        }
+        Command::List(list_args) => {
+            let dir = resolve_dir(&list_args.dir)?;
+            let graph = crate::graph::StateGraph::discover(&dir, config_dir).into_diagnostic()?;
+
+            match list_args.show {
+                ListKind::States => crate::report::print_states(&graph),
+                ListKind::Transitions => crate::report::print_transitions(&graph),
+                ListKind::Paths | ListKind::Graph => {
+                    let paths = crate::paths::enumerate_paths(&graph);
+                    crate::report::print_paths(&paths, &graph);
+                }
+            }
+            Ok(true)
+        }
+        Command::Validate(validate_args) => {
+            let dir = resolve_dir(&validate_args.dir)?;
+            let graph = crate::graph::StateGraph::discover(&dir, config_dir).into_diagnostic()?;
+
+            let roots = graph.roots();
+            if roots.is_empty() {
+                return Err(crate::error::Error::NoRoots.into());
+            }
+
+            println!(
+                "valid: {} state(s), {} transition(s), {} root(s)",
+                graph.states.len(),
+                graph.transitions.len(),
+                roots.len()
+            );
+            Ok(true)
+        }
+        Command::Init(init_args) => {
+            let dir = resolve_dir(&init_args.dir)?;
+            crate::scaffold::init_project(&dir, config_dir).into_diagnostic()?;
+            println!("initialized missouri project at {}", dir.join(config_dir));
+            Ok(true)
+        }
+        Command::State(state_args) => match state_args.command {
+            StateCommand::Add(add_args) => {
+                let dir = resolve_dir(&add_args.dir)?;
+                crate::scaffold::add_state(
+                    &dir,
+                    config_dir,
+                    &add_args.name,
+                    add_args.from.as_deref(),
+                )
+                .into_diagnostic()?;
+                println!("created state \"{}\"", add_args.name);
+                Ok(true)
+            }
+        },
+        Command::Report(report_args) => {
+            let dir = resolve_dir(&report_args.dir)?;
+            let run_dir =
+                crate::recorder::find_run_dir(&dir, config_dir, report_args.run.as_deref())?;
+
+            match report_args.format {
+                ReportFormat::Terminal => {
+                    crate::recorder::print_terminal_report(&run_dir).into_diagnostic()?;
+                }
+                ReportFormat::Html => {
+                    let html = crate::recorder::generate_html_report(&run_dir).into_diagnostic()?;
+                    let report_path = run_dir.join("report.html");
+                    std::fs::write(&report_path, &html).into_diagnostic()?;
+                    println!("HTML report written to {report_path}");
+                }
+                ReportFormat::Md => {
+                    let md = crate::recorder::generate_md_report(&run_dir).into_diagnostic()?;
+                    let report_path = run_dir.join("report.md");
+                    std::fs::write(&report_path, &md).into_diagnostic()?;
+                    println!("Markdown report written to {report_path}");
+                }
+            }
+            Ok(true)
+        }
+        Command::Serve(serve_args) => {
+            let dir = resolve_dir(&serve_args.dir)?;
+            let _run_dir =
+                crate::recorder::find_run_dir(&dir, config_dir, serve_args.run.as_deref())?;
+            // Serve is a placeholder for now — just verify runs exist
+            println!("serving on http://localhost:{}", serve_args.port);
+            Ok(true)
+        }
+    }
+}
+
+fn resolve_dir(dir: &Utf8PathBuf) -> miette::Result<camino::Utf8PathBuf> {
+    let path = if dir.is_relative() {
+        let cwd = std::env::current_dir().into_diagnostic()?;
+        Utf8PathBuf::try_from(cwd).into_diagnostic()?.join(dir)
+    } else {
+        dir.clone()
+    };
+    Ok(path)
 }

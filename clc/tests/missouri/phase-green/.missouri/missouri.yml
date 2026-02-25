@@ -23,6 +23,9 @@ assertions:
   - name: "prime shows current phase"
     command: "clc prime | grep 'green'"
 
+  - name: "Stop hook allowed in green"
+    command: "git init -q -b main && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init && git checkout -q -B feat-xyz && echo '{\"hook_event_name\":\"Stop\",\"session_id\":\"test\",\"cwd\":\".\"}' | clc hook"
+
 transitions:
   - name: "go back to red"
     command: "clc status set red"

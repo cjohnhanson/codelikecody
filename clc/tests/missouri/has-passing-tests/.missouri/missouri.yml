@@ -7,3 +7,6 @@ assertions:
 
   - name: "prime does not say no tests"
     command: "! clc prime | grep -i 'no test'"
+
+  - name: "clc missouri run exits 0"
+    command: "clc missouri run -d tests/missouri"

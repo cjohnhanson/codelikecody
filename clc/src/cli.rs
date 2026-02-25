@@ -39,6 +39,16 @@ pub enum Command {
         #[command(subcommand)]
         action: ConfigAction,
     },
+    /// Run tisket commands.
+    Tisket {
+        #[command(subcommand)]
+        command: ::tisket::cli::Command,
+    },
+    /// Run missouri commands.
+    Missouri {
+        #[command(subcommand)]
+        command: ::missouri::cli::Command,
+    },
 }
 
 #[derive(Subcommand)]

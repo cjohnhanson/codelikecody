@@ -23,6 +23,21 @@ assertions:
   - name: "prime shows current phase"
     command: "clc prime | grep 'implementing'"
 
+  - name: "Stop hook blocked in implementing"
+    command: "git init -q -b main && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init && git checkout -q -B feat-xyz && echo '{\"hook_event_name\":\"Stop\",\"session_id\":\"test\",\"cwd\":\".\"}' | clc hook 2>/dev/null; test $? -eq 2"
+
+  - name: "UserPromptSubmit reinforcement shows phase"
+    command: "echo '{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"test\",\"cwd\":\".\",\"prompt\":\"hello\"}' | clc hook | jq -r '.hookSpecificOutput.additionalContext' | grep 'implementing'"
+
+  - name: "PostToolUse Edit returns nudge in implementing"
+    command: "echo '{\"hook_event_name\":\"PostToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Edit\",\"tool_input\":{},\"tool_response\":{}}' | clc hook | jq -e '.hookSpecificOutput.additionalContext'"
+
+  - name: "PostToolUse nudge mentions tests"
+    command: "echo '{\"hook_event_name\":\"PostToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Edit\",\"tool_input\":{},\"tool_response\":{}}' | clc hook | jq -r '.hookSpecificOutput.additionalContext' | grep -i 'test'"
+
+  - name: "PostToolUse Read produces no output in implementing"
+    command: "OUTPUT=$(echo '{\"hook_event_name\":\"PostToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Read\",\"tool_input\":{},\"tool_response\":{}}' | clc hook); test -z \"$OUTPUT\""
+
 transitions:
   - name: "advance to green"
     command: "clc status set green"

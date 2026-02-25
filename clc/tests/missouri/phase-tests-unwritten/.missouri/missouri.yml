@@ -47,6 +47,15 @@ assertions:
   - name: "prime does not include implementing directive"
     command: "! clc prime | grep -i 'fix failing'"
 
+  - name: "Stop hook blocked in tests-unwritten"
+    command: "git init -q -b main && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init && git checkout -q -B feat-xyz && echo '{\"hook_event_name\":\"Stop\",\"session_id\":\"test\",\"cwd\":\".\"}' | clc hook 2>/dev/null; test $? -eq 2"
+
+  - name: "Stop block message mentions completing work"
+    command: "git init -q -b main && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init && git checkout -q -B feat-xyz && echo '{\"hook_event_name\":\"Stop\",\"session_id\":\"test\",\"cwd\":\".\"}' | clc hook 2>&1 >/dev/null | grep -iE 'done|complete'"
+
+  - name: "PostToolUse Edit passes through in tests-unwritten"
+    command: "echo '{\"hook_event_name\":\"PostToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Edit\",\"tool_input\":{},\"tool_response\":{}}' | clc hook"
+
 transitions:
   - name: "advance to tests-written"
     command: "clc status set tests-written"

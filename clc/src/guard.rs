@@ -17,7 +17,32 @@ pub fn evaluate(event: &Event, git: Option<&GitState>, phase: Option<Phase>) -> 
             tool_name,
             tool_input,
         } => check_tool_use(tool_name, tool_input, git, phase),
+        Event::Stop => check_stop(git, phase),
         _ => Response::Passthrough,
+    }
+}
+
+fn check_stop(git: Option<&GitState>, phase: Option<Phase>) -> Response {
+    let Some(state) = git else {
+        return Response::Passthrough;
+    };
+
+    if state.is_main {
+        return Response::Passthrough;
+    }
+
+    let Some(current_phase) = phase else {
+        return Response::Passthrough;
+    };
+
+    match current_phase {
+        Phase::Done | Phase::Green => Response::Passthrough,
+        _ => Response::Block {
+            message: format!(
+                "Work is not complete. Current phase: {current_phase}. \
+                 Run `clc done` to finalize, or `clc status set green` when tests pass."
+            ),
+        },
     }
 }
 

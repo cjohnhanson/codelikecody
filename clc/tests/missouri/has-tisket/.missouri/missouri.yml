@@ -22,3 +22,9 @@ assertions:
 
   - name: "prime includes tisket commands"
     command: "clc prime | grep 'tisket issue'"
+
+  - name: "clc tisket issue list shows test issue"
+    command: "clc tisket issue list | grep 'Test feature'"
+
+  - name: "UserPromptSubmit reinforcement shows tisket"
+    command: "echo '{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"test\",\"cwd\":\".\",\"prompt\":\"hello\"}' | clc hook | jq -r '.hookSpecificOutput.additionalContext' | grep -i 'tisket'"

@@ -123,6 +123,17 @@ fn format_allow(event: &Event, context: Option<&str>) -> (Option<Value>, i32) {
                 0,
             )
         }),
+        Event::PostToolUse { .. } => context.map_or((None, 0), |ctx| {
+            (
+                Some(json!({
+                    "hookSpecificOutput": {
+                        "hookEventName": "PostToolUse",
+                        "additionalContext": ctx
+                    }
+                })),
+                0,
+            )
+        }),
         _ => (None, 0),
     }
 }

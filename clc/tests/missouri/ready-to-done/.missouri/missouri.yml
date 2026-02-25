@@ -29,6 +29,9 @@ assertions:
   - name: "SessionStart hook includes full prime"
     command: "echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook | jq -r '.hookSpecificOutput.additionalContext' | grep -i 'tisket' && echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook | jq -r '.hookSpecificOutput.additionalContext' | grep -i 'missouri'"
 
+  - name: "Stop hook allowed in green on feature branch"
+    command: "echo '{\"hook_event_name\":\"Stop\",\"session_id\":\"test\",\"cwd\":\".\"}' | clc hook"
+
 transitions:
   - name: "finalize work"
     command: "clc done"

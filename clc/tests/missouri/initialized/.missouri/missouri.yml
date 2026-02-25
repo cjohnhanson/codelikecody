@@ -140,6 +140,30 @@ assertions:
   - name: "SessionStart hook additionalContext contains missouri"
     command: "echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook | jq -r '.hookSpecificOutput.additionalContext' | grep -i 'missouri'"
 
+  - name: "clc tisket --help exits 0"
+    command: "clc tisket --help"
+
+  - name: "clc missouri --help exits 0"
+    command: "clc missouri --help"
+
+  - name: "UserPromptSubmit returns JSON with additionalContext"
+    command: "echo '{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"test\",\"cwd\":\".\",\"prompt\":\"hello\"}' | clc hook | jq -e '.hookSpecificOutput.additionalContext'"
+
+  - name: "UserPromptSubmit reinforcement includes tisket status"
+    command: "echo '{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"test\",\"cwd\":\".\",\"prompt\":\"hello\"}' | clc hook | jq -r '.hookSpecificOutput.additionalContext' | grep -i 'tisket'"
+
+  - name: "UserPromptSubmit reinforcement includes missouri status"
+    command: "echo '{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"test\",\"cwd\":\".\",\"prompt\":\"hello\"}' | clc hook | jq -r '.hookSpecificOutput.additionalContext' | grep -i 'missouri'"
+
+  - name: "Stop hook allowed on main"
+    command: "git init -q -b main && echo '{\"hook_event_name\":\"Stop\",\"session_id\":\"test\",\"cwd\":\".\"}' | clc hook"
+
+  - name: "PostToolUse Edit passes through when no phase"
+    command: "echo '{\"hook_event_name\":\"PostToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Edit\",\"tool_input\":{},\"tool_response\":{}}' | clc hook"
+
+  - name: "PostToolUse Read produces no output"
+    command: "OUTPUT=$(echo '{\"hook_event_name\":\"PostToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Read\",\"tool_input\":{},\"tool_response\":{}}' | clc hook); test -z \"$OUTPUT\""
+
 transitions:
   - name: "add custom config"
     command: "printf 'main_branch: trunk\\n' > .clc/config.yml"
