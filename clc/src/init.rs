@@ -37,7 +37,7 @@ pub fn generate_settings(clc_command: &str) -> Value {
     json!({ "hooks": hooks })
 }
 
-pub fn init(project_dir: &Path, untracked: bool) -> Result<(), Error> {
+pub fn init(project_dir: &Path, untracked: bool, force: bool) -> Result<(), Error> {
     let clc_command = resolve_hook_command();
 
     // Create .clc/ state directory
@@ -49,11 +49,20 @@ pub fn init(project_dir: &Path, untracked: bool) -> Result<(), Error> {
     std::fs::create_dir_all(&claude_dir)?;
 
     let settings_path = claude_dir.join("settings.local.json");
+    let new_settings = generate_settings(&clc_command);
+
     let settings = if settings_path.exists() {
         let existing: Value = serde_json::from_str(&std::fs::read_to_string(&settings_path)?)?;
-        merge_hooks(existing, &generate_settings(&clc_command))
+        if !force && has_existing_hooks(&existing) {
+            return Err(Error::Block(
+                "Existing hooks found in .claude/settings.local.json.\n\
+                 Use --force to overwrite them."
+                    .to_string(),
+            ));
+        }
+        merge_hooks(existing, &new_settings)
     } else {
-        generate_settings(&clc_command)
+        new_settings
     };
 
     let formatted = serde_json::to_string_pretty(&settings)?;
@@ -65,6 +74,13 @@ pub fn init(project_dir: &Path, untracked: bool) -> Result<(), Error> {
     }
 
     Ok(())
+}
+
+fn has_existing_hooks(settings: &Value) -> bool {
+    settings
+        .get("hooks")
+        .and_then(Value::as_object)
+        .is_some_and(|h| !h.is_empty())
 }
 
 const EXCLUDE_PATTERNS: &[&str] = &[

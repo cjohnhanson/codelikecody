@@ -78,7 +78,7 @@ pub fn pickup(project_dir: &Path, id: &str, main_branch: &str) -> Result<(), Err
         .map_err(|e| Error::NonBlocking(format!("failed to update tisket status: {e}")))?;
 
     // Initialize clc in the worktree.
-    crate::init::init(&worktree_dir, false)?;
+    crate::init::init(&worktree_dir, false, true)?;
 
     // Set initial phase.
     crate::phase::set(&worktree_dir, "tests-unwritten", 1)?;

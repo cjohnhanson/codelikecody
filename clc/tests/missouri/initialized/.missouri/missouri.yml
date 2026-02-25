@@ -140,6 +140,12 @@ assertions:
   - name: "SessionStart hook additionalContext contains missouri"
     command: "echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook | jq -r '.hookSpecificOutput.additionalContext' | grep -i 'missouri'"
 
+  - name: "re-init without --force fails when hooks exist"
+    command: "clc init 2>&1; test $? -ne 0"
+
+  - name: "re-init with --force succeeds"
+    command: "clc init --force"
+
   - name: "clc tisket --help exits 0"
     command: "clc tisket --help"
 

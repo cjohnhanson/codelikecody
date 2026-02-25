@@ -17,6 +17,9 @@ pub enum Command {
         /// Keep clc files invisible to git via .git/info/exclude.
         #[arg(long)]
         untracked: bool,
+        /// Overwrite existing hooks in settings.local.json.
+        #[arg(long)]
+        force: bool,
     },
     /// Process a hook event from stdin (called by agent hooks).
     Hook,

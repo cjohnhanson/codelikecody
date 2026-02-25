@@ -39,7 +39,7 @@ fn main() {
     }
 
     let result = match cli.command {
-        cli::Command::Init { untracked } => cmd_init(untracked),
+        cli::Command::Init { untracked, force } => cmd_init(untracked, force),
         cli::Command::Status { action: None } => cmd_status(),
         cli::Command::Status {
             action: Some(cli::StatusAction::Set { ref phase }),
@@ -181,9 +181,9 @@ fn cmd_missouri(command: ::missouri::cli::Command) -> Result<(), Error> {
     }
 }
 
-fn cmd_init(untracked: bool) -> Result<(), Error> {
+fn cmd_init(untracked: bool, force: bool) -> Result<(), Error> {
     let project_dir = std::env::current_dir()?;
-    init::init(&project_dir, untracked)?;
+    init::init(&project_dir, untracked, force)?;
     if untracked {
         eprintln!("initialized clc (untracked) in {}", project_dir.display());
     } else {
