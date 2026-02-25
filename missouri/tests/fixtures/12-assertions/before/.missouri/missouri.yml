@@ -1,0 +1,16 @@
+assertions:
+  - name: "check original content"
+    command: "cat data.txt"
+    stdout: "original\n"
+  - name: "data file exists"
+    command: "test -f data.txt"
+  - name: "stderr capture works"
+    command: "echo 'warn: ok' >&2"
+    stderr: "warn: ok\n"
+
+transitions:
+  - name: "transform data"
+    command: "printf 'transformed\n' > data.txt && echo 'done'"
+    target: "../after"
+    stdout: "done\n"
+    stderr: ""

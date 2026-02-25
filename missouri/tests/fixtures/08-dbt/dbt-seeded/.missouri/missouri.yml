@@ -1,0 +1,14 @@
+assertions:
+  - name: "dbt debug passes"
+    command: "uv run dbt debug --profiles-dir . 2>&1"
+  - name: "seeds exist"
+    command: "test -f seeds/raw_customers.csv"
+
+transitions:
+  - name: "dbt run"
+    command: "uv run dbt run --profiles-dir ."
+    target: "../dbt-ran"
+    comparators:
+      files:
+        - path: "warehouse.duckdb"
+          command: "compare-duckdb"

@@ -1,0 +1,8 @@
+assertions:
+  - name: "cargo check compiles"
+    command: "cargo check 2>&1"
+
+transitions:
+  - name: "cargo add serde"
+    command: "cargo add serde@1.0.228 --features derive"
+    target: "../dep-added"
