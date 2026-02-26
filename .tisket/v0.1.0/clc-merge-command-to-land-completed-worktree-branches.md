@@ -17,7 +17,7 @@ Pre-merge checks:
 - Phase must be `done`
 - Tisket must be closed
 - No uncommitted changes on the branch
-- Tests pass on the branch (run `cargo test` or missouri, depending on project)
+- Missouri tests pass on the branch
 
 On success:
 - Merge branch into trunk (fast-forward if possible, merge commit if not)
