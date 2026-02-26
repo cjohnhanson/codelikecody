@@ -150,6 +150,21 @@ fn assemble_prime(cwd: &Path, git: Option<&git::GitState>, phase: Option<phase::
          enforce this automatically. Run `clc status` to see where you are.\n\n",
     );
 
+    // --- TDD mandate ---
+    out.push_str(
+        "## Test-driven development\n\n\
+         Every implementation change starts with a test. This is not a phase system\n\
+         rule — it is the development methodology for all work in this project.\n\n\
+         1. Write a failing test that specifies the desired behavior\n\
+         2. Verify the test fails (red)\n\
+         3. Write the minimum code to make it pass (green)\n\
+         4. Refactor if needed, keeping tests green\n\n\
+         Do not write implementation code without a corresponding test. If you find\n\
+         yourself editing source files without having written or updated tests first,\n\
+         stop and write the test. Phase gates enforce this mechanically, but TDD\n\
+         discipline should hold even when phase gates are absent or permissive.\n\n",
+    );
+
     // --- working memory ---
     out.push_str(
         "## Working memory\n\n\

@@ -170,6 +170,12 @@ assertions:
   - name: "prime says no missouri tests"
     command: "clc prime | grep -i 'no test'"
 
+  - name: "prime includes TDD mandate"
+    command: "clc prime | grep -i 'test-driven'"
+
+  - name: "prime TDD mandate mentions failing test first"
+    command: "clc prime | grep -i 'failing test'"
+
   - name: "prime mentions pickup when on main"
     command: "git init -q -b main && (git checkout main 2>/dev/null || true) && clc prime | grep -i 'pickup'"
 
