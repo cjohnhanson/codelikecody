@@ -31,19 +31,18 @@ fn check_stop(git: Option<&GitState>, phase: Option<Phase>) -> Response {
         return Response::Passthrough;
     }
 
-    let Some(current_phase) = phase else {
-        return Response::Passthrough;
+    let message = match phase {
+        None => "No phase set — work has not started. \
+                 Set a phase with `clc status set tests-unwritten` or run `clc pickup`."
+            .to_string(),
+        Some(Phase::Done | Phase::Green) => return Response::Passthrough,
+        Some(current_phase) => format!(
+            "Work is not complete. Current phase: {current_phase}. \
+             Run `clc done` to finalize, or `clc status set green` when tests pass."
+        ),
     };
 
-    match current_phase {
-        Phase::Done | Phase::Green => Response::Passthrough,
-        _ => Response::Block {
-            message: format!(
-                "Work is not complete. Current phase: {current_phase}. \
-                 Run `clc done` to finalize, or `clc status set green` when tests pass."
-            ),
-        },
-    }
+    Response::Block { message }
 }
 
 fn check_tool_use(
@@ -73,10 +72,9 @@ fn check_tool_use(
     }
 
     // Feature branch phase enforcement.
-    let Some(current_phase) = phase else {
-        // No phase set — allow everything (pre-phase workflow).
-        return Response::Passthrough;
-    };
+    // No phase = restrictive (same as tests-unwritten). The agent must set a phase
+    // before making non-test edits.
+    let current_phase = phase.unwrap_or(Phase::TestsUnwritten);
 
     match current_phase {
         Phase::Implementing => Response::Passthrough,
