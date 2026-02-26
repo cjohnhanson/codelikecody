@@ -1,4 +1,5 @@
 mod adapter;
+mod admin;
 mod cli;
 mod config;
 mod done;
@@ -44,6 +45,7 @@ fn main() {
         cli::Command::Status {
             action: Some(cli::StatusAction::Set { ref phase }),
         } => cmd_status_set(phase),
+        cli::Command::Admin => cmd_admin(),
         cli::Command::Pickup { ref id } => cmd_pickup(id),
         cli::Command::Done => cmd_done(),
         cli::Command::Prime => cmd_prime(),
@@ -140,6 +142,14 @@ fn cmd_config(action: &cli::ConfigAction) -> Result<(), Error> {
     match action {
         cli::ConfigAction::Show => config::show(&project_dir),
     }
+}
+
+fn cmd_admin() -> Result<(), Error> {
+    let project_dir = std::env::current_dir()?;
+    let cfg = config::load(&project_dir).unwrap_or_default();
+    admin::admin(&project_dir, &cfg.main_branch)?;
+    eprintln!("admin worktree ready at .worktrees/clc-admin");
+    Ok(())
 }
 
 fn cmd_pickup(id: &str) -> Result<(), Error> {

@@ -33,6 +33,8 @@ pub enum Command {
         /// The tisket issue ID to pick up.
         id: String,
     },
+    /// Create or switch to the admin worktree for non-feature work.
+    Admin,
     /// Finalize work: advance phase to done, close tisket.
     Done,
     /// Print the assembled prime text (agent orientation + directives).

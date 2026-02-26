@@ -20,6 +20,21 @@ assertions:
   - name: "pickup fails when not on main"
     command: "git checkout -q -B some-branch && clc pickup test-feature 2>&1; RET=$?; git checkout -q main; test $RET -ne 0"
 
+  - name: "admin creates worktree at .worktrees/clc-admin"
+    command: "clc admin && test -d .worktrees/clc-admin"
+
+  - name: "admin creates clc-admin branch"
+    command: "git branch | grep clc-admin"
+
+  - name: "admin worktree has clc initialized"
+    command: "test -d .worktrees/clc-admin/.clc"
+
+  - name: "admin fails when not on main"
+    command: "git checkout -q -B some-branch && clc admin 2>&1; RET=$?; git checkout -q main; test $RET -ne 0"
+
+  - name: "admin is idempotent (second call succeeds)"
+    command: "clc admin && clc admin"
+
 transitions:
   - name: "pickup a tisket"
     command: "clc pickup test-feature"
