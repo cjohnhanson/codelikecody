@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::process::Command;
 
 use crate::error::Error;
 use crate::git;
@@ -24,21 +23,8 @@ pub fn admin(project_dir: &Path, main_branch: &str) -> Result<(), Error> {
         return Ok(());
     }
 
-    // Create git worktree.
-    let output = Command::new("git")
-        .args(["worktree", "add"])
-        .arg(&worktree_dir)
-        .args(["-b", ADMIN_BRANCH])
-        .current_dir(project_dir)
-        .output()
-        .map_err(|e| Error::NonBlocking(format!("failed to run git: {e}")))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(Error::NonBlocking(format!(
-            "git worktree add failed: {stderr}"
-        )));
-    }
+    // Create git worktree via gix.
+    crate::gix_ops::create_worktree(project_dir, &worktree_dir, ADMIN_BRANCH)?;
 
     // Initialize clc in the admin worktree (no phase set — admin has no phase).
     crate::init::init(&worktree_dir, false, true)?;

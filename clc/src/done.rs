@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::process::Command;
 
 use camino::Utf8Path;
 
@@ -35,8 +34,8 @@ pub fn done(project_dir: &Path, main_branch: &str) -> Result<(), Error> {
     // Advance phase to done.
     phase::set(project_dir, "done", 1)?;
 
-    // Stage the phase change.
-    let mut paths_to_commit = vec![".clc/state"];
+    // Track which paths to commit.
+    let mut paths_to_commit: Vec<&str> = vec![".clc/state"];
 
     // Close the tisket issue (branch name = issue ID).
     let utf8_dir = Utf8Path::new(
@@ -60,36 +59,9 @@ pub fn done(project_dir: &Path, main_branch: &str) -> Result<(), Error> {
         }
     }
 
-    // Commit the finalization changes.
-    let mut add_args = vec!["add"];
-    add_args.extend(paths_to_commit);
-
-    let output = Command::new("git")
-        .args(&add_args)
-        .current_dir(project_dir)
-        .output()
-        .map_err(|e| Error::NonBlocking(format!("failed to stage done changes: {e}")))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(Error::NonBlocking(format!(
-            "failed to stage done changes: {stderr}"
-        )));
-    }
-
+    // Commit the finalization changes via gix.
     let msg = format!("clc: finalize {}", git_state.branch);
-    let output = Command::new("git")
-        .args(["commit", "-m", &msg])
-        .current_dir(project_dir)
-        .output()
-        .map_err(|e| Error::NonBlocking(format!("failed to commit done changes: {e}")))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(Error::NonBlocking(format!(
-            "failed to commit done changes: {stderr}"
-        )));
-    }
+    crate::gix_ops::commit_paths(project_dir, &msg, &paths_to_commit)?;
 
     Ok(())
 }

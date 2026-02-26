@@ -6,6 +6,7 @@ mod done;
 mod error;
 mod event;
 mod git;
+mod gix_ops;
 mod guard;
 mod home;
 mod hook;
@@ -219,4 +220,28 @@ fn cmd_init(untracked: bool, force: bool) -> Result<(), Error> {
         eprintln!("initialized clc in {}", project_dir.display());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn no_subprocess_git_calls() {
+        let src_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        for entry in std::fs::read_dir(&src_dir).expect("read src/") {
+            let path = entry.expect("dir entry").path();
+            if path.extension().is_some_and(|ext| ext == "rs") {
+                let contents = std::fs::read_to_string(&path).expect("read file");
+                assert!(
+                    !contents.contains("Command::new(\"git\")"),
+                    "found Command::new(\"git\") in {} — use gix_ops instead",
+                    path.display()
+                );
+                assert!(
+                    !contents.contains("Command::new(\"git\""),
+                    "found Command::new(\"git\" in {} — use gix_ops instead",
+                    path.display()
+                );
+            }
+        }
+    }
 }

@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::process::Command;
 
 use camino::Utf8Path;
 
@@ -56,22 +55,9 @@ pub fn pickup(project_dir: &Path, id: &str, main_branch: &str) -> Result<(), Err
         }
     }
 
-    // Create git worktree.
+    // Create git worktree via gix.
     let worktree_dir = project_dir.join(".worktrees").join(id);
-    let output = Command::new("git")
-        .args(["worktree", "add"])
-        .arg(&worktree_dir)
-        .args(["-b", id])
-        .current_dir(project_dir)
-        .output()
-        .map_err(|e| Error::NonBlocking(format!("failed to run git: {e}")))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(Error::NonBlocking(format!(
-            "git worktree add failed: {stderr}"
-        )));
-    }
+    crate::gix_ops::create_worktree(project_dir, &worktree_dir, id)?;
 
     // Set tisket status to in_progress.
     repo.edit_issue(id, Some("in_progress"))

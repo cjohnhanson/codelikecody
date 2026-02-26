@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::process::Command;
 
 use crate::error::Error;
 use crate::git;
@@ -53,40 +52,22 @@ pub fn merge(project_dir: &Path, id: &str, main_branch: &str) -> Result<(), Erro
     check_tisket_closed(&branch_ref, &worktree_dir, id)?;
 
     // Working tree must be clean (no modifications to tracked files).
-    // Uses git-status because gix's status API requires the "status" feature which
-    // brings in significant additional dependencies (dirwalk, blob-diff, index).
-    if !working_tree_clean(project_dir)? {
+    if !crate::gix_ops::working_tree_is_clean(project_dir)? {
         return Err(Error::NonBlocking(
             "working tree has uncommitted changes — commit or stash before merging".into(),
         ));
     }
 
-    // Merge the branch (mutation — shell out to git).
-    let output = Command::new("git")
-        .args(["merge", id, "--ff"])
-        .current_dir(project_dir)
-        .output()
-        .map_err(|e| Error::NonBlocking(format!("failed to run git merge: {e}")))?;
+    // Fast-forward merge via gix.
+    crate::gix_ops::ff_merge(project_dir, id)?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(Error::NonBlocking(format!("git merge failed: {stderr}")));
-    }
-
-    // Clean up worktree if it exists (mutation).
+    // Clean up worktree if it exists.
     if worktree_dir.is_dir() {
-        let _ = Command::new("git")
-            .args(["worktree", "remove"])
-            .arg(&worktree_dir)
-            .current_dir(project_dir)
-            .output();
+        let _ = crate::gix_ops::remove_worktree(project_dir, &worktree_dir, id);
     }
 
-    // Clean up branch (mutation).
-    let _ = Command::new("git")
-        .args(["branch", "-d", id])
-        .current_dir(project_dir)
-        .output();
+    // Clean up branch.
+    let _ = crate::gix_ops::delete_branch(project_dir, id);
 
     Ok(())
 }
@@ -172,17 +153,4 @@ fn check_tisket_closed(
     }
 
     Ok(())
-}
-
-/// Check if the working tree is clean (no modifications to tracked files).
-/// Uses git-status because gix's status API requires the "status" feature
-/// which brings significant additional dependencies.
-fn working_tree_clean(project_dir: &Path) -> Result<bool, Error> {
-    let output = Command::new("git")
-        .args(["status", "--porcelain", "-uno"])
-        .current_dir(project_dir)
-        .output()
-        .map_err(|e| Error::NonBlocking(format!("failed to run git status: {e}")))?;
-
-    Ok(output.stdout.is_empty())
 }
