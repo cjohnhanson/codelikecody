@@ -12,7 +12,7 @@ assertions:
     command: "clc merge no-such-branch 2>&1; test $? -ne 0"
 
   - name: "merge fails when phase is not done"
-    command: "git checkout -q test-feature && clc status set green 2>/dev/null; git checkout -q main && clc merge test-feature 2>&1; RET=$?; git checkout -q test-feature && clc status set done 2>/dev/null; git checkout -q main; test $RET -ne 0"
+    command: "git checkout -q test-feature && clc status set green 2>/dev/null && git -c user.name=test -c user.email=test@test commit -q --all -m downgrade && git checkout -q main && clc merge test-feature 2>&1; RET=$?; git checkout -q test-feature && clc status set done 2>/dev/null && git -c user.name=test -c user.email=test@test commit -q --all -m restore && git checkout -q main; test $RET -ne 0"
 
   - name: "merge fails with uncommitted changes"
     command: "echo dirty >> Cargo.toml && clc merge test-feature 2>&1; RET=$?; git checkout -q -- Cargo.toml; test $RET -ne 0"

@@ -5,6 +5,15 @@ assertions:
   - name: "tisket is closed"
     command: "test -f .tisket/v0.1.0/.closed/test-feature.md"
 
+  - name: "done committed its changes"
+    command: "git log -1 --format=%s | grep -q 'clc: finalize'"
+
+  - name: "committed state includes phase done"
+    command: "git show HEAD:.clc/state | grep -q 'phase: done'"
+
+  - name: "committed state includes closed tisket"
+    command: "git cat-file -e HEAD:.tisket/v0.1.0/.closed/test-feature.md"
+
   - name: "done fails when already done"
     command: "clc done 2>&1; test $? -ne 0"
 
@@ -13,7 +22,7 @@ assertions:
 
 transitions:
   - name: "switch to main for merge"
-    command: "git -c user.name=test -c user.email=test@test add -A && git -c user.name=test -c user.email=test@test commit -q -m finalize && git checkout -q main"
+    command: "git checkout -q main"
     target: "../ready-to-merge"
     comparators:
       files:

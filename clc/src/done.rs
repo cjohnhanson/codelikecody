@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::process::Command;
 
 use camino::Utf8Path;
 
@@ -34,6 +35,9 @@ pub fn done(project_dir: &Path, main_branch: &str) -> Result<(), Error> {
     // Advance phase to done.
     phase::set(project_dir, "done", 1)?;
 
+    // Stage the phase change.
+    let mut paths_to_commit = vec![".clc/state"];
+
     // Close the tisket issue (branch name = issue ID).
     let utf8_dir = Utf8Path::new(
         project_dir
@@ -41,18 +45,50 @@ pub fn done(project_dir: &Path, main_branch: &str) -> Result<(), Error> {
             .ok_or_else(|| Error::NonBlocking("non-UTF8 project directory".into()))?,
     );
 
-    let Ok(repo) = tisket::Repo::open(utf8_dir) else {
-        return Ok(()); // No tisket repo — just the phase transition is enough.
-    };
-
-    let issue_id = &git_state.branch;
-    match repo.close_issue(issue_id, Some("done")) {
-        Ok(()) | Err(tisket::Error::IssueNotFound(_) | tisket::Error::IssueAlreadyClosed(_)) => {}
-        Err(e) => {
-            return Err(Error::NonBlocking(format!(
-                "failed to close tisket '{issue_id}': {e}"
-            )));
+    if let Ok(repo) = tisket::Repo::open(utf8_dir) {
+        let issue_id = &git_state.branch;
+        match repo.close_issue(issue_id, Some("done")) {
+            Ok(()) => {
+                paths_to_commit.push(".tisket/");
+            }
+            Err(tisket::Error::IssueNotFound(_) | tisket::Error::IssueAlreadyClosed(_)) => {}
+            Err(e) => {
+                return Err(Error::NonBlocking(format!(
+                    "failed to close tisket '{issue_id}': {e}"
+                )));
+            }
         }
+    }
+
+    // Commit the finalization changes.
+    let mut add_args = vec!["add"];
+    add_args.extend(paths_to_commit);
+
+    let output = Command::new("git")
+        .args(&add_args)
+        .current_dir(project_dir)
+        .output()
+        .map_err(|e| Error::NonBlocking(format!("failed to stage done changes: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(Error::NonBlocking(format!(
+            "failed to stage done changes: {stderr}"
+        )));
+    }
+
+    let msg = format!("clc: finalize {}", git_state.branch);
+    let output = Command::new("git")
+        .args(["commit", "-m", &msg])
+        .current_dir(project_dir)
+        .output()
+        .map_err(|e| Error::NonBlocking(format!("failed to commit done changes: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(Error::NonBlocking(format!(
+            "failed to commit done changes: {stderr}"
+        )));
     }
 
     Ok(())
