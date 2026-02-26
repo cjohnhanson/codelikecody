@@ -35,6 +35,14 @@ pub fn run() -> Result<i32, Error> {
     let git_state = git::detect(cwd, &cfg.main_branch);
     let current_phase = phase::load(cwd).unwrap_or(None);
 
+    // Phase bootstrap: auto-set tests-unwritten on unphased feature branches
+    // with a matching tisket. This catches worktrees created outside `clc pickup`.
+    let current_phase = if matches!(event, Event::SessionStart { .. }) {
+        maybe_bootstrap_phase(cwd, git_state.as_ref(), current_phase)
+    } else {
+        current_phase
+    };
+
     let response = match event {
         Event::SessionStart { .. } => {
             let prime = assemble_prime(cwd, git_state.as_ref(), current_phase);
@@ -260,6 +268,38 @@ fn post_tool_nudge(tool_name: &str, phase: Option<phase::Phase>) -> Option<Strin
             Some("phase: implementing — run tests before advancing".to_string())
         }
         _ => None,
+    }
+}
+
+/// If on a feature branch with no phase and a matching tisket, auto-set
+/// the initial phase to `tests-unwritten`. Returns the (possibly new) phase.
+fn maybe_bootstrap_phase(
+    cwd: &Path,
+    git: Option<&git::GitState>,
+    current_phase: Option<phase::Phase>,
+) -> Option<phase::Phase> {
+    // Already has a phase — nothing to do.
+    if current_phase.is_some() {
+        return current_phase;
+    }
+
+    let state = git?;
+
+    // Don't bootstrap on main.
+    if state.is_main {
+        return None;
+    }
+
+    // Check for a matching tisket.
+    let branch = Some(state.branch.as_str());
+    let tisket_state = tisket::detect(cwd, branch).ok()?;
+    tisket_state.current_issue.as_ref()?;
+
+    // Bootstrap: set phase to tests-unwritten.
+    if phase::set(cwd, "tests-unwritten", 1).is_ok() {
+        Some(phase::Phase::TestsUnwritten)
+    } else {
+        None
     }
 }
 

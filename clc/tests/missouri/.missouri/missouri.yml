@@ -1,2 +1,2 @@
 env:
-  PATH: "/Users/codyhanson/.nix-profile/bin:/usr/local/bin:/usr/bin:/bin"
+  PATH: "/Users/codyhanson/Projects/codelikecody/target/debug:/Users/codyhanson/.nix-profile/bin:/usr/local/bin:/usr/bin:/bin"

@@ -12,7 +12,7 @@ assertions:
     command: "git init -q -b main && git -c user.name=test -c user.email=test@test commit -q --allow-empty -m init && git checkout -q -B unrelated-branch && ! clc status 2>&1 | grep 'tisket_issue:'"
 
   - name: "prime includes tisket orientation"
-    command: "clc prime | grep -i 'issue tracking'"
+    command: "clc prime | grep -i 'issue tracker'"
 
   - name: "prime includes issue details when branch matches"
     command: "git init -q -b main && git -c user.name=test -c user.email=test@test commit -q --allow-empty -m init && git checkout -q -B test-feature && clc prime | grep 'Test feature'"
@@ -28,3 +28,15 @@ assertions:
 
   - name: "UserPromptSubmit reinforcement shows tisket"
     command: "echo '{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"test\",\"cwd\":\".\",\"prompt\":\"hello\"}' | clc hook | jq -r '.hookSpecificOutput.additionalContext' | grep -i 'tisket'"
+
+  - name: "SessionStart bootstraps phase on unphased feature branch with matching tisket"
+    command: "rm -f .clc/state && git init -q -b main && git -c user.name=test -c user.email=test@test commit -q --allow-empty -m init && git checkout -q -B test-feature && echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook > /dev/null && test -f .clc/state && grep 'tests-unwritten' .clc/state"
+
+  - name: "SessionStart does not bootstrap phase on main"
+    command: "rm -f .clc/state && rm -rf .git && git init -q -b main && echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook > /dev/null && ! test -f .clc/state"
+
+  - name: "SessionStart does not bootstrap phase when no matching tisket"
+    command: "rm -f .clc/state && rm -rf .git && git init -q -b main && git -c user.name=test -c user.email=test@test commit -q --allow-empty -m init && git checkout -q -B unrelated-branch && echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook > /dev/null && ! test -f .clc/state"
+
+  - name: "SessionStart does not overwrite existing phase"
+    command: "rm -f .clc/state && rm -rf .git && git init -q -b main && git -c user.name=test -c user.email=test@test commit -q --allow-empty -m init && git checkout -q -B test-feature && clc status set tests-unwritten && clc status set tests-written && echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook > /dev/null && grep 'tests-written' .clc/state"
