@@ -10,6 +10,35 @@ const READ_ONLY_TOOLS: &[&str] = &["Read", "Glob", "Grep"];
 /// Tools that target a file via `file_path` in `tool_input`.
 const FILE_TARGETING_TOOLS: &[&str] = &["Edit", "Write", "NotebookEdit"];
 
+/// Bash command prefixes allowed on trunk. Anything not matching is blocked.
+/// Conservative: false positives are better than writes on trunk.
+const BASH_ALLOWLIST: &[&str] = &[
+    "git ",
+    "git\n",
+    "cargo test",
+    "cargo clippy",
+    "cargo fmt --check",
+    "cargo check",
+    "cargo build",
+    "clc ",
+    "clc\n",
+    "missouri ",
+    "missouri\n",
+    "tisket issue list",
+    "tisket issue show",
+    "tisket issue path",
+    "tisket search",
+    "ls",
+    "pwd",
+    "which ",
+    "cat ",
+    "head ",
+    "tail ",
+    "wc ",
+    "find ",
+    "tree ",
+];
+
 /// Evaluate an event against the current git state and phase.
 pub fn evaluate(event: &Event, git: Option<&GitState>, phase: Option<Phase>) -> Response {
     match event {
@@ -55,8 +84,17 @@ fn check_tool_use(
         return Response::Passthrough;
     };
 
-    // Main branch guard: block file-writing tools only.
-    if state.is_main && FILE_TARGETING_TOOLS.contains(&tool_name) {
+    // Main branch guard: only read-only tools and allowlisted Bash pass through.
+    if state.is_main {
+        if READ_ONLY_TOOLS.contains(&tool_name) {
+            return Response::Passthrough;
+        }
+
+        if tool_name == "Bash" {
+            return check_bash_allowlist(tool_input);
+        }
+
+        // Everything else (Edit, Write, NotebookEdit, Task, etc.) blocked on trunk.
         return Response::Block {
             message: format!(
                 "Blocked: {tool_name} is not allowed on trunk.\n\
@@ -108,6 +146,37 @@ fn check_phase_restricted(tool_name: &str, tool_input: &Value, phase: Phase) -> 
     // Non-file-targeting write tools (Bash, Task, etc.) — allow in restricted phases.
     // Bash is hard to gate by path, and blocking it entirely would be too restrictive.
     Response::Passthrough
+}
+
+/// Check if a Bash command is on the trunk allowlist.
+fn check_bash_allowlist(tool_input: &Value) -> Response {
+    let command = tool_input
+        .get("command")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+
+    let trimmed = command.trim_start();
+
+    for prefix in BASH_ALLOWLIST {
+        if trimmed.starts_with(prefix) || trimmed == prefix.trim() {
+            return Response::Passthrough;
+        }
+    }
+
+    Response::Block {
+        message: format!(
+            "Blocked: Bash command is not allowed on trunk.\n\
+             Only read-only commands are permitted on the main branch.\n\
+             Command: {}\n\
+             Pick up a tisket to begin work: `clc pickup <issue-id>`",
+            truncate_command(trimmed)
+        ),
+    }
+}
+
+fn truncate_command(cmd: &str) -> &str {
+    let end = cmd.len().min(80);
+    &cmd[..end]
 }
 
 fn is_test_path(path: &str) -> bool {

@@ -86,11 +86,35 @@ assertions:
   - name: "guard blocks Write on main"
     command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Write\",\"tool_input\":{}}' | clc hook 2>/dev/null; test $? -eq 2"
 
-  - name: "guard blocks Bash on main"
-    command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}' | clc hook 2>/dev/null; test $? -eq 2"
+  - name: "guard blocks Bash with non-allowlisted command on main"
+    command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"echo hello > file.txt\"}}' | clc hook 2>/dev/null; test $? -eq 2"
+
+  - name: "guard allows Bash git on main"
+    command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git status\"}}' | clc hook"
+
+  - name: "guard allows Bash ls on main"
+    command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls -la\"}}' | clc hook"
+
+  - name: "guard allows Bash cargo test on main"
+    command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cargo test --workspace\"}}' | clc hook"
+
+  - name: "guard allows Bash clc on main"
+    command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"clc status\"}}' | clc hook"
+
+  - name: "guard allows Bash missouri on main"
+    command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"missouri run\"}}' | clc hook"
+
+  - name: "guard blocks Bash tisket issue create on main"
+    command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"tisket issue create -t foo\"}}' | clc hook 2>/dev/null; test $? -eq 2"
+
+  - name: "guard allows Bash tisket issue list on main"
+    command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"tisket issue list\"}}' | clc hook"
 
   - name: "guard blocks Task on main"
     command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Task\",\"tool_input\":{}}' | clc hook 2>/dev/null; test $? -eq 2"
+
+  - name: "guard Bash block message on main mentions pickup"
+    command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"npm install\"}}' | clc hook 2>&1 >/dev/null | grep -i 'pickup'"
 
   - name: "guard block message mentions pickup"
     command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Edit\",\"tool_input\":{}}' | clc hook 2>&1 >/dev/null | grep -i 'pickup'"
