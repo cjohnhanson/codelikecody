@@ -18,7 +18,7 @@ pub struct TisketState {
 pub struct CurrentIssue {
     pub id: String,
     pub title: String,
-    pub status: String,
+    pub status: tisket::issue::Status,
     pub body: String,
     pub scratch: String,
 }

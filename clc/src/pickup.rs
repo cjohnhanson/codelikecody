@@ -32,9 +32,9 @@ pub fn pickup(project_dir: &Path, id: &str, main_branch: &str) -> Result<(), Err
         .find_issue(id)
         .map_err(|e| Error::NonBlocking(format!("tisket issue '{id}' not found: {e}")))?;
 
-    if issue.frontmatter.status != "todo" {
+    if !issue.frontmatter.status.is_pickable() {
         return Err(Error::NonBlocking(format!(
-            "tisket '{id}' is in '{}' status, must be 'todo' to pick up",
+            "tisket '{id}' is in '{}' status, not pickable",
             issue.frontmatter.status
         )));
     }
