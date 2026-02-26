@@ -10,6 +10,7 @@ mod guard;
 mod home;
 mod hook;
 mod init;
+mod merge;
 mod missouri;
 mod phase;
 mod pickup;
@@ -48,6 +49,7 @@ fn main() {
         } => cmd_status_set(phase),
         cli::Command::Admin => cmd_admin(),
         cli::Command::Home => cmd_home(),
+        cli::Command::Merge { ref id } => cmd_merge(id),
         cli::Command::Pickup { ref id } => cmd_pickup(id),
         cli::Command::Done => cmd_done(),
         cli::Command::Prime => cmd_prime(),
@@ -144,6 +146,14 @@ fn cmd_config(action: &cli::ConfigAction) -> Result<(), Error> {
     match action {
         cli::ConfigAction::Show => config::show(&project_dir),
     }
+}
+
+fn cmd_merge(id: &str) -> Result<(), Error> {
+    let project_dir = std::env::current_dir()?;
+    let cfg = config::load(&project_dir).unwrap_or_default();
+    merge::merge(&project_dir, id, &cfg.main_branch)?;
+    eprintln!("merged '{id}' into trunk");
+    Ok(())
 }
 
 fn cmd_home() -> Result<(), Error> {

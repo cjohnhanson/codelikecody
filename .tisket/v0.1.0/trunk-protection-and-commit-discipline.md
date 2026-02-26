@@ -1,12 +1,12 @@
 ---
 title: "Trunk protection and commit discipline"
-status: discovery
+status: in_progress
 priority:
 assignee:
 labels: [architecture, feature]
 depends_on: []
-created: "2026-02-25T00:00:00Z"
-updated: "2026-02-25T00:00:00Z"
+created: 2026-02-25T00:00:00Z
+updated: "2026-02-26T13:24:35Z"
 ---
 
 Nothing should ever change directly on trunk (main/master). All work — features,

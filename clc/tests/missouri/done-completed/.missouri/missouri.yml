@@ -10,3 +10,22 @@ assertions:
 
   - name: "Stop hook allowed in done"
     command: "echo '{\"hook_event_name\":\"Stop\",\"session_id\":\"test\",\"cwd\":\".\"}' | clc hook"
+
+transitions:
+  - name: "switch to main for merge"
+    command: "git -c user.name=test -c user.email=test@test add -A && git -c user.name=test -c user.email=test@test commit -q -m finalize && git checkout -q main"
+    target: "../ready-to-merge"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true
+        - path: "tests/"
+          ignore: true
