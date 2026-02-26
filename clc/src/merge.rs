@@ -26,26 +26,28 @@ pub fn merge(project_dir: &Path, id: &str, main_branch: &str) -> Result<(), Erro
         .map_err(|_| Error::NonBlocking(format!("branch '{id}' not found")))?;
 
     // Phase must be done on the feature branch.
-    // If a worktree exists, read from its filesystem. Otherwise, read from the branch's tree.
+    // If a worktree exists, read phase from its filesystem.
+    // Otherwise, check for the finalization commit on the branch.
+    // (.clc/state is never tracked by git — it's filesystem-only infrastructure state.)
     let worktree_dir = project_dir.join(".worktrees").join(id);
-    let branch_phase = if worktree_dir.is_dir() {
-        crate::phase::load(&worktree_dir)?
-    } else {
-        load_phase_from_tree(&branch_ref)?
-    };
-
-    match branch_phase {
-        Some(Phase::Done) => {}
-        Some(other) => {
-            return Err(Error::NonBlocking(format!(
-                "branch '{id}' phase is '{other}', must be 'done' to merge"
-            )));
+    if worktree_dir.is_dir() {
+        match crate::phase::load(&worktree_dir)? {
+            Some(Phase::Done) => {}
+            Some(other) => {
+                return Err(Error::NonBlocking(format!(
+                    "branch '{id}' phase is '{other}', must be 'done' to merge"
+                )));
+            }
+            None => {
+                return Err(Error::NonBlocking(format!(
+                    "branch '{id}' has no phase set, must be 'done' to merge"
+                )));
+            }
         }
-        None => {
-            return Err(Error::NonBlocking(format!(
-                "branch '{id}' has no phase set, must be 'done' to merge"
-            )));
-        }
+    } else if !has_finalization_commit(&branch_ref, id)? {
+        return Err(Error::NonBlocking(format!(
+            "branch '{id}' has not been finalized — run 'clc done' first"
+        )));
     }
 
     // Tisket must be closed.
@@ -72,36 +74,52 @@ pub fn merge(project_dir: &Path, id: &str, main_branch: &str) -> Result<(), Erro
     Ok(())
 }
 
-/// Read the phase from a branch's committed `.clc/state` file via gix tree traversal.
-fn load_phase_from_tree(branch_ref: &gix::Reference<'_>) -> Result<Option<Phase>, Error> {
+/// Check if the branch has a finalization commit (created by `clc done`).
+/// Walks the branch's commit history looking for a "clc: finalize <id>" message.
+fn has_finalization_commit(branch_ref: &gix::Reference<'_>, id: &str) -> Result<bool, Error> {
+    let expected_prefix = format!("clc: finalize {id}");
     let mut ref_clone = branch_ref.clone();
-    let tree = ref_clone
-        .peel_to_tree()
-        .map_err(|e| Error::NonBlocking(format!("failed to peel branch to tree: {e}")))?;
+    let commit = ref_clone
+        .peel_to_commit()
+        .map_err(|e| Error::NonBlocking(format!("failed to peel branch to commit: {e}")))?;
 
-    let Ok(Some(entry)) = tree.lookup_entry_by_path(".clc/state") else {
-        return Ok(None);
-    };
-
-    let object = entry
-        .object()
-        .map_err(|e| Error::NonBlocking(format!("failed to read .clc/state object: {e}")))?;
-
-    let blob = object
-        .try_into_blob()
-        .map_err(|_| Error::NonBlocking(".clc/state is not a file".into()))?;
-
-    let contents = std::str::from_utf8(&blob.data)
-        .map_err(|_| Error::NonBlocking(".clc/state is not valid UTF-8".into()))?;
-
-    let phase_str = contents
-        .lines()
-        .find_map(|line| line.strip_prefix("phase:").map(str::trim));
-
-    match phase_str {
-        Some(s) => Ok(Some(s.parse()?)),
-        None => Ok(None),
+    // Check the tip commit first (most common case).
+    let msg = commit.message_raw_sloppy();
+    let msg_str = std::str::from_utf8(msg.as_ref()).unwrap_or("");
+    if msg_str.starts_with(&expected_prefix) {
+        return Ok(true);
     }
+
+    // Walk up to a few parents in case there were commits after finalization.
+    let mut current = commit.id().detach();
+    for _ in 0..10 {
+        let obj = branch_ref
+            .repo
+            .find_object(current)
+            .map_err(|e| Error::NonBlocking(format!("failed to find commit: {e}")))?
+            .into_commit();
+
+        let parent_ids: Vec<gix::ObjectId> = obj.parent_ids().map(gix::Id::detach).collect();
+        let Some(parent_id) = parent_ids.first() else {
+            break;
+        };
+
+        let parent = branch_ref
+            .repo
+            .find_object(*parent_id)
+            .map_err(|e| Error::NonBlocking(format!("failed to find parent commit: {e}")))?
+            .into_commit();
+
+        let parent_msg = parent.message_raw_sloppy();
+        let parent_msg_str = std::str::from_utf8(parent_msg.as_ref()).unwrap_or("");
+        if parent_msg_str.starts_with(&expected_prefix) {
+            return Ok(true);
+        }
+
+        current = *parent_id;
+    }
+
+    Ok(false)
 }
 
 /// Check that the tisket for `id` is closed. Uses worktree filesystem if available,

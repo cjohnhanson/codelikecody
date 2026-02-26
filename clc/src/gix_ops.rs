@@ -47,7 +47,8 @@ pub fn commit_paths(project_dir: &Path, message: &str, paths: &[&str]) -> Result
         .write()
         .map_err(|e| Error::NonBlocking(format!("failed to write tree: {e}")))?;
 
-    repo.commit("HEAD", message, tree_id, [head_commit.id])
+    let _new_commit = repo
+        .commit("HEAD", message, tree_id, [head_commit.id])
         .map_err(|e| Error::NonBlocking(format!("failed to create commit: {e}")))?;
 
     // Update the index to match the new tree so the working tree appears clean.

@@ -31,13 +31,10 @@ pub fn done(project_dir: &Path, main_branch: &str) -> Result<(), Error> {
         )));
     }
 
-    // Advance phase to done.
+    // Advance phase to done (filesystem only — .clc/state is never tracked by git).
     phase::set(project_dir, "done", 1)?;
 
-    // Track which paths to commit.
-    let mut paths_to_commit: Vec<&str> = vec![".clc/state"];
-
-    // Close the tisket issue (branch name = issue ID).
+    // Close the tisket issue (branch name = issue ID) and commit the change.
     let utf8_dir = Utf8Path::new(
         project_dir
             .to_str()
@@ -48,7 +45,8 @@ pub fn done(project_dir: &Path, main_branch: &str) -> Result<(), Error> {
         let issue_id = &git_state.branch;
         match repo.close_issue(issue_id, Some("done")) {
             Ok(()) => {
-                paths_to_commit.push(".tisket/");
+                let msg = format!("clc: finalize {}", git_state.branch);
+                crate::gix_ops::commit_paths(project_dir, &msg, &[".tisket/"])?;
             }
             Err(tisket::Error::IssueNotFound(_) | tisket::Error::IssueAlreadyClosed(_)) => {}
             Err(e) => {
@@ -58,10 +56,6 @@ pub fn done(project_dir: &Path, main_branch: &str) -> Result<(), Error> {
             }
         }
     }
-
-    // Commit the finalization changes via gix.
-    let msg = format!("clc: finalize {}", git_state.branch);
-    crate::gix_ops::commit_paths(project_dir, &msg, &paths_to_commit)?;
 
     Ok(())
 }
