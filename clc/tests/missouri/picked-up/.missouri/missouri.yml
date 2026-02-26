@@ -22,3 +22,12 @@ assertions:
 
   - name: "still on main after pickup"
     command: "test $(git rev-parse --abbrev-ref HEAD) = main"
+
+  - name: "clc home from main prints working directory"
+    command: "test \"$(clc home)\" = \"$(pwd -P)\""
+
+  - name: "clc home from worktree prints main repo path"
+    command: "MAIN=$(pwd -P) && cd .worktrees/test-feature && test \"$(clc home)\" = \"$MAIN\""
+
+  - name: "clc home from worktree subdirectory resolves to main repo"
+    command: "MAIN=$(pwd -P) && mkdir -p .worktrees/test-feature/src && cd .worktrees/test-feature/src && test \"$(clc home)\" = \"$MAIN\""

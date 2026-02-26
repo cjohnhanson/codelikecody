@@ -35,6 +35,8 @@ pub enum Command {
     },
     /// Create or switch to the admin worktree for non-feature work.
     Admin,
+    /// Print the main repository root path (for navigating back to trunk).
+    Home,
     /// Finalize work: advance phase to done, close tisket.
     Done,
     /// Print the assembled prime text (agent orientation + directives).

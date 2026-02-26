@@ -7,6 +7,7 @@ mod error;
 mod event;
 mod git;
 mod guard;
+mod home;
 mod hook;
 mod init;
 mod missouri;
@@ -46,6 +47,7 @@ fn main() {
             action: Some(cli::StatusAction::Set { ref phase }),
         } => cmd_status_set(phase),
         cli::Command::Admin => cmd_admin(),
+        cli::Command::Home => cmd_home(),
         cli::Command::Pickup { ref id } => cmd_pickup(id),
         cli::Command::Done => cmd_done(),
         cli::Command::Prime => cmd_prime(),
@@ -142,6 +144,13 @@ fn cmd_config(action: &cli::ConfigAction) -> Result<(), Error> {
     match action {
         cli::ConfigAction::Show => config::show(&project_dir),
     }
+}
+
+fn cmd_home() -> Result<(), Error> {
+    let cwd = std::env::current_dir()?;
+    let path = home::home(&cwd)?;
+    println!("{}", path.display());
+    Ok(())
 }
 
 fn cmd_admin() -> Result<(), Error> {

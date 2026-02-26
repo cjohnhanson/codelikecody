@@ -71,6 +71,12 @@ assertions:
   - name: "status reports not a git repo gracefully"
     command: "TMPD=$(mktemp -d) && cd \"$TMPD\" && clc status 2>&1 | grep -i 'no git'; RET=$?; rm -rf \"$TMPD\"; exit $RET"
 
+  - name: "clc home fails outside a git repo"
+    command: "TMPD=$(mktemp -d) && cd \"$TMPD\" && clc home 2>&1 | grep -qi 'git'; RET=$?; rm -rf \"$TMPD\"; exit $RET"
+
+  - name: "clc home prints repo root from git repo"
+    command: "git init -q -b main && test \"$(clc home)\" = \"$(pwd -P)\""
+
   - name: "guard allows Read on main"
     command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\"/tmp/foo\"}}' | clc hook"
 
