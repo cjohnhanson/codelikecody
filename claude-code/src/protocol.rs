@@ -111,7 +111,7 @@ pub struct PermissionDenialMsg {
     pub message: String,
 }
 
-// --- Input types (coordinator → worker stdin) ---
+// --- Input types (caller → Claude Code stdin) ---
 
 /// Input message for sending follow-up prompts via stdin.
 #[derive(Debug, Clone, Serialize)]

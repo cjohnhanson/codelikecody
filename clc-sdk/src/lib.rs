@@ -1,4 +1,5 @@
-pub mod stream;
+pub use claude_code::protocol;
+
 pub mod workspace;
 
 /// Returns `true` when running inside a coding agent (Claude Code sets

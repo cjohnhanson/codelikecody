@@ -18,6 +18,7 @@ missing_panics_doc = "allow"
 [dependencies]
 camino = "1"
 clap = { version = "4", features = ["derive"] }
+claude-code = { path = "../claude-code" }
 clc-sdk = { path = "../clc-sdk" }
 gix = { version = "0.80.0", default-features = false, features = [
     "index",

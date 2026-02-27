@@ -10,7 +10,7 @@ use std::path::Path;
 
 use camino::Utf8Path;
 
-use clc_sdk::stream::OutputMessage;
+use claude_code::protocol::OutputMessage;
 use clc_sdk::workspace::{Workspace, WorkspaceConfig, WorkspaceStatus};
 
 use crate::error::Error;
@@ -143,7 +143,7 @@ fn monitor_worker(ws: &mut WorktreeWorkspace) -> Result<WorkerOutcome, Error> {
                 OutputMessage::Assistant(assistant) => {
                     // Log tool uses for observability.
                     for block in &assistant.message.content {
-                        if let clc_sdk::stream::ContentBlock::ToolUse { name, .. } = block {
+                        if let claude_code::protocol::ContentBlock::ToolUse { name, .. } = block {
                             eprintln!("  tool: {name}");
                         }
                     }

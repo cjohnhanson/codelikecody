@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::stream::OutputMessage;
+use crate::protocol::OutputMessage;
 
 /// Status of a workspace.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
