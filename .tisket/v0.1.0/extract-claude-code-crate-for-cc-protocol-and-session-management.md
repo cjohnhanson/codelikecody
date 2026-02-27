@@ -1,12 +1,12 @@
 ---
 title: "Extract claude-code crate for CC protocol and session management"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [architecture, refactor]
 depends_on: []
-created: "2026-02-27T13:07:41Z"
-updated: "2026-02-27T13:07:41Z"
+created: 2026-02-27T13:07:41Z
+updated: "2026-02-27T13:08:12Z"
 ---
 
 Move the stream-json NDJSON types from clc-sdk/src/stream.rs into a new
