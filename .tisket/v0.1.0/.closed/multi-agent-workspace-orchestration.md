@@ -1,12 +1,12 @@
 ---
 title: "Multi-agent workspace orchestration"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: [architecture, feature]
 depends_on: [trunk-protection-and-commit-discipline]
 created: 2026-02-25T00:00:00Z
-updated: "2026-02-27T04:47:56Z"
+updated: "2026-02-27T05:23:12Z"
 ---
 
 clc already orchestrates single agents via hooks, phases, and tiskets. This
