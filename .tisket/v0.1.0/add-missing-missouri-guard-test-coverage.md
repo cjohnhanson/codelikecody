@@ -1,12 +1,12 @@
 ---
 title: "Add missing missouri guard test coverage"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [testing]
 depends_on: []
-created: "2026-02-27T15:45:57Z"
-updated: "2026-02-27T15:45:57Z"
+created: 2026-02-27T15:45:57Z
+updated: "2026-02-27T15:46:35Z"
 ---
 
 The guard system in `clc/src/guard.rs` has several untested code paths in the
