@@ -1,3 +1,6 @@
+pub mod stream;
+pub mod workspace;
+
 /// Returns `true` when running inside a coding agent (Claude Code sets
 /// `CLAUDECODE=1` in the shell environment).
 #[must_use]

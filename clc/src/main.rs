@@ -2,6 +2,7 @@ mod adapter;
 mod admin;
 mod cli;
 mod config;
+mod coordinate;
 mod done;
 mod error;
 mod event;
@@ -16,6 +17,7 @@ mod missouri;
 mod phase;
 mod pickup;
 mod tisket;
+mod workspace;
 
 use std::path::Path;
 
@@ -49,6 +51,10 @@ fn main() {
             action: Some(cli::StatusAction::Set { ref phase }),
         } => cmd_status_set(phase),
         cli::Command::Admin => cmd_admin(),
+        cli::Command::Coordinate {
+            ref budget,
+            ref model,
+        } => cmd_coordinate(*budget, model),
         cli::Command::Home => cmd_home(),
         cli::Command::Merge { ref id } => cmd_merge(id),
         cli::Command::Pickup { ref id } => cmd_pickup(id),
@@ -140,6 +146,12 @@ fn cmd_status_set(target: &str) -> Result<(), Error> {
     let cwd = std::env::current_dir()?;
     let cfg = config::load(&cwd).unwrap_or_default();
     phase::set(&cwd, target, cfg.required_attempts)
+}
+
+fn cmd_coordinate(budget: f64, model: &str) -> Result<(), Error> {
+    let project_dir = std::env::current_dir()?;
+    let cfg = config::load(&project_dir).unwrap_or_default();
+    coordinate::coordinate(&project_dir, &cfg.main_branch, budget, model)
 }
 
 fn cmd_config(action: &cli::ConfigAction) -> Result<(), Error> {

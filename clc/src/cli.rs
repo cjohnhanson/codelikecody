@@ -56,6 +56,15 @@ pub enum Command {
         #[command(subcommand)]
         command: ::tisket::cli::Command,
     },
+    /// Run the coordinator: dispatch pickable tiskets to worker agents.
+    Coordinate {
+        /// Maximum budget per worker in USD.
+        #[arg(long, default_value = "5.0")]
+        budget: f64,
+        /// Model to use for workers.
+        #[arg(long, default_value = "opus")]
+        model: String,
+    },
     /// Run missouri commands.
     Missouri {
         #[command(subcommand)]

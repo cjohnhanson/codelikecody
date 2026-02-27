@@ -55,13 +55,19 @@ pub fn pickup(project_dir: &Path, id: &str, main_branch: &str) -> Result<(), Err
         }
     }
 
-    // Create git worktree via gix.
-    let worktree_dir = project_dir.join(".worktrees").join(id);
-    crate::gix_ops::create_worktree(project_dir, &worktree_dir, id)?;
-
-    // Set tisket status to in_progress.
+    // Set tisket status to in_progress and commit on trunk.
+    // This must happen BEFORE creating the worktree so the branch forks from
+    // a HEAD that includes the status change. Otherwise ff-merge would fail
+    // (trunk dirty) or the worktree would have stale tisket state.
     repo.edit_issue(id, Some("in_progress"))
         .map_err(|e| Error::NonBlocking(format!("failed to update tisket status: {e}")))?;
+
+    let msg = format!("clc: pickup {id}");
+    crate::gix_ops::commit_paths(project_dir, &msg, &[".tisket/"])?;
+
+    // Create git worktree from the new HEAD (which includes the status change).
+    let worktree_dir = project_dir.join(".worktrees").join(id);
+    crate::gix_ops::create_worktree(project_dir, &worktree_dir, id)?;
 
     // Initialize clc in the worktree.
     crate::init::init(&worktree_dir, false, true)?;
