@@ -65,7 +65,8 @@ impl WorktreeWorkspace {
             cmd.arg("--append-system-prompt").arg(sys);
         }
 
-        cmd.arg("--prompt").arg(&self.config.initial_prompt);
+        // Prompt is a positional argument, not --prompt.
+        cmd.arg(&self.config.initial_prompt);
 
         cmd.stdin(Stdio::piped());
         cmd.stdout(Stdio::piped());

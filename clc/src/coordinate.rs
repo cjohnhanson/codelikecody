@@ -27,6 +27,7 @@ pub fn coordinate(
     main_branch: &str,
     budget: f64,
     model: &str,
+    tisket_filter: Option<&str>,
 ) -> Result<(), Error> {
     // Must be on trunk.
     let git_state = git::detect(project_dir, main_branch)
@@ -39,8 +40,20 @@ pub fn coordinate(
         )));
     }
 
-    // Find pickable tiskets.
-    let pickable = find_pickable_tiskets(project_dir)?;
+    // Find pickable tiskets, optionally filtered to a single one.
+    let pickable = if let Some(id) = tisket_filter {
+        // Verify the requested tisket exists and is pickable.
+        let all = find_pickable_tiskets(project_dir)?;
+        if !all.iter().any(|t| t == id) {
+            return Err(Error::NonBlocking(format!(
+                "tisket '{id}' is not pickable (not found or dependencies unresolved)"
+            )));
+        }
+        vec![id.to_string()]
+    } else {
+        find_pickable_tiskets(project_dir)?
+    };
+
     if pickable.is_empty() {
         eprintln!("no pickable tiskets found");
         return Ok(());

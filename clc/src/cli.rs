@@ -64,6 +64,9 @@ pub enum Command {
         /// Model to use for workers.
         #[arg(long, default_value = "opus")]
         model: String,
+        /// Only process this specific tisket (instead of all pickable ones).
+        #[arg(long)]
+        tisket: Option<String>,
     },
     /// Run missouri commands.
     Missouri {

@@ -54,7 +54,8 @@ fn main() {
         cli::Command::Coordinate {
             ref budget,
             ref model,
-        } => cmd_coordinate(*budget, model),
+            ref tisket,
+        } => cmd_coordinate(*budget, model, tisket.as_deref()),
         cli::Command::Home => cmd_home(),
         cli::Command::Merge { ref id } => cmd_merge(id),
         cli::Command::Pickup { ref id } => cmd_pickup(id),
@@ -148,10 +149,10 @@ fn cmd_status_set(target: &str) -> Result<(), Error> {
     phase::set(&cwd, target, cfg.required_attempts)
 }
 
-fn cmd_coordinate(budget: f64, model: &str) -> Result<(), Error> {
+fn cmd_coordinate(budget: f64, model: &str, tisket: Option<&str>) -> Result<(), Error> {
     let project_dir = std::env::current_dir()?;
     let cfg = config::load(&project_dir).unwrap_or_default();
-    coordinate::coordinate(&project_dir, &cfg.main_branch, budget, model)
+    coordinate::coordinate(&project_dir, &cfg.main_branch, budget, model, tisket)
 }
 
 fn cmd_config(action: &cli::ConfigAction) -> Result<(), Error> {
