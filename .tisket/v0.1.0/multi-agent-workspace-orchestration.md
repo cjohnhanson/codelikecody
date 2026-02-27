@@ -1,6 +1,6 @@
 ---
 title: "Multi-agent workspace orchestration"
-status: discovery
+status: todo
 priority:
 assignee:
 labels: [architecture, feature]
