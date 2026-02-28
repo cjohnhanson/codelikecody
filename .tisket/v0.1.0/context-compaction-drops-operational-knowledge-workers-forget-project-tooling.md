@@ -1,12 +1,12 @@
 ---
 title: "Prime text does not include operational instructions — workers don't know how to run tools"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [clc]
 depends_on: []
-created: "2026-02-28T19:51:08Z"
-updated: "2026-02-28T20:25:00Z"
+created: 2026-02-28T19:51:08Z
+updated: "2026-02-28T20:06:27Z"
 ---
 
 ## Problem
