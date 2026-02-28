@@ -58,7 +58,6 @@ impl Workspace for WorktreeWorkspace {
             model: self.config.model.clone(),
             max_budget_usd: self.config.max_budget_usd,
             system_prompt: self.config.system_prompt.clone(),
-            verbose: true,
             dangerously_skip_permissions: true,
         };
 

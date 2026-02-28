@@ -25,8 +25,6 @@ pub struct SessionConfig {
     pub max_budget_usd: Option<f64>,
     /// System prompt appended via `--append-system-prompt`.
     pub system_prompt: Option<String>,
-    /// Enable `--verbose` output.
-    pub verbose: bool,
     /// Run with `--dangerously-skip-permissions`.
     pub dangerously_skip_permissions: bool,
 }
@@ -61,13 +59,17 @@ pub struct Session {
 
 impl Session {
     /// Spawn a new Claude Code process and start reading its output.
+    ///
+    /// The initial prompt is sent as a stream-json user message on stdin
+    /// immediately after spawning. This is required because Claude Code
+    /// with `--input-format stream-json` ignores positional prompt arguments.
     pub fn start(config: &SessionConfig) -> Result<Self, SessionError> {
         let mut cmd = Self::build_command(config);
         let mut child = cmd
             .spawn()
             .map_err(|e| SessionError::Spawn(format!("failed to spawn claude: {e}")))?;
 
-        let stdin = child
+        let mut stdin = child
             .stdin
             .take()
             .ok_or_else(|| SessionError::Spawn("no stdin handle".into()))?;
@@ -75,6 +77,16 @@ impl Session {
             .stdout
             .take()
             .ok_or_else(|| SessionError::Spawn("no stdout handle".into()))?;
+
+        // Send the initial prompt as a stream-json message.
+        let initial = InputMessage::user(&config.initial_prompt);
+        let json = serde_json::to_string(&initial)
+            .map_err(|e| SessionError::Spawn(format!("serialize initial prompt: {e}")))?;
+        writeln!(stdin, "{json}")
+            .map_err(|e| SessionError::Spawn(format!("write initial prompt: {e}")))?;
+        stdin
+            .flush()
+            .map_err(|e| SessionError::Spawn(format!("flush initial prompt: {e}")))?;
 
         let (tx, rx) = mpsc::channel();
 
@@ -85,10 +97,16 @@ impl Session {
                 if line.trim().is_empty() {
                     continue;
                 }
-                if let Ok(msg) = serde_json::from_str::<OutputMessage>(&line)
-                    && tx.send(msg).is_err()
-                {
-                    break;
+                match serde_json::from_str::<OutputMessage>(&line) {
+                    Ok(msg) => {
+                        if tx.send(msg).is_err() {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("[session reader] unparseable: {e}");
+                        eprintln!("[session reader]   raw: {line}");
+                    }
                 }
             }
         });
@@ -154,12 +172,9 @@ impl Session {
         cmd.current_dir(&config.working_dir);
 
         cmd.arg("--print");
+        cmd.arg("--verbose");
         cmd.arg("--input-format").arg("stream-json");
         cmd.arg("--output-format").arg("stream-json");
-
-        if config.verbose {
-            cmd.arg("--verbose");
-        }
         if config.dangerously_skip_permissions {
             cmd.arg("--dangerously-skip-permissions");
         }
@@ -172,9 +187,6 @@ impl Session {
         if let Some(ref sys) = config.system_prompt {
             cmd.arg("--append-system-prompt").arg(sys);
         }
-
-        // Prompt is a positional argument.
-        cmd.arg(&config.initial_prompt);
 
         cmd.stdin(Stdio::piped());
         cmd.stdout(Stdio::piped());
