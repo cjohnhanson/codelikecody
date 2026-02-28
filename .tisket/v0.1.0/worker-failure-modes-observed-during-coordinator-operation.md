@@ -51,3 +51,15 @@ captures what happened, root cause if known, and whether it's been addressed.
 - **Root cause**: No reaping/cleanup of completed workers.
 - **Fix**: Separate tisket exists (worker-cleanup-prune-dead-workers)
 - **Status**: Open — tisket exists
+
+### 5. Worker stops at green saying "ready for clc done whenever you want"
+- **Worker**: configurable-per-transition-phase-gates (resumed session)
+- **What happened**: Worker reached green phase (12/12 missouri, all committed),
+  then said "Ready for `clc done` whenever you want to finalize" and stopped.
+  Treated `clc done` as something requiring human approval rather than running it.
+- **Root cause**: Same as #2 — Stop hook isn't enforcing "must reach done phase."
+  The system prompt says "Do not stop before reaching the 'done' phase" but the
+  model treats it as advisory. The Stop hook should mechanically reject the stop.
+- **Fix**: Need to investigate why Stop hook isn't firing or isn't blocking.
+  The hook should check phase != done and return a blocking error.
+- **Status**: Open — reproduced twice now, same pattern
