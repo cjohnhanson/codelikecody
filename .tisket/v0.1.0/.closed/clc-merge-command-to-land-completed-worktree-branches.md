@@ -1,12 +1,12 @@
 ---
 title: "clc merge command to land completed worktree branches"
-status: backlog
+status: done
 priority: 2
 assignee:
 labels: [clc]
 depends_on: []
-created: "2026-02-26T04:19:51Z"
-updated: "2026-02-26T04:19:51Z"
+created: 2026-02-26T04:19:51Z
+updated: "2026-02-28T05:58:50Z"
 ---
 
 From trunk, `clc merge <id>` lands a completed worktree branch with guards.

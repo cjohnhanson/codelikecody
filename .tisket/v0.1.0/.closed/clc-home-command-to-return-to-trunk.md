@@ -1,12 +1,12 @@
 ---
 title: "clc home command to return to trunk"
-status: backlog
+status: done
 priority: 2
 assignee:
 labels: [clc]
 depends_on: []
-created: "2026-02-26T04:19:51Z"
-updated: "2026-02-26T04:19:51Z"
+created: 2026-02-26T04:19:51Z
+updated: "2026-02-28T05:58:50Z"
 ---
 
 After `clc done`, there's no command to get back to trunk. The agent is stuck

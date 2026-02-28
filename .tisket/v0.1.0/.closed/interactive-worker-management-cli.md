@@ -6,7 +6,7 @@ assignee:
 labels: [clc]
 depends_on: []
 created: 2026-02-28T04:40:16Z
-updated: "2026-02-28T05:39:00Z"
+updated: "2026-02-28T05:58:50Z"
 ---
 
 Replace the batch coordinator model with interactive worker management commands

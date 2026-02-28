@@ -1,12 +1,12 @@
 ---
 title: "clc admin command for admin worktree management"
-status: backlog
+status: done
 priority: 2
 assignee:
 labels: [clc]
 depends_on: []
-created: "2026-02-26T04:15:52Z"
-updated: "2026-02-26T04:15:52Z"
+created: 2026-02-26T04:15:52Z
+updated: "2026-02-28T05:58:50Z"
 ---
 
 Tisket management, config changes, docs — admin work that doesn't belong on
