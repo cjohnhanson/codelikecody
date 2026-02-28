@@ -1,12 +1,12 @@
 ---
 title: "Fix dbt illinois fixture assertions"
-status: backlog
+status: in_progress
 priority: 3
 assignee:
 labels: [missouri, tests]
 depends_on: []
-created: "2026-02-26T03:57:41Z"
-updated: "2026-02-26T03:57:41Z"
+created: 2026-02-26T03:57:41Z
+updated: "2026-02-28T06:01:30Z"
 ---
 
 The `illinois_dbt_flox_passes` test is marked `#[ignore]` with the comment
