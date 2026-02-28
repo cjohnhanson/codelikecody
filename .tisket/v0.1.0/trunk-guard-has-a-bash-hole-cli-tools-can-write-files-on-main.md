@@ -1,12 +1,12 @@
 ---
 title: "Trunk guard has a Bash hole — CLI tools can write files on main"
-status: backlog
+status: in_progress
 priority: 1
 assignee:
 labels: [clc, guard]
 depends_on: []
-created: "2026-02-26T04:26:19Z"
-updated: "2026-02-26T04:26:19Z"
+created: 2026-02-26T04:26:19Z
+updated: "2026-02-28T06:01:26Z"
 ---
 
 The trunk guard blocks Edit/Write/NotebookEdit on main but allows Bash
