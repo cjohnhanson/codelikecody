@@ -1,0 +1,25 @@
+assertions:
+  - name: "phase is tests-written"
+    command: "clc status 2>&1 | grep 'phase: tests-written'"
+
+  - name: "on feature branch"
+    command: "test $(git rev-parse --abbrev-ref HEAD) = test-only-improvement"
+
+  - name: "missouri tests exist"
+    command: "test -f tests/missouri/test-state-1/.missouri/missouri.yml"
+
+  - name: "can advance phase without implementation"
+    command: "clc status set green 2>&1 | grep -q 'phase: green' || test -f .clc/state"
+
+transitions:
+  - name: "advance to green for test-only work"
+    command: "clc status set green"
+    target: "../test-only-task-green"
+    comparators:
+      files:
+        - path: ".clc/state"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true

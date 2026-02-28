@@ -1,0 +1,28 @@
+assertions:
+  - name: "phase is tests-unwritten"
+    command: "clc status 2>&1 | grep 'phase: tests-unwritten'"
+
+  - name: "on feature branch"
+    command: "test $(git rev-parse --abbrev-ref HEAD) = test-only-improvement"
+
+  - name: "tisket is in_progress"
+    command: "grep -q 'status: in_progress' .tisket/v0.1.0/test-improvement.md"
+
+  - name: "no missouri tests exist yet"
+    command: "test ! -d tests/missouri/test-state-1"
+
+  - name: "guard allows test edits"
+    command: "touch tests/test.md && git add tests/test.md && git commit -m 'test: add test file' && rm tests/test.md && git reset HEAD~1"
+
+transitions:
+  - name: "add first missouri test state"
+    command: "mkdir -p tests/missouri/test-state-1/.missouri && touch tests/missouri/test-state-1/.missouri/missouri.yml && touch tests/missouri/test-state-1/expected-file.txt && git add tests/missouri/ && git commit -m 'test: add first missouri test state'"
+    target: "../test-only-task-tests-written"
+    comparators:
+      files:
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true

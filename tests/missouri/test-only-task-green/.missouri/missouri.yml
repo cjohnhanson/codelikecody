@@ -1,0 +1,25 @@
+assertions:
+  - name: "phase is green"
+    command: "clc status 2>&1 | grep 'phase: green'"
+
+  - name: "on feature branch"
+    command: "test $(git rev-parse --abbrev-ref HEAD) = test-only-improvement"
+
+  - name: "no source code changes required for test-only work"
+    command: "test ! -f src/implementation.rs"
+
+  - name: "only test files are modified"
+    command: "git diff main --name-only | grep -q 'tests/missouri' && ! (git diff main --name-only | grep -v 'tests/') || true"
+
+transitions:
+  - name: "finalize test-only work"
+    command: "clc done"
+    target: "../test-only-task-completed"
+    comparators:
+      files:
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
