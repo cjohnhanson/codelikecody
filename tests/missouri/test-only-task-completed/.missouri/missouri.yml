@@ -17,5 +17,3 @@ transitions:
           ignore: true
         - path: ".tisket/"
           ignore: true
-        - path: "tests/"
-          ignore: false

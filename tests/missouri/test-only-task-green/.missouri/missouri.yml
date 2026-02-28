@@ -7,7 +7,7 @@ assertions:
 
 transitions:
   - name: "prepare test changes for finalization"
-    command: "git log --oneline | head -1"
+    command: "mkdir -p .tisket/v0.1.0/.closed && touch .tisket/v0.1.0/.closed/test-improvement.md && git log --oneline | head -1"
     target: "../test-only-task-completed"
     comparators:
       files:
@@ -17,5 +17,3 @@ transitions:
           ignore: true
         - path: ".tisket/"
           ignore: true
-        - path: "tests/"
-          ignore: false

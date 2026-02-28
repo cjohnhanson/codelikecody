@@ -3,5 +3,4 @@ env:
   TEST_ENV: "true"
 
 setup:
-  # Ensure clean state before tests
-  - command: "mkdir -p .clc .tisket/v0.1.0 tests/missouri"
+  - command: "true"
