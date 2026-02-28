@@ -69,10 +69,10 @@ fn check_stop(git: Option<&GitState>, phase: Option<Phase>) -> Response {
         None => "No phase set — work has not started. \
                  Set a phase with `clc status set tests-unwritten` or run `clc pickup`."
             .to_string(),
-        Some(Phase::Done | Phase::Green) => return Response::Passthrough,
+        Some(Phase::Done) => return Response::Passthrough,
         Some(current_phase) => format!(
             "Work is not complete. Current phase: {current_phase}. \
-             Run `clc done` to finalize, or `clc status set green` when tests pass."
+             Run `clc done` to finalize."
         ),
     };
 
