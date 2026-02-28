@@ -83,3 +83,29 @@ Dedicated fix tisket: `stop-event-does-not-fire-in-print-mode-workers-exit-befor
 The prime text describes missouri state but doesn't say how to run tests (`clc missouri run`). This is a content problem, not a compaction problem. Compaction makes it worse but the prime never teaches it in the first place.
 
 Dedicated fix tisket: `context-compaction-drops-operational-knowledge-workers-forget-project-tooling` (reframed as prime text content issue)
+
+
+### 6. Worker hacked missouri PATH instead of using clc missouri run
+- **Worker**: stop-event-does-not-fire-in-print-mode (first dispatch)
+- **What happened**: Worker needed to run missouri tests against its local build.
+  Instead of using `clc missouri run`, rewrote the missouri.yml PATH to point at
+  the worktree's target/debug, ran tests, then reverted the change.
+- **Root cause**: Two factors. (a) The prime text said `missouri run` not
+  `clc missouri run` -- the exact bug the other worker was fixing simultaneously.
+  (b) Parallel workers dispatch from the same commit, so worker A can't benefit
+  from worker B's fix even when B fixes the exact problem A encounters.
+- **Status**: (a) Fixed by context-compaction worker. (b) Open -- sequential
+  dispatch or mid-flight rebase would help.
+
+### 7. Worker stopped at implementing despite stop hook being configured
+- **Worker**: stop-event-does-not-fire-in-print-mode (first dispatch)
+- **What happened**: Worker emitted result:success at implementing phase after
+  89 turns. Got tests green but never advanced phase or ran clc done. No Stop
+  event visible in the NDJSON output -- the result message follows immediately
+  after the last tool result with no intervening stop event.
+- **Root cause**: Strong evidence that Stop events do not fire in --print mode.
+  check_stop() would block implementing, but the Stop event never appears in
+  the output stream. The context-compaction worker reached done by choice
+  (ran clc done itself), not because any hook forced it.
+- **Status**: Open. The request-review phase concept may be the right solution
+  rather than relying on a stop hook that doesn't fire.
