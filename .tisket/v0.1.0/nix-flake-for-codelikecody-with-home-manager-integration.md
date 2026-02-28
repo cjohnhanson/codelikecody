@@ -1,12 +1,12 @@
 ---
 title: "Nix flake for codelikecody with home-manager integration"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [clc]
 depends_on: []
-created: "2026-02-28T20:46:15Z"
-updated: "2026-02-28T20:46:15Z"
+created: 2026-02-28T20:46:15Z
+updated: "2026-02-28T21:09:21Z"
 ---
 
 ## Problem
