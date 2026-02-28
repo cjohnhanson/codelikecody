@@ -280,6 +280,61 @@ pub fn resume(project_dir: &Path, id: &str) -> Result<(), Error> {
     Ok(())
 }
 
+/// Supervise a worker: poll until it reaches done, auto-resuming if it stops early.
+pub fn supervise(project_dir: &Path, id: &str, max_resumes: u32) -> Result<(), Error> {
+    let worktree_dir = project_dir.join(".worktrees").join(id);
+    let worker_dir = worktree_dir.join(".clc").join(WORKER_DIR);
+
+    if !worktree_dir.is_dir() {
+        return Err(Error::NonBlocking(format!("no worktree for '{id}'")));
+    }
+
+    let mut resumes = 0u32;
+
+    loop {
+        // Wait for the worker process to exit.
+        wait_for_exit(&worker_dir);
+
+        // Check phase.
+        let phase = crate::phase::load(&worktree_dir).unwrap_or(None);
+
+        if phase == Some(crate::phase::Phase::Done) {
+            eprintln!("worker '{id}' reached done phase");
+            return Ok(());
+        }
+
+        let phase_str = phase.map_or_else(|| "none".to_string(), |p| p.to_string());
+
+        if resumes >= max_resumes {
+            return Err(Error::NonBlocking(format!(
+                "worker '{id}' stopped at phase '{phase_str}' after {resumes} resumes — giving up"
+            )));
+        }
+
+        resumes += 1;
+        eprintln!(
+            "worker '{id}' stopped at phase '{phase_str}' — resuming ({resumes}/{max_resumes})"
+        );
+
+        resume(project_dir, id)?;
+    }
+}
+
+/// Poll until the worker process exits.
+fn wait_for_exit(worker_dir: &Path) {
+    loop {
+        if let Some(pid) = read_pid(worker_dir) {
+            if !is_process_alive(pid) {
+                return;
+            }
+        } else {
+            // No PID file — treat as exited.
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_secs(5));
+    }
+}
+
 /// Extract the session ID from a worker's stdout.jsonl.
 fn extract_session_id(stdout_path: &Path) -> Result<String, Error> {
     let lines = read_stdout_lines(stdout_path)?;

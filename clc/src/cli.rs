@@ -113,6 +113,12 @@ pub enum WorkerAction {
     Stop,
     /// Resume a stopped worker (re-attach to existing session).
     Resume,
+    /// Supervise a worker: auto-resume if it stops before reaching done.
+    Supervise {
+        /// Maximum number of auto-resumes before giving up.
+        #[arg(long, default_value = "3")]
+        max_resumes: u32,
+    },
     /// Show raw NDJSON output.
     Raw {
         /// Number of lines to show (from end). 0 = all.

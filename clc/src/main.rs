@@ -248,6 +248,9 @@ fn cmd_worker(id: &str, action: &cli::WorkerAction) -> Result<(), Error> {
         cli::WorkerAction::Send { message } => worker::send(&project_dir, id, message),
         cli::WorkerAction::Stop => worker::stop(&project_dir, id),
         cli::WorkerAction::Resume => worker::resume(&project_dir, id),
+        cli::WorkerAction::Supervise { max_resumes } => {
+            worker::supervise(&project_dir, id, *max_resumes)
+        }
         cli::WorkerAction::Raw { lines } => worker::raw(&project_dir, id, *lines),
     }
 }
