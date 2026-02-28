@@ -129,6 +129,11 @@ pub struct ProjectConfig {
     /// Nix packages to make available via `nix shell`.
     #[serde(default)]
     pub packages: Vec<String>,
+
+    /// Member directories for workspace mode.
+    /// When set, `missouri run` iterates each member and runs its tests independently.
+    #[serde(default)]
+    pub members: Vec<Utf8PathBuf>,
 }
 
 /// A setup command that runs before test execution.
@@ -412,5 +417,42 @@ env:
 "#;
         let config = parse_project_config(yaml).unwrap();
         assert!(config.test_dir.is_none());
+    }
+
+    #[test]
+    fn parse_project_config_members() {
+        let yaml = r#"
+members:
+  - clc/tests/missouri
+  - tisket/tests/missouri
+"#;
+        let config = parse_project_config(yaml).unwrap();
+        assert_eq!(
+            config.members,
+            vec![
+                Utf8PathBuf::from("clc/tests/missouri"),
+                Utf8PathBuf::from("tisket/tests/missouri"),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_project_config_no_members() {
+        let yaml = "{}";
+        let config = parse_project_config(yaml).unwrap();
+        assert!(config.members.is_empty());
+    }
+
+    #[test]
+    fn parse_project_config_members_with_env() {
+        let yaml = r#"
+members:
+  - sub/a
+env:
+  GLOBAL: "true"
+"#;
+        let config = parse_project_config(yaml).unwrap();
+        assert_eq!(config.members.len(), 1);
+        assert_eq!(config.env["GLOBAL"], "true");
     }
 }

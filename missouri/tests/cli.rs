@@ -920,3 +920,71 @@ fn test_dir_dash_c_works() {
         .success()
         .stdout(predicate::str::contains("PASS"));
 }
+
+// --- workspace (members) ---
+
+#[test]
+fn workspace_run_passes_all_members() {
+    missouri()
+        .arg("run")
+        .arg("-d")
+        .arg(fixture("19-workspace"))
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("sub-a"))
+        .stdout(predicate::str::contains("sub-b"))
+        .stdout(predicate::str::contains("PASS"));
+}
+
+#[test]
+fn workspace_run_reports_both_members() {
+    // Output should contain results from both sub-a and sub-b
+    let output = missouri()
+        .arg("run")
+        .arg("-d")
+        .arg(fixture("19-workspace"))
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Each member should have its own PASS line
+    assert!(
+        stdout.matches("PASS").count() >= 2,
+        "expected at least 2 PASS lines, got: {stdout}"
+    );
+}
+
+#[test]
+fn workspace_run_fails_if_any_member_fails() {
+    missouri()
+        .arg("run")
+        .arg("-d")
+        .arg(fixture("20-workspace-fail"))
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("FAIL"));
+}
+
+#[test]
+fn workspace_dash_c_works() {
+    missouri()
+        .arg("-C")
+        .arg(fixture("19-workspace"))
+        .arg("run")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("PASS"));
+}
+
+#[test]
+fn workspace_list_shows_all_member_paths() {
+    missouri()
+        .arg("list")
+        .arg("-d")
+        .arg(fixture("19-workspace"))
+        .arg("--show")
+        .arg("paths")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("state-a"))
+        .stdout(predicate::str::contains("state-x"));
+}
