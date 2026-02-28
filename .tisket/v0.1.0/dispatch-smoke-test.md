@@ -1,12 +1,12 @@
 ---
 title: "Dispatch smoke test"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [clc]
 depends_on: []
-created: "2026-02-28T05:14:09Z"
-updated: "2026-02-28T05:14:09Z"
+created: 2026-02-28T05:14:09Z
+updated: "2026-02-28T05:14:50Z"
 ---
 
 This is a mock tisket for testing the dispatch/worker commands interactively.
