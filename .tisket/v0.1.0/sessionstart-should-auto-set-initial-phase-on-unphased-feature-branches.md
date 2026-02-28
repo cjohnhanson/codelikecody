@@ -1,12 +1,12 @@
 ---
 title: "SessionStart should auto-set initial phase on unphased feature branches"
-status: backlog
+status: in_progress
 priority: 2
 assignee:
 labels: [clc, hooks]
 depends_on: []
-created: "2026-02-26T04:13:10Z"
-updated: "2026-02-26T04:13:10Z"
+created: 2026-02-26T04:13:10Z
+updated: "2026-02-28T06:01:19Z"
 ---
 
 When SessionStart fires and detects: feature branch + tisket match + no phase set,
