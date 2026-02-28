@@ -79,10 +79,8 @@ pub struct SetupCommand {
 pub enum SandboxConfig {
     /// No sandbox — bare execution with env_clear + manual PATH.
     None,
-    /// Simple mode: install these nix packages via flox.
+    /// Packages to make available via `nix shell`.
     Packages(Vec<String>),
-    /// Advanced mode: use a user-provided manifest.toml.
-    Manifest(Utf8PathBuf),
 }
 
 /// The complete state graph.
@@ -365,9 +363,7 @@ fn load_project_config(root: &Utf8Path, config_dir: &str) -> Result<ProjectConfi
             })
             .collect();
 
-        let sandbox = if let Some(flox_cfg) = cfg.flox {
-            SandboxConfig::Manifest(root.join(&flox_cfg.manifest))
-        } else if !cfg.packages.is_empty() {
+        let sandbox = if !cfg.packages.is_empty() {
             SandboxConfig::Packages(cfg.packages)
         } else {
             SandboxConfig::None

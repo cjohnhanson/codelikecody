@@ -126,20 +126,9 @@ pub struct ProjectConfig {
     #[serde(default)]
     pub setup: Vec<SetupCommandConfig>,
 
-    /// Nix packages to install via flox (simple mode).
+    /// Nix packages to make available via `nix shell`.
     #[serde(default)]
     pub packages: Vec<String>,
-
-    /// Advanced flox configuration (escape hatch to full manifest).
-    #[serde(default)]
-    pub flox: Option<FloxConfig>,
-}
-
-/// Advanced flox configuration pointing to an existing manifest.toml.
-#[derive(Debug, Deserialize)]
-pub struct FloxConfig {
-    /// Path to a manifest.toml file (relative to project root).
-    pub manifest: Utf8PathBuf,
 }
 
 /// A setup command that runs before test execution.
@@ -394,19 +383,6 @@ packages:
 "#;
         let config = parse_project_config(yaml).unwrap();
         assert_eq!(config.packages, vec!["python3", "uv"]);
-        assert!(config.flox.is_none());
-    }
-
-    #[test]
-    fn parse_project_config_flox_manifest() {
-        let yaml = r#"
-flox:
-  manifest: "env/manifest.toml"
-"#;
-        let config = parse_project_config(yaml).unwrap();
-        assert!(config.packages.is_empty());
-        let flox = config.flox.unwrap();
-        assert_eq!(flox.manifest.as_str(), "env/manifest.toml");
     }
 
     #[test]
@@ -414,7 +390,6 @@ flox:
         let yaml = "{}";
         let config = parse_project_config(yaml).unwrap();
         assert!(config.packages.is_empty());
-        assert!(config.flox.is_none());
     }
 
     #[test]

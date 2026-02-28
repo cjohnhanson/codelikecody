@@ -131,26 +131,23 @@ fn build_recording_command(
                     .spawn()
             }
         }
-        crate::executor::Sandbox::Flox {
-            flox_bin,
-            project_root,
-        } => {
+        crate::executor::Sandbox::Nix { nix_bin, packages } => {
+            let mut args: Vec<String> = vec!["shell".into()];
+            args.push("--extra-experimental-features".into());
+            args.push("nix-command flakes".into());
+            for pkg in packages {
+                args.push(format!("nixpkgs#{pkg}"));
+            }
+            args.push("--command".into());
+
             if shell {
-                Command::new(flox_bin.as_str())
-                    .args([
-                        "activate",
-                        "-d",
-                        project_root.as_str(),
-                        "--",
-                        "sh",
-                        "-c",
-                        command,
-                    ])
+                args.extend(["sh".into(), "-c".into(), command.to_string()]);
+                Command::new(nix_bin.as_str())
+                    .args(&args)
                     .current_dir(work_dir.as_std_path())
                     .env_clear()
                     .envs(env.iter())
                     .env("PATH", path_env)
-                    .env("SHELL", "/bin/sh")
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped())
                     .spawn()
@@ -162,15 +159,15 @@ fn build_recording_command(
                         "empty command",
                     ));
                 }
-                let mut args = vec!["activate", "-d", project_root.as_str(), "--"];
-                args.extend(parts);
-                Command::new(flox_bin.as_str())
+                for p in parts {
+                    args.push(p.to_string());
+                }
+                Command::new(nix_bin.as_str())
                     .args(&args)
                     .current_dir(work_dir.as_std_path())
                     .env_clear()
                     .envs(env.iter())
                     .env("PATH", path_env)
-                    .env("SHELL", "/bin/sh")
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped())
                     .spawn()

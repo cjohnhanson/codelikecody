@@ -15,12 +15,12 @@ use crate::paths::TestPath;
 pub enum Sandbox {
     /// No sandbox — env_clear + manual PATH construction.
     None,
-    /// Flox environment at the project root.
-    Flox {
-        /// Absolute path to the `flox` binary (resolved from user's PATH at startup).
-        flox_bin: Utf8PathBuf,
-        /// Absolute path to the directory containing `.flox/`.
-        project_root: Utf8PathBuf,
+    /// Nix shell sandbox: commands run inside `nix shell nixpkgs#pkg1 ... --command`.
+    Nix {
+        /// Absolute path to the `nix` binary.
+        nix_bin: Utf8PathBuf,
+        /// Package names to provide via nixpkgs.
+        packages: Vec<String>,
     },
 }
 
@@ -28,106 +28,36 @@ pub enum Sandbox {
 ///
 /// Reads `graph.sandbox_config` to determine the sandbox mode:
 /// - `SandboxConfig::None` → `Sandbox::None`
-/// - `SandboxConfig::Packages(pkgs)` → generate manifest.toml, init flox env
-/// - `SandboxConfig::Manifest(path)` → use user's manifest, init flox env
+/// - `SandboxConfig::Packages(pkgs)` → `Sandbox::Nix` (or `Sandbox::None` if preinstalled)
 ///
-/// The managed flox environment lives in `<config_dir>/.flox/` inside the project root.
+/// When `MISSOURI_SANDBOX=preinstalled` is set, packages config resolves to
+/// `Sandbox::None` — tools are assumed to already be on PATH (e.g., inside a
+/// nix derivation where packages are `nativeCheckInputs`).
 pub fn detect_sandbox(graph: &StateGraph) -> error::Result<Sandbox> {
+    // Check for preinstalled override
+    if std::env::var("MISSOURI_SANDBOX").ok().as_deref() == Some("preinstalled") {
+        return Ok(Sandbox::None);
+    }
+
     match &graph.sandbox_config {
         SandboxConfig::None => Ok(Sandbox::None),
         SandboxConfig::Packages(packages) => {
-            let flox_bin = which_flox().ok_or_else(|| error::Error::FloxNotFound {
+            let nix_bin = which_nix().ok_or_else(|| error::Error::NixNotFound {
                 root: graph.root.clone(),
             })?;
-            let flox_dir =
-                ensure_managed_flox_env(&graph.root, &graph.config_dir, &flox_bin, None, packages)?;
-            Ok(Sandbox::Flox {
-                flox_bin,
-                project_root: flox_dir,
-            })
-        }
-        SandboxConfig::Manifest(manifest_path) => {
-            let flox_bin = which_flox().ok_or_else(|| error::Error::FloxNotFound {
-                root: graph.root.clone(),
-            })?;
-            let flox_dir = ensure_managed_flox_env(
-                &graph.root,
-                &graph.config_dir,
-                &flox_bin,
-                Some(manifest_path),
-                &[],
-            )?;
-            Ok(Sandbox::Flox {
-                flox_bin,
-                project_root: flox_dir,
+            Ok(Sandbox::Nix {
+                nix_bin,
+                packages: packages.clone(),
             })
         }
     }
 }
 
-/// Generate a minimal manifest.toml from a list of package names.
-fn generate_manifest(packages: &[String]) -> String {
-    let mut manifest = String::from("version = 1\n\n[install]\n");
-    for pkg in packages {
-        manifest.push_str(&format!("{pkg}.pkg-path = \"{pkg}\"\n"));
-    }
-    manifest
-}
-
-/// Ensure the managed flox environment exists at `<root>/<config_dir>/.flox/`.
-///
-/// If `manifest_path` is Some, copies that manifest into the env.
-/// If `manifest_path` is None, generates a manifest from `packages`.
-///
-/// Returns the absolute path to the directory containing `.flox/` (the managed env root).
-fn ensure_managed_flox_env(
-    root: &Utf8Path,
-    config_dir: &str,
-    flox_bin: &Utf8Path,
-    manifest_path: Option<&Utf8Path>,
-    packages: &[String],
-) -> error::Result<Utf8PathBuf> {
-    let managed_root = root.join(config_dir);
-    let flox_dir = managed_root.join(".flox");
-    let env_dir = flox_dir.join("env");
-
-    if !flox_dir.exists() {
-        // Initialize a new flox environment
-        let output = crate::signal::run_tracked(Command::new(flox_bin.as_str()).args([
-            "init",
-            "-d",
-            managed_root.as_str(),
-        ]))
-        .map_err(error::Error::Io)?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(error::Error::FloxInitFailed {
-                detail: stderr.into_owned(),
-            });
-        }
-    }
-
-    // Write the manifest
-    let manifest_dest = env_dir.join("manifest.toml");
-    let manifest_content = if let Some(path) = manifest_path {
-        std::fs::read_to_string(path.as_std_path()).map_err(|e| error::Error::ConfigRead {
-            path: path.to_owned(),
-            source: e,
-        })?
-    } else {
-        generate_manifest(packages)
-    };
-    std::fs::write(&manifest_dest, &manifest_content).map_err(error::Error::Io)?;
-
-    Ok(managed_root)
-}
-
-/// Resolve the absolute path to `flox` from the current process's PATH.
-fn which_flox() -> Option<Utf8PathBuf> {
+/// Resolve the absolute path to `nix` from the current process's PATH.
+fn which_nix() -> Option<Utf8PathBuf> {
     let path_var = std::env::var("PATH").ok()?;
     for dir in path_var.split(':') {
-        let candidate = Utf8PathBuf::from(dir).join("flox");
+        let candidate = Utf8PathBuf::from(dir).join("nix");
         if candidate.exists() {
             return Some(candidate);
         }
@@ -274,26 +204,28 @@ fn run_single_setup(
                     .envs(project_env.iter())
                     .env("PATH", path_env),
             ),
-            Sandbox::Flox {
-                flox_bin,
-                project_root,
-            } => crate::signal::run_tracked(
-                Command::new(flox_bin.as_str())
-                    .args([
-                        "activate",
-                        "-d",
-                        project_root.as_str(),
-                        "--",
-                        "sh",
-                        "-c",
-                        &cmd.command,
-                    ])
-                    .current_dir(work_dir.as_std_path())
-                    .env_clear()
-                    .envs(project_env.iter())
-                    .env("PATH", path_env)
-                    .env("SHELL", "/bin/sh"),
-            ),
+            Sandbox::Nix { nix_bin, packages } => {
+                let mut args: Vec<String> = vec!["shell".into()];
+                args.push("--extra-experimental-features".into());
+                args.push("nix-command flakes".into());
+                for pkg in packages {
+                    args.push(format!("nixpkgs#{pkg}"));
+                }
+                args.extend([
+                    "--command".into(),
+                    "sh".into(),
+                    "-c".into(),
+                    cmd.command.clone(),
+                ]);
+                crate::signal::run_tracked(
+                    Command::new(nix_bin.as_str())
+                        .args(&args)
+                        .current_dir(work_dir.as_std_path())
+                        .env_clear()
+                        .envs(project_env.iter())
+                        .env("PATH", path_env),
+                )
+            }
         }
     } else {
         let parts: Vec<&str> = cmd.command.split_whitespace().collect();
@@ -315,20 +247,24 @@ fn run_single_setup(
                     .envs(project_env.iter())
                     .env("PATH", path_env),
             ),
-            Sandbox::Flox {
-                flox_bin,
-                project_root,
-            } => {
-                let mut args = vec!["activate", "-d", project_root.as_str(), "--"];
-                args.extend(parts);
+            Sandbox::Nix { nix_bin, packages } => {
+                let mut args: Vec<String> = vec!["shell".into()];
+                args.push("--extra-experimental-features".into());
+                args.push("nix-command flakes".into());
+                for pkg in packages {
+                    args.push(format!("nixpkgs#{pkg}"));
+                }
+                args.push("--command".into());
+                for p in parts {
+                    args.push(p.to_string());
+                }
                 crate::signal::run_tracked(
-                    Command::new(flox_bin.as_str())
+                    Command::new(nix_bin.as_str())
                         .args(&args)
                         .current_dir(work_dir.as_std_path())
                         .env_clear()
                         .envs(project_env.iter())
-                        .env("PATH", path_env)
-                        .env("SHELL", "/bin/sh"),
+                        .env("PATH", path_env),
                 )
             }
         }
@@ -766,16 +702,8 @@ fn run_single_assertion(
 
     let output = match sandbox {
         Sandbox::None => build_assertion_command_bare(assertion, work_dir, state_env, &path_env),
-        Sandbox::Flox {
-            flox_bin,
-            project_root,
-        } => build_assertion_command_flox(
-            assertion,
-            work_dir,
-            state_env,
-            &path_env,
-            flox_bin,
-            project_root,
+        Sandbox::Nix { nix_bin, packages } => build_assertion_command_nix(
+            assertion, work_dir, state_env, &path_env, nix_bin, packages,
         ),
     };
 
@@ -912,48 +840,50 @@ fn build_assertion_command_bare(
     }
 }
 
-/// Build an assertion command wrapped in flox activate.
-fn build_assertion_command_flox(
+/// Build an assertion command wrapped in `nix shell`.
+fn build_assertion_command_nix(
     assertion: &Assertion,
     work_dir: &Utf8Path,
     state_env: &std::collections::BTreeMap<String, String>,
     path_env: &str,
-    flox_bin: &Utf8Path,
-    project_root: &Utf8Path,
+    nix_bin: &Utf8Path,
+    packages: &[String],
 ) -> Option<std::io::Result<std::process::Output>> {
+    let mut args: Vec<String> = vec!["shell".into()];
+    args.push("--extra-experimental-features".into());
+    args.push("nix-command flakes".into());
+    for pkg in packages {
+        args.push(format!("nixpkgs#{pkg}"));
+    }
+    args.push("--command".into());
+
     if assertion.shell {
+        args.push("sh".into());
+        args.push("-c".into());
+        args.push(assertion.command.clone());
         Some(crate::signal::run_tracked(
-            Command::new(flox_bin.as_str())
-                .args([
-                    "activate",
-                    "-d",
-                    project_root.as_str(),
-                    "--",
-                    "sh",
-                    "-c",
-                    &assertion.command,
-                ])
+            Command::new(nix_bin.as_str())
+                .args(&args)
                 .current_dir(work_dir.as_std_path())
                 .env_clear()
                 .envs(state_env.iter())
-                .env("PATH", path_env)
-                .env("SHELL", "/bin/sh"),
+                .env("PATH", path_env),
         ))
     } else {
         let parts: Vec<&str> = assertion.command.split_whitespace().collect();
         if parts.is_empty() {
             return None;
         }
-        let mut args = vec!["activate", "-d", project_root.as_str(), "--"];
-        args.extend(parts);
+        for p in parts {
+            args.push(p.to_string());
+        }
         Some(crate::signal::run_tracked(
-            Command::new(flox_bin.as_str())
+            Command::new(nix_bin.as_str())
                 .args(&args)
                 .current_dir(work_dir.as_std_path())
                 .env_clear()
                 .envs(state_env.iter())
-                .env("PATH", path_env)
-                .env("SHELL", "/bin/sh"),
+                .env("PATH", path_env),
         ))
     }
 }
@@ -1001,16 +931,8 @@ fn execute_transition(
     } else {
         match sandbox {
             Sandbox::None => build_command_bare(transition, work_dir, source_env, &path_env),
-            Sandbox::Flox {
-                flox_bin,
-                project_root,
-            } => build_command_flox(
-                transition,
-                work_dir,
-                source_env,
-                &path_env,
-                flox_bin,
-                project_root,
+            Sandbox::Nix { nix_bin, packages } => build_command_nix(
+                transition, work_dir, source_env, &path_env, nix_bin, packages,
             ),
         }
     };
@@ -1104,15 +1026,6 @@ fn execute_transition(
         comparator_bin_dirs.push(pb.as_path());
     }
 
-    // Extract flox paths for comparator execution
-    let flox = match sandbox {
-        Sandbox::Flox {
-            flox_bin,
-            project_root,
-        } => Some((flox_bin.as_path(), project_root.as_path())),
-        Sandbox::None => None,
-    };
-
     // Compare the result against the expected target state
     let comparison = compare::compare_trees(
         work_dir,
@@ -1122,7 +1035,7 @@ fn execute_transition(
         source_env,
         &graph.config_dir,
         &graph.ignore,
-        flox,
+        sandbox,
     );
 
     // Compare env vars only when the target state or transition defines env expectations.
@@ -1133,7 +1046,7 @@ fn execute_transition(
             &transition.env_comparators,
             &comparator_bin_dirs,
             source_env,
-            flox,
+            sandbox,
         )
     } else {
         Vec::new()
@@ -1206,52 +1119,53 @@ fn build_command_bare(
     }
 }
 
-/// Build a command wrapped in `flox activate` (env_clear + state vars + PATH).
+/// Build a command wrapped in `nix shell` (env_clear + state vars + PATH).
 ///
-/// Flox uses `-- <cmd>` for all command execution (no `-c` flag).
-/// Shell mode: `flox activate -d <root> -- sh -c "<command>"`
-/// Non-shell:  `flox activate -d <root> -- <cmd> <args...>`
-fn build_command_flox(
+/// Shell mode: `nix shell nixpkgs#pkg1 ... --command sh -c "<command>"`
+/// Non-shell:  `nix shell nixpkgs#pkg1 ... --command <cmd> <args...>`
+fn build_command_nix(
     transition: &Transition,
     work_dir: &Utf8Path,
     source_env: &std::collections::BTreeMap<String, String>,
     path_env: &str,
-    flox_bin: &Utf8Path,
-    project_root: &Utf8Path,
+    nix_bin: &Utf8Path,
+    packages: &[String],
 ) -> Option<std::io::Result<std::process::Output>> {
+    let mut args: Vec<String> = vec!["shell".into()];
+    args.push("--extra-experimental-features".into());
+    args.push("nix-command flakes".into());
+    for pkg in packages {
+        args.push(format!("nixpkgs#{pkg}"));
+    }
+    args.push("--command".into());
+
     if transition.shell {
+        args.push("sh".into());
+        args.push("-c".into());
+        args.push(transition.command.clone());
         Some(crate::signal::run_tracked(
-            Command::new(flox_bin.as_str())
-                .args([
-                    "activate",
-                    "-d",
-                    project_root.as_str(),
-                    "--",
-                    "sh",
-                    "-c",
-                    &transition.command,
-                ])
+            Command::new(nix_bin.as_str())
+                .args(&args)
                 .current_dir(work_dir.as_std_path())
                 .env_clear()
                 .envs(source_env.iter())
-                .env("PATH", path_env)
-                .env("SHELL", "/bin/sh"),
+                .env("PATH", path_env),
         ))
     } else {
         let parts: Vec<&str> = transition.command.split_whitespace().collect();
         if parts.is_empty() {
             return None;
         }
-        let mut args = vec!["activate", "-d", project_root.as_str(), "--"];
-        args.extend(parts);
+        for p in parts {
+            args.push(p.to_string());
+        }
         Some(crate::signal::run_tracked(
-            Command::new(flox_bin.as_str())
+            Command::new(nix_bin.as_str())
                 .args(&args)
                 .current_dir(work_dir.as_std_path())
                 .env_clear()
                 .envs(source_env.iter())
-                .env("PATH", path_env)
-                .env("SHELL", "/bin/sh"),
+                .env("PATH", path_env),
         ))
     }
 }
@@ -1292,7 +1206,7 @@ transitions:
     }
 
     #[test]
-    fn detect_sandbox_packages_creates_env() {
+    fn detect_sandbox_packages_resolves_to_nix() {
         let tmp = tempfile::tempdir().unwrap();
         let root = Utf8Path::from_path(tmp.path()).unwrap();
 
@@ -1321,40 +1235,25 @@ transitions:
 
         let sandbox = detect_sandbox(&graph).unwrap();
         match sandbox {
-            Sandbox::Flox {
-                flox_bin,
-                project_root,
-            } => {
-                assert!(flox_bin.as_str().contains("flox"));
-                // project_root should be the managed env inside .missouri/
-                assert!(project_root.as_str().ends_with(".missouri"));
-                // A .flox/ dir should have been created inside .missouri/
-                assert!(project_root.join(".flox").exists());
-                // manifest.toml should contain our packages
-                let manifest =
-                    fs::read_to_string(project_root.join(".flox/env/manifest.toml")).unwrap();
-                assert!(manifest.contains("python3"));
-                assert!(manifest.contains("uv"));
+            Sandbox::Nix { nix_bin, packages } => {
+                assert!(nix_bin.as_str().contains("nix"));
+                assert_eq!(packages, vec!["python3", "uv"]);
             }
-            Sandbox::None => panic!("expected Sandbox::Flox"),
+            _ => panic!("expected Sandbox::Nix, got {sandbox:?}"),
         }
     }
 
     #[test]
-    fn detect_sandbox_manifest_creates_env() {
+    fn detect_sandbox_preinstalled_via_env_var() {
         let tmp = tempfile::tempdir().unwrap();
         let root = Utf8Path::from_path(tmp.path()).unwrap();
 
-        // Write a user manifest.toml at the project root
-        let manifest_content = "version = 1\n\n[install]\ncargo.pkg-path = \"cargo\"\n";
-        fs::write(root.join("manifest.toml"), manifest_content).unwrap();
-
-        // Create project-level config pointing to the manifest
+        // Create project-level config with packages
         let root_missouri = root.join(".missouri");
         fs::create_dir_all(&root_missouri).unwrap();
         fs::write(
             root_missouri.join("missouri.yml"),
-            "flox:\n  manifest: \"manifest.toml\"\n",
+            "packages:\n  - python3\n  - uv\n",
         )
         .unwrap();
 
@@ -1370,38 +1269,25 @@ transitions:
         make_state(root, "b", "{}");
 
         let graph = StateGraph::discover(root, ".missouri").unwrap();
-        assert!(matches!(graph.sandbox_config, SandboxConfig::Manifest(_)));
+        assert!(matches!(graph.sandbox_config, SandboxConfig::Packages(_)));
 
+        // With MISSOURI_SANDBOX=preinstalled, packages config should resolve
+        // to Sandbox::None (tools assumed already on PATH).
+        // SAFETY: test is single-threaded for this env var manipulation.
+        unsafe { std::env::set_var("MISSOURI_SANDBOX", "preinstalled") };
         let sandbox = detect_sandbox(&graph).unwrap();
-        match sandbox {
-            Sandbox::Flox {
-                flox_bin,
-                project_root,
-            } => {
-                assert!(flox_bin.as_str().contains("flox"));
-                assert!(project_root.join(".flox").exists());
-                // The user's manifest should have been copied in
-                let manifest =
-                    fs::read_to_string(project_root.join(".flox/env/manifest.toml")).unwrap();
-                assert!(manifest.contains("cargo"));
-            }
-            Sandbox::None => panic!("expected Sandbox::Flox"),
-        }
+        unsafe { std::env::remove_var("MISSOURI_SANDBOX") };
+        assert!(
+            matches!(sandbox, Sandbox::None),
+            "expected Sandbox::None when MISSOURI_SANDBOX=preinstalled, got {sandbox:?}"
+        );
     }
 
     #[test]
-    fn generate_manifest_from_packages() {
-        let manifest = generate_manifest(&["python3".into(), "uv".into()]);
-        assert!(manifest.contains("version = 1"));
-        assert!(manifest.contains("python3.pkg-path = \"python3\""));
-        assert!(manifest.contains("uv.pkg-path = \"uv\""));
-    }
-
-    #[test]
-    fn which_flox_finds_binary() {
-        // flox is installed on this system
-        let result = which_flox();
+    fn which_nix_finds_binary() {
+        // nix is installed on this system
+        let result = which_nix();
         assert!(result.is_some());
-        assert!(result.unwrap().as_str().ends_with("flox"));
+        assert!(result.unwrap().as_str().ends_with("nix"));
     }
 }

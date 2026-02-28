@@ -59,19 +59,12 @@ pub enum Error {
     )]
     IgnorePattern { pattern: String, detail: String },
 
-    #[error("flox sandbox configured but `flox` binary not found on PATH (project root: {root})")]
+    #[error("nix sandbox configured but `nix` binary not found on PATH (project root: {root})")]
     #[diagnostic(
-        code(missouri::sandbox::flox_not_found),
-        help("install flox (https://flox.dev) or remove packages/flox config from missouri.yml")
+        code(missouri::sandbox::nix_not_found),
+        help("install nix (https://nixos.org) or remove packages config from missouri.yml")
     )]
-    FloxNotFound { root: Utf8PathBuf },
-
-    #[error("flox init failed: {detail}")]
-    #[diagnostic(
-        code(missouri::sandbox::flox_init_failed),
-        help("check that flox is working correctly")
-    )]
-    FloxInitFailed { detail: String },
+    NixNotFound { root: Utf8PathBuf },
 
     #[error("project already initialized at {path}")]
     #[diagnostic(

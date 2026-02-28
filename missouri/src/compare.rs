@@ -73,7 +73,7 @@ pub fn compare_trees(
     state_env: &BTreeMap<String, String>,
     config_dir: &str,
     ignore: &Gitignore,
-    flox: Option<(&Utf8Path, &Utf8Path)>,
+    sandbox: &crate::executor::Sandbox,
 ) -> ComparisonResult {
     let actual_files = walk_tree(actual, config_dir);
     let expected_files = walk_tree(expected, config_dir);
@@ -115,7 +115,7 @@ pub fn compare_trees(
                         &expected_path,
                         bin_dirs,
                         state_env,
-                        flox,
+                        sandbox,
                     ) {
                         Ok(()) => {}
                         Err(stderr) => {
@@ -183,7 +183,7 @@ pub fn compare_env(
     env_comparators: &[(String, EnvComparator)],
     bin_dirs: &[&Utf8Path],
     state_env: &BTreeMap<String, String>,
-    flox: Option<(&Utf8Path, &Utf8Path)>,
+    sandbox: &crate::executor::Sandbox,
 ) -> Vec<EnvDiff> {
     let mut diffs = Vec::new();
     let all_keys: BTreeSet<&String> = actual_env.keys().chain(expected_env.keys()).collect();
@@ -202,7 +202,7 @@ pub fn compare_env(
                         Utf8Path::new(expected_val),
                         bin_dirs,
                         state_env,
-                        flox,
+                        sandbox,
                     ) {
                         Ok(()) => {}
                         Err(stderr) => {
@@ -335,7 +335,7 @@ fn run_comparator(
     arg2: &Utf8Path,
     bin_dirs: &[&Utf8Path],
     state_env: &BTreeMap<String, String>,
-    flox: Option<(&Utf8Path, &Utf8Path)>,
+    sandbox: &crate::executor::Sandbox,
 ) -> Result<(), String> {
     // Build PATH: bin dirs → state_env PATH → fallback
     let base_path = state_env
@@ -352,26 +352,30 @@ fn run_comparator(
         shell_quote(arg2.as_str())
     );
 
-    let output = if let Some((flox_bin, project_root)) = flox {
-        // Run comparator inside flox activate
-        crate::signal::run_tracked(
-            Command::new(flox_bin.as_str())
-                .args([
-                    "activate",
-                    "-d",
-                    project_root.as_str(),
-                    "--",
-                    "sh",
-                    "-c",
-                    &inner_cmd,
-                ])
-                .env_clear()
-                .envs(state_env.iter())
-                .env("PATH", &path_env),
-        )
-        .map_err(|e| format!("failed to run comparator via flox: {e}"))?
-    } else {
-        crate::signal::run_tracked(
+    let output = match sandbox {
+        crate::executor::Sandbox::Nix { nix_bin, packages } => {
+            let mut args: Vec<String> = vec!["shell".into()];
+            args.push("--extra-experimental-features".into());
+            args.push("nix-command flakes".into());
+            for pkg in packages {
+                args.push(format!("nixpkgs#{pkg}"));
+            }
+            args.extend([
+                "--command".into(),
+                "sh".into(),
+                "-c".into(),
+                inner_cmd.clone(),
+            ]);
+            crate::signal::run_tracked(
+                Command::new(nix_bin.as_str())
+                    .args(&args)
+                    .env_clear()
+                    .envs(state_env.iter())
+                    .env("PATH", &path_env),
+            )
+            .map_err(|e| format!("failed to run comparator via nix: {e}"))?
+        }
+        crate::executor::Sandbox::None => crate::signal::run_tracked(
             Command::new("sh")
                 .arg("-c")
                 .arg(&inner_cmd)
@@ -379,7 +383,7 @@ fn run_comparator(
                 .envs(state_env.iter())
                 .env("PATH", &path_env),
         )
-        .map_err(|e| format!("failed to run comparator: {e}"))?
+        .map_err(|e| format!("failed to run comparator: {e}"))?,
     };
 
     if output.status.success() {
@@ -424,7 +428,7 @@ mod tests {
             &BTreeMap::new(),
             ".missouri",
             &empty_ignore(),
-            None,
+            &crate::executor::Sandbox::None,
         );
         assert!(result.passed);
         assert!(result.file_diffs.is_empty());
@@ -451,7 +455,7 @@ mod tests {
             &BTreeMap::new(),
             ".missouri",
             &empty_ignore(),
-            None,
+            &crate::executor::Sandbox::None,
         );
         assert!(!result.passed);
         assert_eq!(result.file_diffs.len(), 1);
@@ -483,7 +487,7 @@ mod tests {
             &BTreeMap::new(),
             ".missouri",
             &empty_ignore(),
-            None,
+            &crate::executor::Sandbox::None,
         );
         assert!(!result.passed);
         assert!(
@@ -516,7 +520,7 @@ mod tests {
             &BTreeMap::new(),
             ".missouri",
             &empty_ignore(),
-            None,
+            &crate::executor::Sandbox::None,
         );
         assert!(!result.passed);
         assert!(
@@ -551,7 +555,7 @@ mod tests {
             &BTreeMap::new(),
             ".missouri",
             &empty_ignore(),
-            None,
+            &crate::executor::Sandbox::None,
         );
         assert!(result.passed);
     }
@@ -579,7 +583,7 @@ mod tests {
             &BTreeMap::new(),
             ".missouri",
             &empty_ignore(),
-            None,
+            &crate::executor::Sandbox::None,
         );
         assert!(result.passed);
     }
@@ -591,7 +595,14 @@ mod tests {
         let mut b = BTreeMap::new();
         b.insert("KEY".into(), "value".into());
 
-        let diffs = compare_env(&a, &b, &[], &[], &BTreeMap::new(), None);
+        let diffs = compare_env(
+            &a,
+            &b,
+            &[],
+            &[],
+            &BTreeMap::new(),
+            &crate::executor::Sandbox::None,
+        );
         assert!(diffs.is_empty());
     }
 
@@ -602,7 +613,14 @@ mod tests {
         let mut b = BTreeMap::new();
         b.insert("KEY".into(), "val2".into());
 
-        let diffs = compare_env(&a, &b, &[], &[], &BTreeMap::new(), None);
+        let diffs = compare_env(
+            &a,
+            &b,
+            &[],
+            &[],
+            &BTreeMap::new(),
+            &crate::executor::Sandbox::None,
+        );
         assert_eq!(diffs.len(), 1);
         assert!(matches!(&diffs[0], EnvDiff::ValueMismatch { name, .. } if name == "KEY"));
     }
@@ -615,7 +633,14 @@ mod tests {
         b.insert("TIMESTAMP".into(), "456".into());
 
         let comparators = vec![("TIMESTAMP".into(), EnvComparator::Ignore)];
-        let diffs = compare_env(&a, &b, &comparators, &[], &BTreeMap::new(), None);
+        let diffs = compare_env(
+            &a,
+            &b,
+            &comparators,
+            &[],
+            &BTreeMap::new(),
+            &crate::executor::Sandbox::None,
+        );
         assert!(diffs.is_empty());
     }
 
@@ -651,7 +676,7 @@ mod tests {
             &BTreeMap::new(),
             ".missouri",
             &ignore,
-            None,
+            &crate::executor::Sandbox::None,
         );
         assert!(result.passed);
     }
@@ -681,7 +706,7 @@ mod tests {
             &BTreeMap::new(),
             ".missouri",
             &ignore,
-            None,
+            &crate::executor::Sandbox::None,
         );
         assert!(result.passed);
     }
@@ -714,7 +739,7 @@ mod tests {
             &BTreeMap::new(),
             ".missouri",
             &ignore,
-            None,
+            &crate::executor::Sandbox::None,
         );
         assert!(result.passed);
     }
@@ -742,7 +767,7 @@ mod tests {
             &BTreeMap::new(),
             ".missouri",
             &ignore,
-            None,
+            &crate::executor::Sandbox::None,
         );
         assert!(!result.passed);
     }
