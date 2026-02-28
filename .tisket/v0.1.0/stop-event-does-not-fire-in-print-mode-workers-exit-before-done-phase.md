@@ -1,12 +1,12 @@
 ---
 title: "Workers stop at green phase because check_stop allows green as a valid stop point"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [clc]
 depends_on: []
-created: "2026-02-28T19:51:07Z"
-updated: "2026-02-28T20:15:00Z"
+created: 2026-02-28T19:51:07Z
+updated: "2026-02-28T20:06:26Z"
 ---
 
 ## Problem
