@@ -1,2 +1,3 @@
 assertions:
-  - name: "extra check"
+  - name: "verify finalized test state"
+    command: "test -f expected-file.txt"
