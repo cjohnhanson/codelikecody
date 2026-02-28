@@ -4,7 +4,7 @@ assertions:
 
 transitions:
   - name: "add first test improvement"
-    command: "mkdir -p tests/missouri/test-state-1/.missouri && echo 'assertions: []' > tests/missouri/test-state-1/.missouri/missouri.yml && touch tests/missouri/test-state-1/expected-file.txt && git add tests/missouri/ && git commit -m 'test: add first test improvement'"
+    command: "mkdir -p tests/missouri/test-state-1/.missouri && printf 'assertions:\\n  - name: \"verify test state\"\\n    command: \"test -f expected-file.txt\"\\n' > tests/missouri/test-state-1/.missouri/missouri.yml && touch tests/missouri/test-state-1/expected-file.txt && git add tests/missouri/ && git commit -m 'test: add first test improvement'"
     target: "../test-only-task-tests-written"
     comparators:
       files:
