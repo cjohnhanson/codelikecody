@@ -109,3 +109,25 @@ Dedicated fix tisket: `context-compaction-drops-operational-knowledge-workers-fo
   (ran clc done itself), not because any hook forced it.
 - **Status**: Open. The request-review phase concept may be the right solution
   rather than relying on a stop hook that doesn't fire.
+
+### 8. Worker reached done without committing implementation code
+- **Worker**: context-compaction-drops-operational-knowledge-workers-forget-project-tooling
+- **What happened**: Worker fixed 3 occurrences of `missouri run` → `clc missouri run`
+  in prime text, reached done phase, closed tisket. But the code changes were never
+  committed. On `clc land`, only the finalize commit (tisket closure) merged. The
+  actual fix was lost entirely.
+- **Root cause**: `clc done` doesn't verify the working tree is clean. Worker ran
+  `clc done` without having staged/committed its implementation. Phase advanced,
+  tisket closed, worktree removed — code gone.
+- **Fix**: `clc done` should refuse to finalize with uncommitted changes.
+- **Status**: Open — tisket `clc-done-must-verify-clean-working-tree-before-finalizing`
+
+### 9. Landing branches requires manual tisket closure on main
+- **What happened**: `clc land` checks tisket status on main, not the branch. Since
+  `clc done` on the worktree only modifies the branch-local copy of the tisket file,
+  main still shows `in_progress`. Coordinator must: close tisket on main → commit →
+  rebase branch → land. Creates administrative commits.
+- **Root cause**: Tisket status is stored in the tisket markdown file, which is shared
+  across all branches. `clc done` commits the closure on the branch, but `clc land`
+  reads the file on main.
+- **Status**: Open — tisket `admin-and-tisket-operations-should-never-dirty-main`
