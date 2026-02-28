@@ -1,12 +1,12 @@
 ---
 title: "Workflow for pure test-improvement tasks"
-status: todo
+status: in_progress
 priority: 3
 assignee:
 labels: [clc]
 depends_on: []
 created: 2026-02-26T13:28:00Z
-updated: "2026-02-28T03:29:45Z"
+updated: "2026-02-28T03:30:58Z"
 ---
 
 The current phase system (tests-unwritten → tests-written → red → implementing →
