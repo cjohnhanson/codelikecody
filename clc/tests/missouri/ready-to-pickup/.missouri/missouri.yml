@@ -53,3 +53,21 @@ transitions:
           ignore: true
         - path: "tisket.yml"
           ignore: true
+
+  - name: "dispatch a worker"
+    command: "clc dispatch test-feature --model haiku --budget 0.10"
+    target: "../dispatched"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".worktrees/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true

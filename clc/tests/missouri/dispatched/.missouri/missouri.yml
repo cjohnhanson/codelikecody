@@ -1,0 +1,70 @@
+assertions:
+  - name: "worktree directory exists"
+    command: "test -d .worktrees/test-feature"
+
+  - name: "git branch exists"
+    command: "git branch --list test-feature | grep -q test-feature"
+
+  - name: "tisket status changed to in_progress"
+    command: "grep -q 'status: in_progress' .tisket/v0.1.0/test-feature.md"
+
+  - name: "worker PID file exists"
+    command: "test -f .worktrees/test-feature/.clc/worker/pid"
+
+  - name: "worker PID file contains a number"
+    command: "grep -qE '^[0-9]+$' .worktrees/test-feature/.clc/worker/pid"
+
+  - name: "worker stdout file exists"
+    command: "test -f .worktrees/test-feature/.clc/worker/stdout.jsonl"
+
+  - name: "worker stdin pipe exists"
+    command: "test -p .worktrees/test-feature/.clc/worker/stdin.pipe"
+
+  - name: "worker process is alive"
+    command: "kill -0 $(cat .worktrees/test-feature/.clc/worker/pid)"
+
+  - name: "clc workers shows the worker"
+    command: "clc workers | grep -q test-feature"
+
+  - name: "clc workers shows worker as working or idle"
+    command: "clc workers | grep test-feature | grep -qE 'working|idle'"
+
+  - name: "clc worker check produces output"
+    command: "sleep 3 && clc worker test-feature check | grep -qE 'tool|text|system'"
+
+  - name: "clc worker log produces output"
+    command: "clc worker test-feature log | grep -qE 'tool|text|system'"
+
+  - name: "clc worker raw produces NDJSON"
+    command: "clc worker test-feature raw | head -1 | jq -e '.type'"
+
+  - name: "still on main after dispatch"
+    command: "test $(git rev-parse --abbrev-ref HEAD) = main"
+
+  - name: "dispatch fails for non-existent tisket"
+    command: "clc dispatch no-such-issue 2>&1; test $? -ne 0"
+
+  - name: "dispatch fails when not on main"
+    command: "git checkout -q -B some-branch && clc dispatch test-feature 2>&1; RET=$?; git checkout -q main; test $RET -ne 0"
+
+  - name: "dispatch fails when worker already running for this tisket"
+    command: "clc dispatch test-feature 2>&1; test $? -ne 0"
+
+transitions:
+  - name: "stop the worker"
+    command: "clc worker test-feature stop"
+    target: "../worker-stopped"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".worktrees/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true

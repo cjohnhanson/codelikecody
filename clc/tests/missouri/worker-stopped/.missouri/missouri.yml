@@ -1,0 +1,27 @@
+assertions:
+  - name: "worker process is dead"
+    command: "! kill -0 $(cat .worktrees/test-feature/.clc/worker/pid) 2>/dev/null"
+
+  - name: "worktree still exists"
+    command: "test -d .worktrees/test-feature"
+
+  - name: "stdout file has content"
+    command: "test -s .worktrees/test-feature/.clc/worker/stdout.jsonl"
+
+  - name: "stdout contains at least a system init message"
+    command: "grep -q '\"type\":\"system\"' .worktrees/test-feature/.clc/worker/stdout.jsonl"
+
+  - name: "clc workers shows worker as dead or does not list it"
+    command: "clc workers | grep -q test-feature && clc workers | grep test-feature | grep -q dead || ! clc workers | grep -q test-feature"
+
+  - name: "clc worker log still works after stop"
+    command: "clc worker test-feature log | grep -qE 'tool|text|system'"
+
+  - name: "clc worker raw still works after stop"
+    command: "clc worker test-feature raw | head -1 | jq -e '.type'"
+
+  - name: "clc worker send fails after stop"
+    command: "clc worker test-feature send 'hello' 2>&1; test $? -ne 0"
+
+  - name: "git branch still exists"
+    command: "git branch --list test-feature | grep -q test-feature"
