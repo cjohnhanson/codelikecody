@@ -1,12 +1,12 @@
 ---
 title: "Root-level missouri.yml for multi-subcrate projects"
-status: backlog
+status: in_progress
 priority: 2
 assignee:
 labels: [missouri]
 depends_on: []
-created: "2026-02-26T04:24:26Z"
-updated: "2026-02-26T04:24:26Z"
+created: 2026-02-26T04:24:26Z
+updated: "2026-02-28T22:56:01Z"
 ---
 
 This repo has missouri test suites in subcrates (`tisket/tests/missouri/`,
