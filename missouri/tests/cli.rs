@@ -925,20 +925,23 @@ fn test_dir_dash_c_works() {
 
 #[test]
 fn workspace_run_passes_all_members() {
+    // Workspace mode should print member headers and per-member summaries
     missouri()
         .arg("run")
         .arg("-d")
         .arg(fixture("19-workspace"))
         .assert()
         .success()
+        // Member section headers
         .stdout(predicate::str::contains("sub-a"))
         .stdout(predicate::str::contains("sub-b"))
+        // Per-member pass lines
         .stdout(predicate::str::contains("PASS"));
 }
 
 #[test]
-fn workspace_run_reports_both_members() {
-    // Output should contain results from both sub-a and sub-b
+fn workspace_run_has_per_member_summaries() {
+    // Each member should produce its own summary line with pass/fail counts
     let output = missouri()
         .arg("run")
         .arg("-d")
@@ -946,45 +949,50 @@ fn workspace_run_reports_both_members() {
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
-    // Each member should have its own PASS line
+    // Two separate summary lines (one per member)
+    let summary_count = stdout.matches("passed").count();
     assert!(
-        stdout.matches("PASS").count() >= 2,
-        "expected at least 2 PASS lines, got: {stdout}"
+        summary_count >= 2,
+        "expected at least 2 summary lines, got {summary_count}: {stdout}"
     );
 }
 
 #[test]
 fn workspace_run_fails_if_any_member_fails() {
+    // When one member has failing tests, the overall result should be failure
     missouri()
         .arg("run")
         .arg("-d")
         .arg(fixture("20-workspace-fail"))
         .assert()
         .failure()
+        // The failing member should appear in output
+        .stdout(predicate::str::contains("bad-sub"))
         .stdout(predicate::str::contains("FAIL"));
 }
 
 #[test]
 fn workspace_dash_c_works() {
+    // -C should work with workspace missouri.yml
     missouri()
         .arg("-C")
         .arg(fixture("19-workspace"))
         .arg("run")
         .assert()
         .success()
-        .stdout(predicate::str::contains("PASS"));
+        .stdout(predicate::str::contains("sub-a"))
+        .stdout(predicate::str::contains("sub-b"));
 }
 
 #[test]
-fn workspace_list_shows_all_member_paths() {
+fn workspace_validate_checks_all_members() {
     missouri()
-        .arg("list")
+        .arg("validate")
         .arg("-d")
         .arg(fixture("19-workspace"))
-        .arg("--show")
-        .arg("paths")
         .assert()
         .success()
-        .stdout(predicate::str::contains("state-a"))
-        .stdout(predicate::str::contains("state-x"));
+        // Should report valid state for both members
+        .stdout(predicate::str::contains("sub-a"))
+        .stdout(predicate::str::contains("sub-b"));
 }

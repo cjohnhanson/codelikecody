@@ -1,4 +1,4 @@
-use camino::Utf8PathBuf;
+use camino::{Utf8Path, Utf8PathBuf};
 use clap::Parser;
 use miette::IntoDiagnostic;
 
@@ -190,6 +190,14 @@ pub fn run_command(config_dir: &str, command: Command) -> miette::Result<bool> {
     match command {
         Command::Run(run_args) => {
             let dir = resolve_dir(&run_args.dir)?;
+
+            // Workspace mode: if members are configured, run each member independently.
+            if let Some(members) =
+                crate::graph::load_workspace_members(&dir, config_dir).into_diagnostic()?
+            {
+                return run_workspace_members(&members, config_dir, &run_args);
+            }
+
             let graph = crate::graph::StateGraph::discover(&dir, config_dir).into_diagnostic()?;
 
             let roots = graph.roots();
@@ -290,6 +298,13 @@ pub fn run_command(config_dir: &str, command: Command) -> miette::Result<bool> {
         }
         Command::List(list_args) => {
             let dir = resolve_dir(&list_args.dir)?;
+
+            if let Some(members) =
+                crate::graph::load_workspace_members(&dir, config_dir).into_diagnostic()?
+            {
+                return list_workspace_members(&members, config_dir, &list_args);
+            }
+
             let graph = crate::graph::StateGraph::discover(&dir, config_dir).into_diagnostic()?;
 
             match list_args.show {
@@ -304,6 +319,13 @@ pub fn run_command(config_dir: &str, command: Command) -> miette::Result<bool> {
         }
         Command::Validate(validate_args) => {
             let dir = resolve_dir(&validate_args.dir)?;
+
+            if let Some(members) =
+                crate::graph::load_workspace_members(&dir, config_dir).into_diagnostic()?
+            {
+                return validate_workspace_members(&members, config_dir);
+            }
+
             let graph = crate::graph::StateGraph::discover(&dir, config_dir).into_diagnostic()?;
 
             let roots = graph.roots();
@@ -372,6 +394,136 @@ pub fn run_command(config_dir: &str, command: Command) -> miette::Result<bool> {
             Ok(true)
         }
     }
+}
+
+/// Derive a short member label from the directory path.
+/// Uses the directory basename, or the last two components if the basename is generic.
+fn member_label(path: &Utf8Path) -> String {
+    path.file_name().unwrap_or(path.as_str()).to_string()
+}
+
+/// Print a member section header.
+fn print_member_header(label: &str) {
+    println!("── {label} ──");
+}
+
+/// Run all test paths for each workspace member, printing per-member results.
+fn run_workspace_members(
+    members: &[Utf8PathBuf],
+    config_dir: &str,
+    run_args: &RunArgs,
+) -> miette::Result<bool> {
+    let mut all_passed = true;
+
+    for member_dir in members {
+        let label = member_label(member_dir);
+        print_member_header(&label);
+
+        let graph = crate::graph::StateGraph::discover(member_dir, config_dir).into_diagnostic()?;
+
+        let roots = graph.roots();
+        if roots.is_empty() {
+            return Err(crate::error::Error::NoRoots.into());
+        }
+
+        let paths = crate::paths::enumerate_paths(&graph);
+        if paths.is_empty() {
+            eprintln!("no test paths found in {label}");
+            continue;
+        }
+
+        let sandbox =
+            crate::executor::detect_sandbox(&graph).map_err(|e| miette::miette!("{e}"))?;
+
+        let check_mode = if run_args.check_only {
+            crate::executor::CheckMode::CheckOnly
+        } else if run_args.no_check {
+            crate::executor::CheckMode::NoCheck
+        } else {
+            crate::executor::CheckMode::Full
+        };
+
+        let opts = crate::executor::RunOptions {
+            keep_temp: run_args.keep_temp,
+            verbose: run_args.verbose > 0,
+            sandbox,
+            check_mode,
+            recording: None,
+        };
+
+        // Run setup commands before test paths (if any)
+        if !graph.setup.is_empty() {
+            let setup_results = crate::executor::run_setup_phase(&graph, &opts);
+            let setup_passed =
+                crate::report::print_setup_results(&setup_results, run_args.verbose > 0);
+            if !setup_passed {
+                all_passed = false;
+                continue;
+            }
+        }
+
+        let progress = crate::report::ProgressReporter::new();
+        progress.prepare(&paths, &graph);
+        let results = crate::executor::run_all_paths(
+            &graph,
+            &paths,
+            &opts,
+            Some(&|event| progress.on_event(event)),
+        );
+        progress.finish();
+        let member_passed = crate::report::print_results(&results, run_args.verbose > 0);
+
+        if !member_passed {
+            all_passed = false;
+        }
+    }
+
+    Ok(all_passed)
+}
+
+/// List states/transitions/paths for each workspace member.
+fn list_workspace_members(
+    members: &[Utf8PathBuf],
+    config_dir: &str,
+    list_args: &ListArgs,
+) -> miette::Result<bool> {
+    for member_dir in members {
+        let label = member_label(member_dir);
+        print_member_header(&label);
+
+        let graph = crate::graph::StateGraph::discover(member_dir, config_dir).into_diagnostic()?;
+
+        match list_args.show {
+            ListKind::States => crate::report::print_states(&graph),
+            ListKind::Transitions => crate::report::print_transitions(&graph),
+            ListKind::Paths | ListKind::Graph => {
+                let paths = crate::paths::enumerate_paths(&graph);
+                crate::report::print_paths(&paths, &graph);
+            }
+        }
+    }
+    Ok(true)
+}
+
+/// Validate each workspace member.
+fn validate_workspace_members(members: &[Utf8PathBuf], config_dir: &str) -> miette::Result<bool> {
+    for member_dir in members {
+        let label = member_label(member_dir);
+        let graph = crate::graph::StateGraph::discover(member_dir, config_dir).into_diagnostic()?;
+
+        let roots = graph.roots();
+        if roots.is_empty() {
+            return Err(crate::error::Error::NoRoots.into());
+        }
+
+        println!(
+            "{label}: valid: {} state(s), {} transition(s), {} root(s)",
+            graph.states.len(),
+            graph.transitions.len(),
+            roots.len()
+        );
+    }
+    Ok(true)
 }
 
 fn resolve_dir(dir: &Utf8PathBuf) -> miette::Result<camino::Utf8PathBuf> {

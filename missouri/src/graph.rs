@@ -112,6 +112,42 @@ pub struct StateGraph {
     pub sandbox_config: SandboxConfig,
 }
 
+/// Check if the project root has a workspace config with `members`.
+/// Returns the resolved member directory paths if present.
+pub fn load_workspace_members(
+    root: &Utf8Path,
+    config_dir: &str,
+) -> Result<Option<Vec<Utf8PathBuf>>> {
+    let root = root.canonicalize_utf8().map_err(Error::Io)?;
+    let root_yml = root.join("missouri.yml");
+    let config_dir_yml = root.join(config_dir).join("missouri.yml");
+
+    let config_path = if root_yml.exists() {
+        root_yml
+    } else if config_dir_yml.exists() {
+        config_dir_yml
+    } else {
+        return Ok(None);
+    };
+
+    let content = std::fs::read_to_string(&config_path).map_err(|e| Error::ConfigRead {
+        path: config_path.clone(),
+        source: e,
+    })?;
+    let cfg = config::parse_project_config(&content).map_err(|e| Error::ConfigParse {
+        path: config_path,
+        source: e,
+    })?;
+
+    if cfg.members.is_empty() {
+        return Ok(None);
+    }
+
+    let members = cfg.members.into_iter().map(|m| root.join(m)).collect();
+
+    Ok(Some(members))
+}
+
 impl StateGraph {
     /// Discover all states under `root` and build the graph.
     /// `config_dir` is the name of the config directory (e.g., ".missouri").
