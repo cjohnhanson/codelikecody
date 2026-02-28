@@ -321,7 +321,6 @@ fn illinois_cycle_fails() {
 }
 
 #[test]
-#[ignore = "dbt fixture assertions broken — pre-existing"]
 fn illinois_dbt_flox_passes() {
     if find_flox().is_none() {
         eprintln!("skipping illinois_dbt_flox_passes: flox not found on PATH");
@@ -692,7 +691,6 @@ fn illinois_record_branching_passes() {
 }
 
 #[test]
-#[ignore = "dbt fixture assertions broken — pre-existing"]
 fn illinois_record_dbt_flox_passes() {
     if find_flox().is_none() {
         eprintln!("skipping illinois_record_dbt_flox_passes: flox not found on PATH");
