@@ -1,12 +1,12 @@
 ---
 title: "Tisket status should advance to in_progress when phase is set"
-status: backlog
+status: in_progress
 priority: 3
 assignee:
 labels: [clc, tisket]
 depends_on: []
-created: "2026-02-26T04:13:11Z"
-updated: "2026-02-26T04:13:11Z"
+created: 2026-02-26T04:13:11Z
+updated: "2026-02-28T06:01:23Z"
 ---
 
 When the phase system bootstraps (either via `clc pickup` or the SessionStart
