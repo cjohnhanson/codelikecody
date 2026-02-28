@@ -6,7 +6,6 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    flox.url = "github:flox/flox/latest";
   };
 
   outputs =
@@ -14,7 +13,6 @@
       nixpkgs,
       crane,
       rust-overlay,
-      flox,
       ...
     }:
     let
@@ -76,24 +74,22 @@
             commonArgs
             // {
               inherit cargoArtifacts;
-              nativeCheckInputs = [
-                flox.packages.${system}.default
+              nativeCheckInputs = with pkgs; [
+                # Packages needed by missouri test fixtures
+                python3
+                uv
+                duckdb
+                cargo
+                rustc
+                coreutils
               ];
-              # The darwin nix sandbox forces HOME=/var/empty for child processes.
-              # Flox needs a writable config dir. Set XDG dirs and FLOX_CONFIG_DIR
-              # so flox init can write its config in the build tmpdir.
+              # MISSOURI_SANDBOX=preinstalled tells missouri to skip `nix shell`
+              # wrapping — the packages above are already on PATH via
+              # nativeCheckInputs.
               checkPhase = ''
                 tmpHome="$(mktemp -d)"
                 export HOME="$tmpHome"
-                export TMPDIR="''${TMPDIR:-/tmp}"
-                export XDG_CONFIG_HOME="$tmpHome/.config"
-                export XDG_CACHE_HOME="$tmpHome/.cache"
-                export XDG_DATA_HOME="$tmpHome/.local/share"
-                export XDG_STATE_HOME="$tmpHome/.local/state"
-                export FLOX_CONFIG_DIR="$tmpHome/.config/flox"
-                export FLOX_DISABLE_METRICS=true
-                mkdir -p "$FLOX_CONFIG_DIR"
-                echo "DEBUG: HOME=$HOME TMPDIR=$TMPDIR"
+                export MISSOURI_SANDBOX=preinstalled
                 cargo test --profile release --locked
               '';
             }
