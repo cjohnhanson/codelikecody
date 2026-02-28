@@ -1,12 +1,12 @@
 ---
 title: "Configurable per-transition phase gates with config-rs and TOML"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [clc]
 depends_on: []
 created: 2026-02-28T06:27:48Z
-updated: "2026-02-28T13:05:23Z"
+updated: "2026-02-28T13:05:54Z"
 ---
 
 Replace the current `.clc/config.yml` (serde_yml) config system with config-rs
