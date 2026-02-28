@@ -129,13 +129,17 @@ fn assemble_prime(cwd: &Path, git: Option<&git::GitState>, phase: Option<phase::
     {
         out.push_str(
             "## What to do on trunk\n\n\
-             Trunk is read-only for file modifications. Edit, Write, and NotebookEdit\n\
-             tools are blocked. Bash, Read, Glob, Grep, and other tools work normally.\n\
-             Use trunk for triage, planning, and picking up work.\n\n\
-             To begin work, pick up a tisket:\n\n\
+             Trunk is read-only. Edit, Write, and NotebookEdit are blocked. Read, Glob,\n\
+             and Grep always pass. Bash is restricted to an allowlist of safe commands:\n\
+             git, cargo test/check/build/clippy/fmt, clc, missouri, tisket issue list/show/path,\n\
+             tisket search, ls, pwd, which, cat, head, tail, wc, find, tree. Other Bash\n\
+             commands are blocked — false positives are better than accidental writes on trunk.\n\n\
+             To begin work on a tisket:\n\n\
              \x20   clc pickup <issue-id>\n\n\
-             This creates a worktree on a dedicated branch and sets the initial phase.\n\
-             All implementation happens in worktrees, never on trunk.\n\n",
+             For admin work without a specific tisket (triage, planning, reviewing):\n\n\
+             \x20   clc admin\n\n\
+             Both commands create a dedicated worktree. All implementation and file\n\
+             modifications happen in worktrees, never on trunk.\n\n",
         );
     }
 

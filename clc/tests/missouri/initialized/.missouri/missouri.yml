@@ -248,6 +248,15 @@ assertions:
   - name: "prime mentions pickup when on main"
     command: "git init -q -b main && (git checkout main 2>/dev/null || true) && clc prime | grep -i 'pickup'"
 
+  - name: "prime mentions clc admin when on main"
+    command: "git init -q -b main && (git checkout main 2>/dev/null || true) && clc prime | grep 'clc admin'"
+
+  - name: "prime on main describes Bash as restricted to allowlist"
+    command: "git init -q -b main && (git checkout main 2>/dev/null || true) && clc prime | grep -i 'allowlist'"
+
+  - name: "SessionStart on main mentions clc admin"
+    command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook | jq -e '.hookSpecificOutput.additionalContext' | grep -i 'admin'"
+
   - name: "SessionStart hook additionalContext contains tisket"
     command: "echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook | jq -r '.hookSpecificOutput.additionalContext' | grep -i 'tisket'"
 
