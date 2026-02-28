@@ -203,6 +203,9 @@ assertions:
   - name: "Stop hook blocked on feature branch with no phase"
     command: "git init -q -b main && git -c user.name=test -c user.email=test@test commit -q --allow-empty -m init && git checkout -q -B feat-xyz && echo '{\"hook_event_name\":\"Stop\",\"session_id\":\"test\",\"cwd\":\".\"}' | clc hook 2>/dev/null; test $? -eq 2"
 
+  - name: "Stop block message on no-phase feature branch mentions no phase"
+    command: "git init -q -b main && git -c user.name=test -c user.email=test@test commit -q --allow-empty -m init && git checkout -q -B feat-xyz && echo '{\"hook_event_name\":\"Stop\",\"session_id\":\"test\",\"cwd\":\".\"}' | clc hook 2>&1 >/dev/null | grep -i 'No phase'"
+
   - name: "SessionStart on main mentions pickup"
     command: "git init -q -b main && (git checkout main 2>/dev/null || true) && echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook | jq -e '.hookSpecificOutput.additionalContext' | grep -i 'pickup'"
 
