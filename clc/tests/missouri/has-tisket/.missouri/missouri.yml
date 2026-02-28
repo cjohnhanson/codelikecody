@@ -32,6 +32,9 @@ assertions:
   - name: "SessionStart bootstraps phase on unphased feature branch with matching tisket"
     command: "rm -f .clc/state && git init -q -b main && git -c user.name=test -c user.email=test@test commit -q --allow-empty -m init && git checkout -q -B test-feature && echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook > /dev/null && test -f .clc/state && grep 'tests-unwritten' .clc/state"
 
+  - name: "SessionStart advances tisket to in_progress when bootstrapping phase"
+    command: "rm -f .clc/state && sed -i '' 's/^status: in_progress/status: todo/' .tisket/v0.1.0/test-feature.md && git init -q -b main && git -c user.name=test -c user.email=test@test commit -q --allow-empty -m init && git checkout -q -B test-feature && echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook > /dev/null && grep -q 'status: in_progress' .tisket/v0.1.0/test-feature.md"
+
   - name: "SessionStart does not bootstrap phase on main"
     command: "rm -f .clc/state && rm -rf .git && git init -q -b main && echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook > /dev/null && ! test -f .clc/state"
 

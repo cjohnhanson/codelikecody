@@ -2,6 +2,7 @@ use std::fmt::Write;
 use std::io::Read;
 use std::path::Path;
 
+use camino::Utf8Path;
 use serde_json::Value;
 
 use crate::adapter::Adapter;
@@ -308,10 +309,17 @@ fn maybe_bootstrap_phase(
     // Check for a matching tisket.
     let branch = Some(state.branch.as_str());
     let tisket_state = tisket::detect(cwd, branch).ok()?;
-    tisket_state.current_issue.as_ref()?;
+    let issue = tisket_state.current_issue.as_ref()?;
+    let issue_id = issue.id.clone();
 
     // Bootstrap: set phase to tests-unwritten.
     if phase::set(cwd, "tests-unwritten", 1).is_ok() {
+        // Advance the matching tisket to in_progress.
+        if let Some(s) = cwd.to_str()
+            && let Ok(repo) = ::tisket::Repo::open(Utf8Path::new(s))
+        {
+            let _ = repo.edit_issue(&issue_id, Some("in_progress"));
+        }
         Some(phase::Phase::TestsUnwritten)
     } else {
         None
