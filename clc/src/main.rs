@@ -54,21 +54,16 @@ fn main() {
         } => cmd_status_set(phase),
         cli::Command::Admin => cmd_admin(),
         cli::Command::Coordinate {
-            ref budget,
             ref model,
             ref tisket,
-        } => cmd_coordinate(*budget, model, tisket.as_deref()),
+        } => cmd_coordinate(model, tisket.as_deref()),
         cli::Command::Home => cmd_home(),
         cli::Command::Merge { ref id } => cmd_merge(id),
         cli::Command::Pickup { ref id } => cmd_pickup(id),
         cli::Command::Done => cmd_done(),
         cli::Command::Prime => cmd_prime(),
         cli::Command::Config { ref action } => cmd_config(action),
-        cli::Command::Dispatch {
-            ref id,
-            ref model,
-            budget,
-        } => cmd_dispatch(id, model, budget),
+        cli::Command::Dispatch { ref id, ref model } => cmd_dispatch(id, model),
         cli::Command::Workers => cmd_workers(),
         cli::Command::Worker { ref id, ref action } => cmd_worker(id, action),
         cli::Command::Land { ref id } => cmd_land(id),
@@ -159,10 +154,10 @@ fn cmd_status_set(target: &str) -> Result<(), Error> {
     phase::set(&cwd, target, cfg.required_attempts)
 }
 
-fn cmd_coordinate(budget: f64, model: &str, tisket: Option<&str>) -> Result<(), Error> {
+fn cmd_coordinate(model: &str, tisket: Option<&str>) -> Result<(), Error> {
     let project_dir = std::env::current_dir()?;
     let cfg = config::load(&project_dir).unwrap_or_default();
-    coordinate::coordinate(&project_dir, &cfg.main_branch, budget, model, tisket)
+    coordinate::coordinate(&project_dir, &cfg.main_branch, model, tisket)
 }
 
 fn cmd_config(action: &cli::ConfigAction) -> Result<(), Error> {
@@ -234,10 +229,10 @@ fn cmd_missouri(command: ::missouri::cli::Command) -> Result<(), Error> {
     }
 }
 
-fn cmd_dispatch(id: &str, model: &str, budget: f64) -> Result<(), Error> {
+fn cmd_dispatch(id: &str, model: &str) -> Result<(), Error> {
     let project_dir = std::env::current_dir()?;
     let cfg = config::load(&project_dir).unwrap_or_default();
-    dispatch::dispatch(&project_dir, id, &cfg.main_branch, model, budget)
+    dispatch::dispatch(&project_dir, id, &cfg.main_branch, model)
 }
 
 fn cmd_workers() -> Result<(), Error> {

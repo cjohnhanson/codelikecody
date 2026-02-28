@@ -24,13 +24,7 @@ use crate::pickup;
 /// Worker state directory name inside the worktree's `.clc/`.
 const WORKER_DIR: &str = "worker";
 
-pub fn dispatch(
-    project_dir: &Path,
-    id: &str,
-    main_branch: &str,
-    model: &str,
-    budget: f64,
-) -> Result<(), Error> {
+pub fn dispatch(project_dir: &Path, id: &str, main_branch: &str, model: &str) -> Result<(), Error> {
     // Must be on main branch.
     let git_state = git::detect(project_dir, main_branch)
         .ok_or_else(|| Error::NonBlocking("not inside a git repository".into()))?;
@@ -93,7 +87,6 @@ pub fn dispatch(
     cmd.arg("--output-format").arg("stream-json");
     cmd.arg("--dangerously-skip-permissions");
     cmd.arg("--model").arg(model);
-    cmd.arg("--max-budget-usd").arg(budget.to_string());
     cmd.arg("--append-system-prompt").arg(&system_prompt);
 
     cmd.stdin(Stdio::from(stdin_file));

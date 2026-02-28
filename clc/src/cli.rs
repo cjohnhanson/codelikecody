@@ -58,9 +58,6 @@ pub enum Command {
     },
     /// Run the coordinator: dispatch pickable tiskets to worker agents.
     Coordinate {
-        /// Maximum budget per worker in USD.
-        #[arg(long, default_value = "5.0")]
-        budget: f64,
         /// Model to use for workers.
         #[arg(long, default_value = "opus")]
         model: String,
@@ -75,9 +72,6 @@ pub enum Command {
         /// Model to use for the worker.
         #[arg(long, default_value = "sonnet")]
         model: String,
-        /// Maximum budget in USD.
-        #[arg(long, default_value = "5.0")]
-        budget: f64,
     },
     /// List active workers and their status.
     Workers,

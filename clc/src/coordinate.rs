@@ -25,7 +25,6 @@ enum WorkerOutcome {
 pub fn coordinate(
     project_dir: &Path,
     main_branch: &str,
-    budget: f64,
     model: &str,
     tisket_filter: Option<&str>,
 ) -> Result<(), Error> {
@@ -79,7 +78,7 @@ pub fn coordinate(
             main_branch: main_branch.to_string(),
             initial_prompt,
             system_prompt: Some(system_prompt),
-            max_budget_usd: Some(budget),
+            max_budget_usd: None,
             model: Some(model.to_string()),
         };
 

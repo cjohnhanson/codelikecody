@@ -55,7 +55,7 @@ transitions:
           ignore: true
 
   - name: "dispatch a worker"
-    command: "clc dispatch test-feature --model haiku --budget 0.10"
+    command: "clc dispatch test-feature --model haiku"
     target: "../dispatched"
     comparators:
       files:
