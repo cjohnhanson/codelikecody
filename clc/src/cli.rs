@@ -111,6 +111,8 @@ pub enum WorkerAction {
     },
     /// Stop the worker process (leave worktree intact).
     Stop,
+    /// Resume a stopped worker (re-attach to existing session).
+    Resume,
     /// Show raw NDJSON output.
     Raw {
         /// Number of lines to show (from end). 0 = all.

@@ -1,4 +1,4 @@
-//! Worker interaction: list, check, log, send, stop, raw, land.
+//! Worker interaction: list, check, log, send, stop, resume, raw, land.
 //!
 //! Worker state lives in `.clc/worker/` inside each worktree.
 //! Coordinator state (cursors) lives in `.clc/workers/<id>/` on trunk.
@@ -6,10 +6,12 @@
 use std::fs;
 use std::io::Write;
 use std::path::Path;
+use std::process::{Command, Stdio};
 
 use claude_code::protocol::{ContentBlock, OutputMessage};
 use nix::sys::signal::{self, Signal};
-use nix::unistd::Pid;
+use nix::sys::stat::Mode;
+use nix::unistd::{self, Pid};
 
 use crate::error::Error;
 use crate::merge;
@@ -192,6 +194,109 @@ pub fn stop(project_dir: &Path, id: &str) -> Result<(), Error> {
     }
 
     Ok(())
+}
+
+/// Resume a stopped worker by re-attaching to its existing session.
+pub fn resume(project_dir: &Path, id: &str) -> Result<(), Error> {
+    let worktree_dir = project_dir.join(".worktrees").join(id);
+    let worker_dir = worktree_dir.join(".clc").join(WORKER_DIR);
+
+    if !worktree_dir.is_dir() {
+        return Err(Error::NonBlocking(format!("no worktree for '{id}'")));
+    }
+
+    // Must not already be running.
+    if let Some(pid) = read_pid(&worker_dir)
+        && is_process_alive(pid)
+    {
+        return Err(Error::NonBlocking(format!(
+            "worker '{id}' is already running (pid {pid})"
+        )));
+    }
+
+    // Extract session ID from stdout.
+    let stdout_path = worker_dir.join("stdout.jsonl");
+    let session_id = extract_session_id(&stdout_path)?;
+
+    let pid_path = worker_dir.join("pid");
+    let stderr_path = worker_dir.join("stderr.log");
+    let stdin_pipe_path = worker_dir.join("stdin.pipe");
+
+    // Recreate the named pipe.
+    if stdin_pipe_path.exists() {
+        fs::remove_file(&stdin_pipe_path)?;
+    }
+    unistd::mkfifo(&stdin_pipe_path, Mode::S_IRUSR | Mode::S_IWUSR)
+        .map_err(|e| Error::NonBlocking(format!("mkfifo: {e}")))?;
+
+    // Open stdout in append mode (preserve previous session output).
+    let stdout_file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&stdout_path)?;
+    let stderr_file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&stderr_path)?;
+
+    // Open pipe with O_RDWR to avoid blocking.
+    let stdin_file = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&stdin_pipe_path)?;
+
+    // Build the claude command with --resume.
+    let mut cmd = Command::new("claude");
+    cmd.current_dir(&worktree_dir);
+    cmd.arg("--print");
+    cmd.arg("--verbose");
+    cmd.arg("--input-format").arg("stream-json");
+    cmd.arg("--output-format").arg("stream-json");
+    cmd.arg("--dangerously-skip-permissions");
+    cmd.arg("--resume").arg(&session_id);
+
+    cmd.stdin(Stdio::from(stdin_file));
+    cmd.stdout(Stdio::from(stdout_file));
+    cmd.stderr(Stdio::from(stderr_file));
+    cmd.env_remove("CLAUDECODE");
+
+    let child = cmd
+        .spawn()
+        .map_err(|e| Error::NonBlocking(format!("failed to spawn claude worker: {e}")))?;
+
+    let pid = child.id();
+    fs::write(&pid_path, pid.to_string())?;
+
+    // Send a continuation prompt.
+    let input = claude_code::protocol::InputMessage::user(
+        "Continue where you left off. Run `clc status` to check current state and proceed through the phases.",
+    );
+    let json = serde_json::to_string(&input)?;
+    let mut pipe = fs::OpenOptions::new().write(true).open(&stdin_pipe_path)?;
+    writeln!(pipe, "{json}")?;
+    pipe.flush()?;
+
+    eprintln!("resumed worker '{id}' (pid {pid}, session {session_id})");
+    Ok(())
+}
+
+/// Extract the session ID from a worker's stdout.jsonl.
+fn extract_session_id(stdout_path: &Path) -> Result<String, Error> {
+    let lines = read_stdout_lines(stdout_path)?;
+
+    // Look for the system init message which has the session_id.
+    for line in &lines {
+        if let Ok(OutputMessage::System(sys)) = serde_json::from_str::<OutputMessage>(line)
+            && sys.subtype == "init"
+            && let Some(id) = sys.session_id
+        {
+            return Ok(id);
+        }
+    }
+
+    Err(Error::NonBlocking(
+        "no session ID found in worker output".into(),
+    ))
 }
 
 /// Show raw NDJSON output.
