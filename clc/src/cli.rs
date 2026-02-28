@@ -68,10 +68,60 @@ pub enum Command {
         #[arg(long)]
         tisket: Option<String>,
     },
+    /// Dispatch a worker: pickup tisket + spawn detached claude process.
+    Dispatch {
+        /// The tisket issue ID to dispatch.
+        id: String,
+        /// Model to use for the worker.
+        #[arg(long, default_value = "sonnet")]
+        model: String,
+        /// Maximum budget in USD.
+        #[arg(long, default_value = "5.0")]
+        budget: f64,
+    },
+    /// List active workers and their status.
+    Workers,
+    /// Interact with a specific worker.
+    Worker {
+        /// The worker ID (tisket ID).
+        id: String,
+        #[command(subcommand)]
+        action: WorkerAction,
+    },
+    /// Land a completed worker: stop, verify, merge, cleanup.
+    Land {
+        /// The worker ID (tisket ID) to land.
+        id: String,
+    },
     /// Run missouri commands.
     Missouri {
         #[command(subcommand)]
         command: ::missouri::cli::Command,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum WorkerAction {
+    /// Show activity since last check (cursor-based).
+    Check,
+    /// Show parsed output log.
+    Log {
+        /// Number of lines to show.
+        #[arg(long, default_value = "50")]
+        lines: usize,
+    },
+    /// Send a follow-up message to the worker.
+    Send {
+        /// The message to send.
+        message: String,
+    },
+    /// Stop the worker process (leave worktree intact).
+    Stop,
+    /// Show raw NDJSON output.
+    Raw {
+        /// Number of lines to show (from end). 0 = all.
+        #[arg(long, default_value = "10")]
+        lines: usize,
     },
 }
 

@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Stub claude binary for missouri tests.
+# Mimics claude --print --input-format stream-json --output-format stream-json:
+# 1. Reads one line from stdin (the initial prompt)
+# 2. Emits a system init message
+# 3. Emits an assistant text message
+# 4. Emits a result message
+# 5. Waits for more stdin or EOF, then exits
+
+# Emit system init message.
+echo '{"type":"system","subtype":"init","session_id":"test-session","tools":[],"model":"stub"}'
+
+# Small delay to simulate startup.
+sleep 0.1
+
+# Emit an assistant text message.
+echo '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"stub worker started"}]}}'
+
+# Emit a result message.
+echo '{"type":"result","is_error":false,"cost_usd":0.001,"duration_secs":0.5,"result":"done","permission_denials":[]}'
+
+# Now wait for follow-up messages on stdin.
+# For each line received, emit a new assistant + result pair.
+while IFS= read -r line; do
+    if [ -z "$line" ]; then
+        continue
+    fi
+    sleep 0.1
+    echo '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"stub response"}]}}'
+    echo '{"type":"result","is_error":false,"cost_usd":0.001,"duration_secs":0.1,"result":"done","permission_denials":[]}'
+done

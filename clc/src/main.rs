@@ -3,6 +3,7 @@ mod admin;
 mod cli;
 mod config;
 mod coordinate;
+mod dispatch;
 mod done;
 mod error;
 mod event;
@@ -17,6 +18,7 @@ mod missouri;
 mod phase;
 mod pickup;
 mod tisket;
+mod worker;
 mod workspace;
 
 use std::path::Path;
@@ -62,6 +64,14 @@ fn main() {
         cli::Command::Done => cmd_done(),
         cli::Command::Prime => cmd_prime(),
         cli::Command::Config { ref action } => cmd_config(action),
+        cli::Command::Dispatch {
+            ref id,
+            ref model,
+            budget,
+        } => cmd_dispatch(id, model, budget),
+        cli::Command::Workers => cmd_workers(),
+        cli::Command::Worker { ref id, ref action } => cmd_worker(id, action),
+        cli::Command::Land { ref id } => cmd_land(id),
         cli::Command::Tisket { command } => cmd_tisket(command),
         cli::Command::Missouri { command } => cmd_missouri(command),
         cli::Command::Hook => unreachable!(),
@@ -222,6 +232,34 @@ fn cmd_missouri(command: ::missouri::cli::Command) -> Result<(), Error> {
         Ok(false) => Err(Error::Block("missouri: tests failed".to_string())),
         Err(e) => Err(Error::NonBlocking(format!("{e}"))),
     }
+}
+
+fn cmd_dispatch(id: &str, model: &str, budget: f64) -> Result<(), Error> {
+    let project_dir = std::env::current_dir()?;
+    let cfg = config::load(&project_dir).unwrap_or_default();
+    dispatch::dispatch(&project_dir, id, &cfg.main_branch, model, budget)
+}
+
+fn cmd_workers() -> Result<(), Error> {
+    let project_dir = std::env::current_dir()?;
+    worker::list_workers(&project_dir)
+}
+
+fn cmd_worker(id: &str, action: &cli::WorkerAction) -> Result<(), Error> {
+    let project_dir = std::env::current_dir()?;
+    match action {
+        cli::WorkerAction::Check => worker::check(&project_dir, id),
+        cli::WorkerAction::Log { lines } => worker::log(&project_dir, id, *lines),
+        cli::WorkerAction::Send { message } => worker::send(&project_dir, id, message),
+        cli::WorkerAction::Stop => worker::stop(&project_dir, id),
+        cli::WorkerAction::Raw { lines } => worker::raw(&project_dir, id, *lines),
+    }
+}
+
+fn cmd_land(id: &str) -> Result<(), Error> {
+    let project_dir = std::env::current_dir()?;
+    let cfg = config::load(&project_dir).unwrap_or_default();
+    worker::land(&project_dir, id, &cfg.main_branch)
 }
 
 fn cmd_init(untracked: bool, force: bool) -> Result<(), Error> {
