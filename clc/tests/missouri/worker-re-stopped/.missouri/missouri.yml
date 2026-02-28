@@ -1,0 +1,12 @@
+assertions:
+  - name: "worker process is dead after re-stop"
+    command: "! kill -0 $(cat .worktrees/test-feature/.clc/worker/pid) 2>/dev/null"
+
+  - name: "worktree still exists"
+    command: "test -d .worktrees/test-feature"
+
+  - name: "stdout has content from both sessions"
+    command: "grep -c '\"subtype\":\"init\"' .worktrees/test-feature/.clc/worker/stdout.jsonl | xargs test 2 -le"
+
+  - name: "clc worker log still works"
+    command: "clc worker test-feature log | grep -qE 'tool|text|system'"

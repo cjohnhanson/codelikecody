@@ -1,0 +1,46 @@
+assertions:
+  - name: "worker process is alive after resume"
+    command: "kill -0 $(cat .worktrees/test-feature/.clc/worker/pid)"
+
+  - name: "PID changed from the original"
+    command: "test $(cat .worktrees/test-feature/.clc/worker/pid) != $(cat /tmp/missouri-original-pid)"
+
+  - name: "stdout file still exists and has more content"
+    command: "test -s .worktrees/test-feature/.clc/worker/stdout.jsonl"
+
+  - name: "stdout has new system init from resumed session"
+    command: "grep -c '\"subtype\":\"init\"' .worktrees/test-feature/.clc/worker/stdout.jsonl | xargs test 2 -le"
+
+  - name: "clc workers shows worker as working"
+    command: "clc workers | grep test-feature | grep -q working"
+
+  - name: "clc worker send works after resume"
+    command: "clc worker test-feature send 'ping'"
+
+  - name: "resume fails when worker already alive"
+    command: "clc worker test-feature resume 2>&1; test $? -ne 0"
+
+  - name: "worktree still intact"
+    command: "test -d .worktrees/test-feature"
+
+  - name: "stdin pipe exists"
+    command: "test -p .worktrees/test-feature/.clc/worker/stdin.pipe"
+
+transitions:
+  - name: "stop the resumed worker"
+    command: "clc worker test-feature stop"
+    target: "../worker-re-stopped"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".worktrees/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true
