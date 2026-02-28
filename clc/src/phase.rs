@@ -182,7 +182,10 @@ pub fn set(project_dir: &Path, target: &str, required_attempts: u32) -> Result<(
 fn write_state(project_dir: &Path, phase: Phase, attempts: u32) -> Result<(), Error> {
     use std::fmt::Write;
 
-    let state_path = project_dir.join(".clc").join(STATE_FILENAME);
+    let clc_dir = project_dir.join(".clc");
+    std::fs::create_dir_all(&clc_dir)
+        .map_err(|e| Error::NonBlocking(format!("failed to create .clc dir: {e}")))?;
+    let state_path = clc_dir.join(STATE_FILENAME);
 
     // Preserve non-phase/non-attempts lines (e.g., "untracked: true").
     let existing = if state_path.exists() {
