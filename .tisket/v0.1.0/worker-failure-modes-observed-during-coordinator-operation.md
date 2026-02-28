@@ -63,3 +63,23 @@ captures what happened, root cause if known, and whether it's been addressed.
 - **Fix**: Need to investigate why Stop hook isn't firing or isn't blocking.
   The hook should check phase != done and return a blocking error.
 - **Status**: Open — reproduced twice now, same pattern
+
+---
+
+## Investigation update (2026-02-28)
+
+### Stop hook investigation (failures #2 and #5)
+
+**Previous hypothesis was wrong.** Stop events DO fire in --print mode. Claude Code docs say only PermissionRequest hooks are disabled in non-interactive mode. The Stop hook is registered in the worker's settings.local.json and fires normally.
+
+**Actual root cause for #5 (green-phase stop):** check_stop() in guard.rs line 72 returns Passthrough for Green phase: `Some(Phase::Done | Phase::Green) => return Response::Passthrough`. The hook fires, evaluates the phase, and allows the stop. Fix: remove Green from passthrough arm so only Done permits stopping.
+
+**#2 (implementing-phase stop) is still unexplained.** check_stop() should block implementing. Needs investigation with logging to determine whether the hook errored, the model bypassed it somehow, or something else.
+
+Dedicated fix tisket: `stop-event-does-not-fire-in-print-mode-workers-exit-before-done-phase` (title is now outdated — actual issue is check_stop allowing green)
+
+### Prime text missing operational instructions (failure #3)
+
+The prime text describes missouri state but doesn't say how to run tests (`clc missouri run`). This is a content problem, not a compaction problem. Compaction makes it worse but the prime never teaches it in the first place.
+
+Dedicated fix tisket: `context-compaction-drops-operational-knowledge-workers-forget-project-tooling` (reframed as prime text content issue)
