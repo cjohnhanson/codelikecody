@@ -1233,6 +1233,12 @@ transitions:
         let graph = StateGraph::discover(root, ".missouri").unwrap();
         assert!(matches!(graph.sandbox_config, SandboxConfig::Packages(_)));
 
+        // nix must be on PATH for this test to produce Sandbox::Nix
+        if which_nix().is_none() {
+            eprintln!("skipping detect_sandbox_packages_resolves_to_nix: nix not on PATH");
+            return;
+        }
+
         // Clear MISSOURI_SANDBOX in case it's set (e.g., inside nix build)
         // SAFETY: test is single-threaded for this env var manipulation.
         let saved = std::env::var("MISSOURI_SANDBOX").ok();
@@ -1243,12 +1249,6 @@ transitions:
         // Restore if it was set
         if let Some(val) = saved {
             unsafe { std::env::set_var("MISSOURI_SANDBOX", val) };
-        }
-
-        // nix must be on PATH for this test to work
-        if which_nix().is_none() {
-            eprintln!("skipping detect_sandbox_packages_resolves_to_nix: nix not on PATH");
-            return;
         }
 
         match sandbox {
