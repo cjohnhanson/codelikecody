@@ -1,12 +1,12 @@
 ---
 title: "Guard should default to restrictive when no phase set on feature branch"
-status: backlog
+status: in_progress
 priority: 2
 assignee:
 labels: [clc, guard]
 depends_on: []
-created: "2026-02-26T04:13:09Z"
-updated: "2026-02-26T04:13:09Z"
+created: 2026-02-26T04:13:09Z
+updated: "2026-02-28T06:01:15Z"
 ---
 
 `guard.rs` lines 76-78 treat "no phase on feature branch" as permissive:
