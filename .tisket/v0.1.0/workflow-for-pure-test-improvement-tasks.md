@@ -1,6 +1,6 @@
 ---
 title: "Workflow for pure test-improvement tasks"
-status: in_progress
+status: todo
 priority: 3
 assignee:
 labels: [clc]

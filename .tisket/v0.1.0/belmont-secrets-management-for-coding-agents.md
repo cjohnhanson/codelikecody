@@ -1,10 +1,12 @@
 ---
 title: "Belmont: secrets management for coding agents"
-status: backlog
+status: in_progress
 priority: 2
 assignee:
 labels: [new-crate, architecture]
 depends_on: []
+created: "2026-02-28T03:42:30Z"
+updated: "2026-02-28T03:42:30Z"
 ---
 
 ## Problem
@@ -248,5 +250,3 @@ both through `Scrubber`. Prints scrubbed output. Exits with subprocess exit code
   Secrets Manager, sops, file.
 - **No signal handling**: Ctrl+C during `belmont run` relies on default
   propagation. Robust signal handling (like missouri's signal.rs) is a follow-up.
-
-## Scratch Notes
