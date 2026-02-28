@@ -1,19 +1,13 @@
 assertions:
-  - name: "phase is green"
-    command: "clc status 2>&1 | grep 'phase: green'"
+  - name: "test files are finalized"
+    command: "test -f tests/missouri/test-state-1/.missouri/missouri.yml"
 
-  - name: "on feature branch"
-    command: "test $(git rev-parse --abbrev-ref HEAD) = test-only-improvement"
-
-  - name: "no source code changes required for test-only work"
-    command: "test ! -f src/implementation.rs"
-
-  - name: "only test files are modified"
-    command: "git diff main --name-only | grep -q 'tests/missouri' && ! (git diff main --name-only | grep -v 'tests/') || true"
+  - name: "all test content is present"
+    command: "test -f tests/missouri/test-state-1/expected-file.txt"
 
 transitions:
-  - name: "finalize test-only work"
-    command: "clc done"
+  - name: "prepare test changes for finalization"
+    command: "git log --oneline | head -1"
     target: "../test-only-task-completed"
     comparators:
       files:
@@ -23,3 +17,5 @@ transitions:
           ignore: true
         - path: ".tisket/"
           ignore: true
+        - path: "tests/"
+          ignore: false

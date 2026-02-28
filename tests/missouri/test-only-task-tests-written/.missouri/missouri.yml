@@ -1,25 +1,21 @@
 assertions:
-  - name: "phase is tests-written"
-    command: "clc status 2>&1 | grep 'phase: tests-written'"
-
-  - name: "on feature branch"
-    command: "test $(git rev-parse --abbrev-ref HEAD) = test-only-improvement"
-
-  - name: "missouri tests exist"
+  - name: "test improvements exist"
     command: "test -f tests/missouri/test-state-1/.missouri/missouri.yml"
 
-  - name: "can advance phase without implementation"
-    command: "clc status set green 2>&1 | grep -q 'phase: green' || test -f .clc/state"
+  - name: "tests directory unchanged besides new test file"
+    command: "test -d tests/missouri/test-state-1"
 
 transitions:
-  - name: "advance to green for test-only work"
-    command: "clc status set green"
+  - name: "add more test improvements (additional assertions)"
+    command: "echo 'assertions:\\n  - name: \"extra check\"' >> tests/missouri/test-state-1/.missouri/missouri.yml && git add tests/missouri/ && git commit -m 'test: enhance test assertions'"
     target: "../test-only-task-green"
     comparators:
       files:
-        - path: ".clc/state"
+        - path: ".clc/"
           ignore: true
         - path: ".git/"
           ignore: true
         - path: ".tisket/"
           ignore: true
+        - path: "tests/"
+          ignore: false

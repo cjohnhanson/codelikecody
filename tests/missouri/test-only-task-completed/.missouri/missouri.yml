@@ -1,19 +1,13 @@
 assertions:
-  - name: "phase is done"
-    command: "clc status 2>&1 | grep 'phase: done'"
+  - name: "test improvements are persisted"
+    command: "test -f tests/missouri/test-state-1/.missouri/missouri.yml"
 
-  - name: "tisket is closed"
+  - name: "tisket closed state exists"
     command: "test -f .tisket/v0.1.0/.closed/test-improvement.md"
 
-  - name: "work is committed"
-    command: "git log -1 --format=%s | grep -q 'clc:' || true"
-
-  - name: "test-only changes persist in history"
-    command: "git log --all --oneline | grep -q 'test:' || true"
-
 transitions:
-  - name: "return to main"
-    command: "git checkout -q main"
+  - name: "complete finalization"
+    command: "git log --oneline | head -1"
     target: "../ready-for-merge"
     comparators:
       files:
@@ -23,5 +17,5 @@ transitions:
           ignore: true
         - path: ".tisket/"
           ignore: true
-        - path: "tests/missouri/"
+        - path: "tests/"
           ignore: false

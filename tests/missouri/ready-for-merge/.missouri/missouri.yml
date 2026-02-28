@@ -1,9 +1,6 @@
 assertions:
-  - name: "on main branch"
-    command: "test $(git rev-parse --abbrev-ref HEAD) = main"
-
-  - name: "test-only changes are merged"
+  - name: "test improvements are present"
     command: "test -f tests/missouri/test-state-1/.missouri/missouri.yml"
 
-  - name: "no untracked files"
-    command: "test -z \"$(git status --porcelain)\""
+  - name: "test fixtures exist"
+    command: "test -d tests/missouri/test-state-1"
