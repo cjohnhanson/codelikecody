@@ -1,12 +1,12 @@
 ---
 title: "Reconsider coordinator-facing context -- what information is most salient for monitoring workers"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [clc]
 depends_on: []
-created: "2026-02-28T20:30:00Z"
-updated: "2026-02-28T20:30:00Z"
+created: 2026-02-28T20:30:00Z
+updated: "2026-03-01T16:52:20Z"
 ---
 
 ## Problem
