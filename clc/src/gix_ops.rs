@@ -554,3 +554,157 @@ fn checkout_tree(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gix::prelude::Write as _;
+    use std::path::PathBuf;
+
+    /// Create a temporary git repository with an initial commit containing the given files.
+    fn make_test_repo(files: &[(&str, &str)]) -> PathBuf {
+        #[allow(deprecated)]
+        let dir = tempfile::tempdir().unwrap().into_path();
+
+        let repo = gix::init(&dir).unwrap();
+
+        for (path, content) in files {
+            let full = dir.join(path);
+            if let Some(parent) = full.parent() {
+                std::fs::create_dir_all(parent).unwrap();
+            }
+            std::fs::write(&full, content).unwrap();
+        }
+
+        // Build a tree using the tree editor.
+        let empty_tree_id = repo.write(&gix::objs::Tree::empty()).unwrap();
+        let empty_tree = repo.find_object(empty_tree_id).unwrap().into_tree();
+        let mut editor = empty_tree.edit().unwrap();
+        for (path, content) in files {
+            let blob_id = repo.write_blob(content.as_bytes()).unwrap();
+            let path_str: &str = path;
+            editor.upsert(path_str, EntryKind::Blob, blob_id).unwrap();
+        }
+        let tree_id = editor.write().unwrap();
+
+        // Create initial commit using repo.commit() (same API as commit_paths uses).
+        repo.commit("HEAD", "initial", tree_id, gix::commit::NO_PARENT_IDS)
+            .unwrap();
+
+        let mut index = repo.index_from_tree(&tree_id).unwrap();
+        let index_path = repo.path().join("index");
+        index.write(gix::index::write::Options::default()).unwrap();
+        index.set_path(index_path);
+
+        dir
+    }
+
+    fn tree_paths(project_dir: &Path) -> Vec<String> {
+        let repo = gix::open(project_dir).unwrap();
+        let tree = repo.head_commit().unwrap().tree().unwrap();
+        let entries = tree.traverse().breadthfirst.files().unwrap();
+        entries
+            .into_iter()
+            .filter(|e| !e.mode.is_tree())
+            .map(|e| e.filepath.to_string())
+            .collect()
+    }
+
+    #[test]
+    fn commit_paths_removes_deleted_file_from_directory() {
+        let dir = make_test_repo(&[
+            ("subdir/keep.txt", "keep"),
+            ("subdir/delete-me.txt", "gone"),
+            ("other.txt", "other"),
+        ]);
+
+        std::fs::remove_file(dir.join("subdir/delete-me.txt")).unwrap();
+
+        commit_paths(&dir, "remove deleted file", &["subdir/"]).unwrap();
+
+        let paths = tree_paths(&dir);
+        assert!(
+            paths.contains(&"subdir/keep.txt".to_string()),
+            "keep.txt should still be in tree"
+        );
+        assert!(
+            paths.contains(&"other.txt".to_string()),
+            "other.txt should still be in tree"
+        );
+        assert!(
+            !paths.contains(&"subdir/delete-me.txt".to_string()),
+            "delete-me.txt should have been removed from tree but wasn't: {paths:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn commit_paths_handles_move_to_subdirectory() {
+        let dir = make_test_repo(&[
+            ("issues/open/issue-1.md", "status: open"),
+            ("issues/open/issue-2.md", "status: open"),
+        ]);
+
+        std::fs::remove_file(dir.join("issues/open/issue-1.md")).unwrap();
+        std::fs::create_dir_all(dir.join("issues/.closed")).unwrap();
+        std::fs::write(dir.join("issues/.closed/issue-1.md"), "status: done").unwrap();
+
+        commit_paths(&dir, "close issue-1", &["issues/"]).unwrap();
+
+        let paths = tree_paths(&dir);
+        assert!(
+            !paths.contains(&"issues/open/issue-1.md".to_string()),
+            "issue-1 should be removed from open dir but wasn't: {paths:?}"
+        );
+        assert!(
+            paths.contains(&"issues/.closed/issue-1.md".to_string()),
+            "issue-1 should exist in closed dir: {paths:?}"
+        );
+        assert!(
+            paths.contains(&"issues/open/issue-2.md".to_string()),
+            "issue-2 should still be in open dir: {paths:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn commit_paths_removes_deleted_file_in_worktree() {
+        // Reproduce the real bug: commit_paths called from within a git worktree
+        // fails to remove deleted files from the tree.
+        let main_dir = make_test_repo(&[
+            ("issues/open/issue-1.md", "status: open"),
+            ("issues/open/issue-2.md", "status: open"),
+        ]);
+
+        // Create a worktree using the same gix_ops function used in production.
+        let wt_dir = main_dir.join(".worktrees").join("test-branch");
+        create_worktree(&main_dir, &wt_dir, "test-branch").unwrap();
+
+        // "Close" issue-1 in the worktree: delete from open, create in closed.
+        std::fs::remove_file(wt_dir.join("issues/open/issue-1.md")).unwrap();
+        std::fs::create_dir_all(wt_dir.join("issues/.closed")).unwrap();
+        std::fs::write(wt_dir.join("issues/.closed/issue-1.md"), "status: done").unwrap();
+
+        // commit_paths in the worktree context (same as clc done does).
+        commit_paths(&wt_dir, "close issue-1", &["issues/"]).unwrap();
+
+        // Check the worktree's HEAD tree.
+        let paths = tree_paths(&wt_dir);
+        assert!(
+            !paths.contains(&"issues/open/issue-1.md".to_string()),
+            "issue-1 should be removed from open dir in worktree but wasn't: {paths:?}"
+        );
+        assert!(
+            paths.contains(&"issues/.closed/issue-1.md".to_string()),
+            "issue-1 should exist in closed dir: {paths:?}"
+        );
+        assert!(
+            paths.contains(&"issues/open/issue-2.md".to_string()),
+            "issue-2 should still be in open dir: {paths:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(&main_dir);
+    }
+}
