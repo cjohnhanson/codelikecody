@@ -1,12 +1,12 @@
 ---
 title: "Agent ergonomics: track CLI friction points discovered during autonomous operation"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [tisket, ergonomics]
 depends_on: []
-created: "2026-03-01T13:06:31Z"
-updated: "2026-03-01T13:06:31Z"
+created: 2026-03-01T13:06:31Z
+updated: "2026-03-01T15:40:33Z"
 ---
 
 Tracking tisket for CLI friction points hit during autonomous agent operation. Every time an agent tries a command that doesn't exist, uses a flag wrong, or has to work around a missing feature, log it here. These are real UX signals — if the agent guesses wrong, the interface is probably unintuitive.
