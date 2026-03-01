@@ -1,5 +1,6 @@
 /target
 .scratch/
 .worktrees/
-.claude/
+.claude/*
+!.claude/skills
 .clc/
