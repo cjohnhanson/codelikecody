@@ -1,12 +1,12 @@
 ---
 title: "Worker visibility: show phase, last action, and elapsed time in clc workers"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [clc]
 depends_on: []
-created: "2026-02-28T06:50:06Z"
-updated: "2026-02-28T06:50:06Z"
+created: 2026-02-28T06:50:06Z
+updated: "2026-03-01T16:51:51Z"
 ---
 
 Current `clc workers` output shows pid, line count, and last event type. That's
