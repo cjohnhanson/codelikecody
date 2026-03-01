@@ -1,12 +1,12 @@
 ---
 title: "Admin and tisket operations should never dirty main"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [clc]
 depends_on: []
-created: "2026-02-28T20:46:16Z"
-updated: "2026-02-28T20:46:16Z"
+created: 2026-02-28T20:46:16Z
+updated: "2026-03-01T02:56:56Z"
 ---
 
 ## Problem
