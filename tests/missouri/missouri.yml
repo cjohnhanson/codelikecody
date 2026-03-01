@@ -1,6 +1,0 @@
-env:
-  # Project environment for Missouri tests
-  TEST_ENV: "true"
-
-setup:
-  - command: "true"

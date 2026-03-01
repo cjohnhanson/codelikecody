@@ -1,3 +1,0 @@
-assertions:
-  - name: "verify test state on main"
-    command: "test -f expected-file.txt"

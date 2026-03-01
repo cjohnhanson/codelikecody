@@ -1,6 +1,0 @@
-assertions:
-  - name: "test improvements are present"
-    command: "test -f tests/missouri/test-state-1/.missouri/missouri.yml"
-
-  - name: "test fixtures exist"
-    command: "test -d tests/missouri/test-state-1"
