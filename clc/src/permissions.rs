@@ -135,12 +135,26 @@ const BASELINE_PERMISSIONS: &[&str] = &[
 /// Write baseline permissions into a worker's `.claude/settings.local.json`.
 ///
 /// Called at dispatch time so the worker can function without `--dangerously-skip-permissions`.
-/// Only writes if the file doesn't already exist (idempotent for re-dispatch after resume).
+/// Merges permissions into existing settings (e.g., hooks from `clc init`). Idempotent —
+/// skips if `permissions.allow` is already present.
 pub fn seed_baseline(working_dir: &Path) -> Result<(), Error> {
     let settings_path = working_dir.join(".claude").join("settings.local.json");
 
-    // Don't overwrite if already seeded (e.g., re-dispatch after grant).
-    if settings_path.exists() {
+    // Read existing settings or start fresh.
+    let mut settings: serde_json::Value = if settings_path.exists() {
+        let content = fs::read_to_string(&settings_path)?;
+        serde_json::from_str(&content)?
+    } else {
+        serde_json::json!({})
+    };
+
+    // Don't overwrite if permissions are already seeded (e.g., re-dispatch after grant).
+    if settings
+        .get("permissions")
+        .and_then(|p| p.get("allow"))
+        .and_then(|a| a.as_array())
+        .is_some_and(|arr| !arr.is_empty())
+    {
         return Ok(());
     }
 
@@ -149,11 +163,10 @@ pub fn seed_baseline(working_dir: &Path) -> Result<(), Error> {
         .map(|p| serde_json::Value::String(p.to_string()))
         .collect();
 
-    let settings = serde_json::json!({
-        "permissions": {
-            "allow": allow,
-            "defaultMode": "dontAsk"
-        }
+    // Merge permissions into existing settings (preserving hooks, etc.).
+    settings["permissions"] = serde_json::json!({
+        "allow": allow,
+        "defaultMode": "dontAsk"
     });
 
     let json = serde_json::to_string_pretty(&settings)?;
@@ -326,17 +339,57 @@ mod tests {
         let dir = make_test_dir();
         seed_baseline(&dir).unwrap();
 
-        // Modify the file to verify it doesn't get overwritten.
         let path = dir.join(".claude").join("settings.local.json");
-        fs::write(&path, r#"{"custom": true}"#).unwrap();
+
+        // Add an extra permission to simulate a prior grant.
+        add_permission_rule(&path, "Bash(npm *)").unwrap();
+        let before = fs::read_to_string(&path).unwrap();
+        let before_count =
+            serde_json::from_str::<serde_json::Value>(&before).unwrap()["permissions"]["allow"]
+                .as_array()
+                .unwrap()
+                .len();
+
+        // Second seed should not overwrite since permissions.allow exists.
+        seed_baseline(&dir).unwrap();
+
+        let after = fs::read_to_string(&path).unwrap();
+        let after_count = serde_json::from_str::<serde_json::Value>(&after).unwrap()["permissions"]
+            ["allow"]
+            .as_array()
+            .unwrap()
+            .len();
+
+        assert_eq!(
+            before_count, after_count,
+            "seed_baseline overwrote existing permissions"
+        );
+    }
+
+    #[test]
+    fn seed_baseline_merges_into_existing_settings() {
+        let dir = make_test_dir();
+        let path = dir.join(".claude").join("settings.local.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+
+        // Write a settings file with hooks but no permissions (what clc init produces).
+        fs::write(
+            &path,
+            r#"{"hooks": {"PreToolUse": [{"hooks": [{"command": "clc hook", "type": "command"}]}]}}"#,
+        )
+        .unwrap();
 
         seed_baseline(&dir).unwrap();
 
         let content = fs::read_to_string(&path).unwrap();
-        assert!(
-            content.contains("custom"),
-            "seed_baseline overwrote existing file"
-        );
+        let settings: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+        // Hooks preserved.
+        assert!(settings.get("hooks").is_some(), "hooks lost during seed");
+        // Permissions added.
+        let allow = settings["permissions"]["allow"].as_array().unwrap();
+        assert!(!allow.is_empty(), "permissions not seeded");
+        assert!(allow.iter().any(|v| v == "Read"), "missing Read");
     }
 
     // --- add_permission_rule tests ---
