@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
@@ -21,6 +22,18 @@ pub fn commit_paths(project_dir: &Path, message: &str, paths: &[&str]) -> Result
         .tree()
         .map_err(|e| Error::NonBlocking(format!("failed to get HEAD tree: {e}")))?;
 
+    // Collect all blob paths from HEAD tree before creating the editor so we can
+    // detect files that have been deleted from the filesystem.
+    let head_blobs: Vec<String> = head_tree
+        .traverse()
+        .breadthfirst
+        .files()
+        .map_err(|e| Error::NonBlocking(format!("failed to traverse HEAD tree: {e}")))?
+        .into_iter()
+        .filter(|e| !e.mode.is_tree())
+        .map(|e| e.filepath.to_string())
+        .collect();
+
     let mut editor = head_tree
         .edit()
         .map_err(|e| Error::NonBlocking(format!("failed to create tree editor: {e}")))?;
@@ -30,6 +43,20 @@ pub fn commit_paths(project_dir: &Path, message: &str, paths: &[&str]) -> Result
 
         if fs_path.is_dir() {
             add_directory_to_editor(&repo, &mut editor, project_dir, path)?;
+            // Remove HEAD entries under this directory that no longer exist on the filesystem.
+            let dir_prefix = format!("{}/", path.trim_end_matches('/'));
+            for blob_path in &head_blobs {
+                if blob_path.starts_with(&dir_prefix) {
+                    let full_path = project_dir.join(blob_path);
+                    if !full_path.exists() {
+                        editor.remove(blob_path.as_str()).map_err(|e| {
+                            Error::NonBlocking(format!(
+                                "failed to remove deleted entry '{blob_path}': {e}"
+                            ))
+                        })?;
+                    }
+                }
+            }
         } else if fs_path.is_file() {
             let contents = std::fs::read(&fs_path).map_err(|e| {
                 Error::NonBlocking(format!("failed to read {}: {e}", fs_path.display()))
@@ -82,6 +109,15 @@ pub fn ff_merge(project_dir: &Path, branch_name: &str) -> Result<(), Error> {
         .map_err(|e| Error::NonBlocking(format!("failed to get HEAD: {e}")))?
         .detach();
 
+    // Capture the old tree id before updating HEAD so we can detect deletions.
+    let old_tree_id = repo
+        .find_object(head_id)
+        .map_err(|e| Error::NonBlocking(format!("failed to find HEAD commit: {e}")))?
+        .into_commit()
+        .tree_id()
+        .map_err(|e| Error::NonBlocking(format!("failed to get HEAD tree: {e}")))?
+        .detach();
+
     // Verify this is actually a fast-forward (target is descendant of HEAD).
     // Walk ancestors of target to find head_id.
     if target_id != head_id && !is_ancestor(&repo, head_id, target_id)? {
@@ -110,6 +146,23 @@ pub fn ff_merge(project_dir: &Path, branch_name: &str) -> Result<(), Error> {
         .tree_id()
         .map_err(|e| Error::NonBlocking(format!("failed to get target tree: {e}")))?
         .detach();
+
+    // Delete files present in the old tree but absent from the new tree.
+    // checkout_tree only adds/updates files; it does not remove files that no
+    // longer exist in the target tree.
+    let old_blobs = collect_tree_blobs(&repo, old_tree_id)?;
+    let new_blobs = collect_tree_blobs(&repo, target_tree_id)?;
+    for removed_path in old_blobs.difference(&new_blobs) {
+        let fs_path = project_dir.join(removed_path);
+        if fs_path.exists() {
+            std::fs::remove_file(&fs_path).map_err(|e| {
+                Error::NonBlocking(format!(
+                    "failed to remove deleted file '{}': {e}",
+                    fs_path.display()
+                ))
+            })?;
+        }
+    }
 
     checkout_tree(&repo, project_dir, &target_tree_id)?;
 
@@ -275,6 +328,29 @@ pub fn working_tree_is_clean(project_dir: &Path) -> Result<bool, Error> {
 
 fn open(project_dir: &Path) -> Result<gix::Repository, Error> {
     gix::discover(project_dir).map_err(|_| Error::NonBlocking("not inside a git repository".into()))
+}
+
+/// Collect the relative paths of all blob (non-tree) entries reachable from `tree_id`.
+fn collect_tree_blobs(
+    repo: &gix::Repository,
+    tree_id: gix::ObjectId,
+) -> Result<HashSet<String>, Error> {
+    let tree = repo
+        .find_object(tree_id)
+        .map_err(|e| Error::NonBlocking(format!("failed to find tree object: {e}")))?
+        .into_tree();
+
+    let entries = tree
+        .traverse()
+        .breadthfirst
+        .files()
+        .map_err(|e| Error::NonBlocking(format!("failed to traverse tree: {e}")))?;
+
+    Ok(entries
+        .into_iter()
+        .filter(|e| !e.mode.is_tree())
+        .map(|e| e.filepath.to_string())
+        .collect())
 }
 
 /// Walk a directory recursively and add all files to the tree editor.
