@@ -271,6 +271,84 @@ pub fn working_tree_is_clean(project_dir: &Path) -> Result<bool, Error> {
     Ok(!is_dirty)
 }
 
+/// Check if the working tree has uncommitted changes outside of ephemeral directories
+/// (`.clc/` and `.claude/`), which are excluded from the check.
+///
+/// Returns `true` if there are staged, unstaged, or untracked changes outside those dirs.
+pub fn has_relevant_uncommitted_changes(project_dir: &Path) -> Result<bool, Error> {
+    let repo = open(project_dir)?;
+
+    // Check staged changes: HEAD tree vs index.
+    let head_tree_id = repo
+        .head_tree_id()
+        .map_err(|e| Error::NonBlocking(format!("failed to get HEAD tree: {e}")))?
+        .detach();
+
+    let index = repo
+        .index_or_empty()
+        .map_err(|e| Error::NonBlocking(format!("failed to load index: {e}")))?;
+
+    let mut has_staged = false;
+    repo.tree_index_status(
+        &head_tree_id,
+        &index,
+        None,
+        gix::status::tree_index::TrackRenames::Disabled,
+        |change, _, _| {
+            use gix::diff::index::ChangeRef;
+            use std::convert::Infallible;
+            use std::ops::ControlFlow;
+            let path: &gix::bstr::BStr = match &change {
+                ChangeRef::Addition { location, .. }
+                | ChangeRef::Deletion { location, .. }
+                | ChangeRef::Modification { location, .. } => location.as_ref(),
+                ChangeRef::Rewrite {
+                    source_location, ..
+                } => source_location.as_ref(),
+            };
+            if !is_ephemeral_path(path) {
+                has_staged = true;
+                return Ok::<_, Infallible>(ControlFlow::Break(()));
+            }
+            Ok(ControlFlow::Continue(()))
+        },
+    )
+    .map_err(|e| Error::NonBlocking(format!("failed to check staged changes: {e}")))?;
+
+    if has_staged {
+        return Ok(true);
+    }
+
+    // Check index vs working tree (unstaged changes to tracked files + untracked files).
+    let has_unstaged_or_untracked = repo
+        .status(gix::progress::Discard)
+        .map_err(|e| Error::NonBlocking(format!("failed to initialize status check: {e}")))?
+        .index_worktree_rewrites(None)
+        .index_worktree_submodules(gix::status::Submodule::AsConfigured { check_dirty: false })
+        .into_index_worktree_iter(Vec::new())
+        .map_err(|e| Error::NonBlocking(format!("failed to check working tree status: {e}")))?
+        .take_while(Result::is_ok)
+        .any(|item| match item {
+            Ok(gix::status::index_worktree::Item::Modification { rela_path, .. }) => {
+                !is_ephemeral_path(rela_path.as_ref())
+            }
+            Ok(gix::status::index_worktree::Item::DirectoryContents { entry, .. }) => {
+                matches!(entry.status, gix::dir::entry::Status::Untracked)
+                    && !is_ephemeral_path(entry.rela_path.as_ref())
+            }
+            _ => false,
+        });
+
+    Ok(has_unstaged_or_untracked)
+}
+
+fn is_ephemeral_path(path: &gix::bstr::BStr) -> bool {
+    path.starts_with(b".clc/")
+        || path == ".clc"
+        || path.starts_with(b".claude/")
+        || path == ".claude"
+}
+
 // --- Internal helpers ---
 
 fn open(project_dir: &Path) -> Result<gix::Repository, Error> {

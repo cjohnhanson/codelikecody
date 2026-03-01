@@ -31,6 +31,15 @@ pub fn done(project_dir: &Path, main_branch: &str) -> Result<(), Error> {
         )));
     }
 
+    // Refuse to finalize if the working tree has uncommitted changes outside of
+    // ephemeral directories (.clc/ and .claude/).
+    if crate::gix_ops::has_relevant_uncommitted_changes(project_dir)? {
+        return Err(Error::NonBlocking(
+            "working tree has uncommitted changes — commit your work before running 'clc done'"
+                .into(),
+        ));
+    }
+
     // Advance phase to done (filesystem only — .clc/state is never tracked by git).
     phase::set(project_dir, "done", 1)?;
 
