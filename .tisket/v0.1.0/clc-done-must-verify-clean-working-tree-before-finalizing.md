@@ -1,12 +1,12 @@
 ---
 title: "clc done must verify clean working tree before finalizing"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [clc]
 depends_on: []
-created: "2026-02-28T20:46:15Z"
-updated: "2026-02-28T20:46:15Z"
+created: 2026-02-28T20:46:15Z
+updated: "2026-03-01T02:56:56Z"
 ---
 
 ## Problem
