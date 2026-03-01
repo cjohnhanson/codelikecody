@@ -163,6 +163,12 @@ pub fn check(project_dir: &Path, id: &str) -> Result<(), Error> {
     // Update cursor.
     write_cursor(&cursor_path, lines.len())?;
 
+    // Surface any pending permission request.
+    if let Some(description) = crate::permissions::pending_request(project_dir, id) {
+        eprintln!("[PERMISSION REQUEST PENDING] {description}");
+        eprintln!("  Grant with: clc permissions grant {id} \"<permission>\"");
+    }
+
     Ok(())
 }
 
@@ -357,6 +363,15 @@ pub fn supervise(project_dir: &Path, id: &str, max_resumes: u32) -> Result<(), E
         if phase == Some(crate::phase::Phase::Done) {
             eprintln!("worker '{id}' reached done phase");
             return Ok(());
+        }
+
+        // Block on pending permission requests before attempting auto-resume.
+        if let Some(description) = crate::permissions::pending_request(project_dir, id) {
+            return Err(Error::NonBlocking(format!(
+                "worker '{id}' has a pending permission request: \"{description}\"\n\
+                 Grant with: clc permissions grant {id} \"<permission>\"\n\
+                 Then resume supervision with: clc worker {id} supervise"
+            )));
         }
 
         let phase_str = phase.map_or_else(|| "none".to_string(), |p| p.to_string());

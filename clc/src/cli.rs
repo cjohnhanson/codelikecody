@@ -99,6 +99,29 @@ pub enum Command {
         #[command(subcommand)]
         command: ::missouri::cli::Command,
     },
+    /// Manage worker permissions (request, grant, list).
+    Permissions {
+        #[command(subcommand)]
+        action: PermissionsAction,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum PermissionsAction {
+    /// Request a permission (called from within a worker worktree).
+    Request {
+        /// Description of what permission is needed and why.
+        description: String,
+    },
+    /// Grant a permission to a worker (called by the coordinator).
+    Grant {
+        /// The worker ID (tisket ID).
+        worker_id: String,
+        /// The permission to grant (e.g. "Bash(npm install:*)").
+        permission: String,
+    },
+    /// List all pending permission requests across workers.
+    List,
 }
 
 #[derive(Subcommand)]

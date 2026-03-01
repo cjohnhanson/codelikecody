@@ -15,6 +15,7 @@ mod hook;
 mod init;
 mod merge;
 mod missouri;
+mod permissions;
 mod phase;
 mod pickup;
 mod tisket;
@@ -68,6 +69,7 @@ fn main() {
         cli::Command::Land { ref id } => cmd_land(id),
         cli::Command::Tisket { command } => cmd_tisket(command),
         cli::Command::Missouri { command } => cmd_missouri(command),
+        cli::Command::Permissions { ref action } => cmd_permissions(action),
         cli::Command::Hook => unreachable!(),
     };
 
@@ -262,6 +264,18 @@ fn cmd_land(id: &str) -> Result<(), Error> {
     let project_dir = std::env::current_dir()?;
     let cfg = config::load(&project_dir).unwrap_or_default();
     worker::land(&project_dir, id, &cfg.main_branch)
+}
+
+fn cmd_permissions(action: &cli::PermissionsAction) -> Result<(), Error> {
+    let cwd = std::env::current_dir()?;
+    match action {
+        cli::PermissionsAction::Request { description } => permissions::request(&cwd, description),
+        cli::PermissionsAction::Grant {
+            worker_id,
+            permission,
+        } => permissions::grant(&cwd, worker_id, permission),
+        cli::PermissionsAction::List => permissions::list(&cwd),
+    }
 }
 
 fn cmd_init(untracked: bool, force: bool) -> Result<(), Error> {
