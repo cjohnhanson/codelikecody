@@ -60,6 +60,24 @@ transitions:
         - path: "tisket.yml"
           ignore: true
 
+  - name: "worker files a permission request"
+    command: "(cd .worktrees/test-feature && clc permissions request 'need to run npm install to install dependencies')"
+    target: "../worker-permission-pending"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".worktrees/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true
+
   - name: "prune dead worker state"
     command: "mkdir -p .clc/workers/test-feature && echo '5' > .clc/workers/test-feature/cursor && clc workers --prune"
     target: "../worker-pruned"

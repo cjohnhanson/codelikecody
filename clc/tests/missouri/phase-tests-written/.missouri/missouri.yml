@@ -17,6 +17,12 @@ assertions:
   - name: "prime shows current phase"
     command: "clc prime | grep 'tests-written'"
 
+  - name: "prime includes TDD mandate"
+    command: "clc prime | grep -i 'test-driven'"
+
+  - name: "prime TDD mandate is independent of phase"
+    command: "clc prime | grep -i 'not a phase system'"
+
   - name: "phase guard blocks Edit in src on feature branch"
     command: "git init -q -b main && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init && git checkout -q -B feat-xyz && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"src/main.rs\"}}' | clc hook 2>/dev/null; test $? -eq 2"
 

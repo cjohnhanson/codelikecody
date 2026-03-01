@@ -33,3 +33,9 @@ This is an ongoing collection, not a single fix. Individual items can be spun ou
 - `tisket issue close -p v0.1.0 <id>` fails — `-p` not a valid flag for close. Inconsistent with `create` which takes `-p`.
 - `git add ".tisket/v0.1.0/file.md"` blocked by git-add-validator — hook sees `.tisket/` as a directory add. Agents hit this repeatedly and have to use `git rm` for deletions or find other workarounds.
 - `clc phase green` — no such subcommand. Phase advancement isn't exposed as a CLI command, agents have to manually write to `.clc/state`.
+
+## Session: permission-request-system (2026-03-01)
+
+- `tisket issue create` has no `-b`/`--body` flag — body must be appended to the file after creation
+- `tisket issue create` title becomes a slug that drops punctuation unpredictably (clc.yaml → clcyaml)
+- git-add-validator false positive: `git add clc/src/permissions.rs` blocked as "adding a directory: clc" — had to use `./clc/src/permissions.rs` with leading `./`

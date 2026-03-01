@@ -44,6 +44,9 @@ assertions:
   - name: "prime mentions updating scratch"
     command: "clc prime | grep -i 'scratch'"
 
+  - name: "prime instructs workers to commit before clc done"
+    command: "clc prime | grep -iE 'commit.*before.*clc done|commit.*before.*finaliz'"
+
   - name: "SessionStart hook includes full prime"
     command: "echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook | jq -r '.hookSpecificOutput.additionalContext' | grep -i 'tisket' && echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook | jq -r '.hookSpecificOutput.additionalContext' | grep -i 'missouri'"
 
