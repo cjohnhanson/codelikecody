@@ -1,12 +1,12 @@
 ---
 title: "Worker failure modes observed during coordinator operation"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [clc]
 depends_on: []
-created: "2026-02-28T19:35:08Z"
-updated: "2026-02-28T19:35:08Z"
+created: 2026-02-28T19:35:08Z
+updated: "2026-03-01T16:51:52Z"
 ---
 
 Running log of failure modes observed in dispatched workers. Each entry
