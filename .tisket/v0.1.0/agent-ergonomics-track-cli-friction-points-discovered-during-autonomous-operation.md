@@ -26,3 +26,10 @@ This is an ongoing collection, not a single fix. Individual items can be spun ou
 - **What happened**: Agent tried `clc worker <id> log --tail 5`. The flag is `--lines`, not `--tail`.
 - **Workaround**: Checked `--help`, used `--lines` instead.
 - **Expected**: Either `--tail` as an alias, or the flag name being more discoverable.
+
+### Session 2026-03-01 (coordinator implementation)
+
+- `tisket issue create -t "title"` fails — title is positional, not `-t` flag. Agents guess `-t` because every other CLI uses it.
+- `tisket issue close -p v0.1.0 <id>` fails — `-p` not a valid flag for close. Inconsistent with `create` which takes `-p`.
+- `git add ".tisket/v0.1.0/file.md"` blocked by git-add-validator — hook sees `.tisket/` as a directory add. Agents hit this repeatedly and have to use `git rm` for deletions or find other workarounds.
+- `clc phase green` — no such subcommand. Phase advancement isn't exposed as a CLI command, agents have to manually write to `.clc/state`.
