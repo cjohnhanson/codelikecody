@@ -1,12 +1,12 @@
 ---
 title: "Belmont: secrets management for coding agents"
-status: in_progress
+status: todo
 priority: 2
 assignee:
 labels: [new-crate, architecture]
 depends_on: []
-created: "2026-02-28T03:42:30Z"
-updated: "2026-02-28T03:42:30Z"
+created: 2026-02-28T03:42:30Z
+updated: "2026-03-01T15:25:55Z"
 ---
 
 ## Problem
