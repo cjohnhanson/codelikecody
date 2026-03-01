@@ -195,7 +195,7 @@ pub fn run_command(config_dir: &str, command: Command) -> miette::Result<bool> {
             if let Some(members) =
                 crate::graph::load_workspace_members(&dir, config_dir).into_diagnostic()?
             {
-                return run_workspace_members(&members, config_dir, &run_args);
+                return run_workspace_members(&members, &dir, config_dir, &run_args);
             }
 
             let graph = crate::graph::StateGraph::discover(&dir, config_dir).into_diagnostic()?;
@@ -302,7 +302,7 @@ pub fn run_command(config_dir: &str, command: Command) -> miette::Result<bool> {
             if let Some(members) =
                 crate::graph::load_workspace_members(&dir, config_dir).into_diagnostic()?
             {
-                return list_workspace_members(&members, config_dir, &list_args);
+                return list_workspace_members(&members, &dir, config_dir, &list_args);
             }
 
             let graph = crate::graph::StateGraph::discover(&dir, config_dir).into_diagnostic()?;
@@ -323,7 +323,7 @@ pub fn run_command(config_dir: &str, command: Command) -> miette::Result<bool> {
             if let Some(members) =
                 crate::graph::load_workspace_members(&dir, config_dir).into_diagnostic()?
             {
-                return validate_workspace_members(&members, config_dir);
+                return validate_workspace_members(&members, &dir, config_dir);
             }
 
             let graph = crate::graph::StateGraph::discover(&dir, config_dir).into_diagnostic()?;
@@ -398,8 +398,10 @@ pub fn run_command(config_dir: &str, command: Command) -> miette::Result<bool> {
 
 /// Derive a short member label from the directory path.
 /// Uses the directory basename, or the last two components if the basename is generic.
-fn member_label(path: &Utf8Path) -> String {
-    path.file_name().unwrap_or(path.as_str()).to_string()
+fn member_label(path: &Utf8Path, workspace_root: &Utf8Path) -> String {
+    path.strip_prefix(workspace_root)
+        .map(|p| p.as_str().to_string())
+        .unwrap_or_else(|_| path.file_name().unwrap_or(path.as_str()).to_string())
 }
 
 /// Print a member section header.
@@ -410,13 +412,14 @@ fn print_member_header(label: &str) {
 /// Run all test paths for each workspace member, printing per-member results.
 fn run_workspace_members(
     members: &[Utf8PathBuf],
+    workspace_root: &Utf8Path,
     config_dir: &str,
     run_args: &RunArgs,
 ) -> miette::Result<bool> {
     let mut all_passed = true;
 
     for member_dir in members {
-        let label = member_label(member_dir);
+        let label = member_label(member_dir, workspace_root);
         print_member_header(&label);
 
         let graph = crate::graph::StateGraph::discover(member_dir, config_dir).into_diagnostic()?;
@@ -484,11 +487,12 @@ fn run_workspace_members(
 /// List states/transitions/paths for each workspace member.
 fn list_workspace_members(
     members: &[Utf8PathBuf],
+    workspace_root: &Utf8Path,
     config_dir: &str,
     list_args: &ListArgs,
 ) -> miette::Result<bool> {
     for member_dir in members {
-        let label = member_label(member_dir);
+        let label = member_label(member_dir, workspace_root);
         print_member_header(&label);
 
         let graph = crate::graph::StateGraph::discover(member_dir, config_dir).into_diagnostic()?;
@@ -506,9 +510,13 @@ fn list_workspace_members(
 }
 
 /// Validate each workspace member.
-fn validate_workspace_members(members: &[Utf8PathBuf], config_dir: &str) -> miette::Result<bool> {
+fn validate_workspace_members(
+    members: &[Utf8PathBuf],
+    workspace_root: &Utf8Path,
+    config_dir: &str,
+) -> miette::Result<bool> {
     for member_dir in members {
-        let label = member_label(member_dir);
+        let label = member_label(member_dir, workspace_root);
         let graph = crate::graph::StateGraph::discover(member_dir, config_dir).into_diagnostic()?;
 
         let roots = graph.roots();
