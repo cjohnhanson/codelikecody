@@ -213,6 +213,12 @@ fn build_system_prompt(tisket_id: &str) -> String {
          Your task is defined by tisket '{tisket_id}'. \
          Follow the phase system: tests-unwritten -> tests-written -> red -> implementing -> green -> done. \
          When all tests pass and work is complete, run `clc done` to finalize. \
-         Do not stop before reaching the 'done' phase."
+         Do not stop before reaching the 'done' phase.\n\n\
+         Your permissions are limited. You have access to file operations, search, \
+         web lookup, clc/tisket/missouri/cargo commands, and basic shell commands. \
+         If a tool call is denied, do not retry it. Run \
+         `clc permissions request \"<what you need and why>\"` and stop working. \
+         The coordinator will review your request and either grant the permission \
+         or send you new instructions. Wait to be resumed."
     )
 }
