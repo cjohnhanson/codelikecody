@@ -14,28 +14,39 @@ use crate::worker;
 
 const REQUEST_FILE: &str = "permission-request.json";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum RequestStatus {
+    Pending,
+    Granted,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct PermissionRequest {
     description: String,
-    status: String,
+    status: RequestStatus,
 }
 
 /// Called by the worker: file a permission request and exit.
 ///
-/// Creates `.clc/worker/permission-request.json` in the current directory
-/// (the worker's working directory / worktree root).
-pub fn request(cwd: &Path, description: &str) -> Result<(), Error> {
-    let request_path = cwd.join(".clc").join("worker").join(REQUEST_FILE);
+/// Creates `permission-request.json` in the worker's state directory.
+pub fn request(project_dir: &Path, description: &str) -> Result<(), Error> {
+    // Determine worker ID from the current directory.
+    // If we're in a worktree, the directory name is the worker ID.
+    // If we're on trunk, we're the coordinator.
+    let worker_id = detect_worker_id(project_dir)?;
+    let wdir = worker::worker_dir_for(project_dir, &worker_id);
+    let request_path = wdir.join(REQUEST_FILE);
 
-    if !cwd.join(".clc").join("worker").is_dir() {
+    if !wdir.is_dir() {
         return Err(Error::NonBlocking(
-            "no worker state directory found — clc permissions request must be run from within a worker worktree".into(),
+            "no worker state directory found — must be run from within a worker".into(),
         ));
     }
 
     let req = PermissionRequest {
         description: description.to_string(),
-        status: "pending".to_string(),
+        status: RequestStatus::Pending,
     };
 
     let json = serde_json::to_string_pretty(&req)?;
@@ -110,29 +121,20 @@ pub fn grant(project_dir: &Path, worker_id: &str, permission: &str) -> Result<()
 
 /// List pending permission requests across all workers.
 ///
-/// Scans `.worktrees/*/` for workers with a pending permission-request.json.
+/// Checks coordinator on trunk and all worktree workers.
 pub fn list(project_dir: &Path) -> Result<(), Error> {
-    let worktrees_dir = project_dir.join(".worktrees");
-    if !worktrees_dir.is_dir() {
-        eprintln!("no pending permission requests");
-        return Ok(());
-    }
-
     let mut found = false;
 
-    for entry in fs::read_dir(&worktrees_dir)? {
-        let entry = entry?;
-        let worker_id = entry.file_name().to_string_lossy().to_string();
-        let request_path = entry.path().join(".clc").join("worker").join(REQUEST_FILE);
+    // Check coordinator on trunk.
+    found |= print_pending(project_dir, worker::COORDINATOR_ID);
 
-        if request_path.exists() {
-            let content = fs::read_to_string(&request_path)?;
-            if let Ok(req) = serde_json::from_str::<PermissionRequest>(&content)
-                && req.status == "pending"
-            {
-                println!("{worker_id}\t{}", req.description);
-                found = true;
-            }
+    // Check worktree workers.
+    let worktrees_dir = project_dir.join(".worktrees");
+    if worktrees_dir.is_dir() {
+        for entry in fs::read_dir(&worktrees_dir)? {
+            let entry = entry?;
+            let worker_id = entry.file_name().to_string_lossy().to_string();
+            found |= print_pending(project_dir, &worker_id);
         }
     }
 
@@ -141,6 +143,38 @@ pub fn list(project_dir: &Path) -> Result<(), Error> {
     }
 
     Ok(())
+}
+
+fn print_pending(project_dir: &Path, worker_id: &str) -> bool {
+    pending_request(project_dir, worker_id).is_some_and(|description| {
+        println!("{worker_id}\t{description}");
+        true
+    })
+}
+
+/// Detect the worker ID from the current working directory.
+///
+/// If cwd is inside `.worktrees/{id}/`, the worker ID is `{id}`.
+/// If cwd is the project root (trunk), the worker ID is "coordinator".
+fn detect_worker_id(cwd: &Path) -> Result<String, Error> {
+    // Check if we're in a worktree: path contains `.worktrees/{id}`.
+    for ancestor in cwd.ancestors() {
+        if let Some(parent) = ancestor.parent()
+            && parent.file_name().and_then(|n| n.to_str()) == Some(".worktrees")
+            && let Some(id) = ancestor.file_name().and_then(|n| n.to_str())
+        {
+            return Ok(id.to_string());
+        }
+    }
+
+    // Not in a worktree — assume coordinator on trunk.
+    if cwd.join(".clc").join("worker").is_dir() {
+        return Ok(worker::COORDINATOR_ID.to_string());
+    }
+
+    Err(Error::NonBlocking(
+        "cannot determine worker ID — not in a worktree or coordinator context".into(),
+    ))
 }
 
 /// Return the pending permission request for a worker, if any.
@@ -155,7 +189,7 @@ pub fn pending_request(project_dir: &Path, worker_id: &str) -> Option<String> {
     let content = fs::read_to_string(&request_path).ok()?;
     let req: PermissionRequest = serde_json::from_str(&content).ok()?;
 
-    if req.status == "pending" {
+    if req.status == RequestStatus::Pending {
         Some(req.description)
     } else {
         None

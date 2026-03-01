@@ -113,7 +113,6 @@ pub fn spawn_worker_process(
     cmd.arg("--verbose");
     cmd.arg("--input-format").arg("stream-json");
     cmd.arg("--output-format").arg("stream-json");
-    cmd.arg("--dangerously-skip-permissions");
     cmd.arg("--model").arg(model);
     cmd.arg("--append-system-prompt").arg(system_prompt);
 
