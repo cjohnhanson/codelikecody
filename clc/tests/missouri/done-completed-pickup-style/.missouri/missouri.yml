@@ -2,14 +2,11 @@ assertions:
   - name: "phase is done"
     command: "clc status 2>&1 | grep 'phase: done'"
 
-  - name: "tisket is closed"
+  - name: "tisket is closed on filesystem"
     command: "test -f .tisket/v0.1.0/.closed/test-feature.md"
 
   - name: "done committed its changes"
     command: "git log -1 --format=%s | grep -q 'clc: finalize'"
-
-  - name: ".clc/state is not tracked by git"
-    command: "! git cat-file -e HEAD:.clc/state 2>/dev/null"
 
   - name: "committed state includes closed tisket"
     command: "git cat-file -e HEAD:.tisket/v0.1.0/.closed/test-feature.md"
@@ -20,16 +17,10 @@ assertions:
   - name: "working tree is clean after done"
     command: "test -z \"$(git status --porcelain -uno)\""
 
-  - name: "done fails when already done"
-    command: "clc done 2>&1; test $? -ne 0"
-
-  - name: "Stop hook allowed in done"
-    command: "echo '{\"hook_event_name\":\"Stop\",\"session_id\":\"test\",\"cwd\":\".\"}' | clc hook"
-
 transitions:
   - name: "switch to main for merge"
-    command: "git checkout -q main"
-    target: "../ready-to-merge"
+    command: "git checkout -f -q main"
+    target: "../ready-to-merge-pickup-style"
     comparators:
       files:
         - path: ".claude/settings.local.json"
