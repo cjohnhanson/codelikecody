@@ -1,12 +1,12 @@
 ---
 title: "Document missouri comparators so they're usable without reading source"
-status: todo
+status: in_progress
 priority: 3
 assignee:
 labels: [docs, missouri]
 depends_on: []
 created: 2026-02-26T03:57:40Z
-updated: "2026-02-28T05:13:36Z"
+updated: "2026-03-01T16:51:47Z"
 ---
 
 Missouri's custom comparator system (per-file comparison scripts in `.missouri/bin/`)
