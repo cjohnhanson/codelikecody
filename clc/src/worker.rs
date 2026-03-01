@@ -312,7 +312,6 @@ pub fn resume(project_dir: &Path, id: &str) -> Result<(), Error> {
     cmd.arg("--verbose");
     cmd.arg("--input-format").arg("stream-json");
     cmd.arg("--output-format").arg("stream-json");
-    cmd.arg("--dangerously-skip-permissions");
     cmd.arg("--resume").arg(&session_id);
 
     cmd.stdin(Stdio::from(stdin_file));
