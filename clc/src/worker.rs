@@ -27,12 +27,64 @@ struct WorkerInfo {
     last_activity: String,
 }
 
-/// List all workers across worktrees.
-pub fn list_workers(project_dir: &Path) -> Result<(), Error> {
-    let worktrees_dir = project_dir.join(".worktrees");
-    if !worktrees_dir.is_dir() {
+/// List workers across worktrees. By default only shows live workers; pass `all=true` to include dead ones.
+pub fn list_workers(project_dir: &Path, all: bool) -> Result<(), Error> {
+    let workers = collect_workers(project_dir)?;
+
+    let visible: Vec<&WorkerInfo> = workers.iter().filter(|w| all || w.alive).collect();
+
+    if visible.is_empty() {
         eprintln!("no workers");
         return Ok(());
+    }
+
+    for w in &visible {
+        let status = if w.alive { "working" } else { "dead" };
+        let pid_str = w.pid.map_or_else(|| "?".to_string(), |p| p.to_string());
+        println!(
+            "{}\t{}\tpid={}\tlines={}\t{}",
+            w.id, status, pid_str, w.line_count, w.last_activity
+        );
+    }
+
+    Ok(())
+}
+
+/// Remove worker state files for dead workers.
+/// Deletes `.clc/worker/` from each worktree where the worker PID is dead,
+/// and removes coordinator cursor dirs (`.clc/workers/<id>/`) from the project root.
+pub fn prune_workers(project_dir: &Path) -> Result<(), Error> {
+    let workers = collect_workers(project_dir)?;
+
+    let dead: Vec<&WorkerInfo> = workers.iter().filter(|w| !w.alive).collect();
+
+    if dead.is_empty() {
+        eprintln!("no dead workers to prune");
+        return Ok(());
+    }
+
+    for w in &dead {
+        let worktree_dir = project_dir.join(".worktrees").join(&w.id);
+        let worker_dir = worktree_dir.join(".clc").join(WORKER_DIR);
+        if worker_dir.is_dir() {
+            fs::remove_dir_all(&worker_dir)?;
+            eprintln!("pruned worker state for '{}'", w.id);
+        }
+        // Remove coordinator cursor dir from project root.
+        let cursor_dir = project_dir.join(".clc").join("workers").join(&w.id);
+        if cursor_dir.is_dir() {
+            fs::remove_dir_all(&cursor_dir)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Collect `WorkerInfo` for all worktrees that have a `.clc/worker/` directory.
+fn collect_workers(project_dir: &Path) -> Result<Vec<WorkerInfo>, Error> {
+    let worktrees_dir = project_dir.join(".worktrees");
+    if !worktrees_dir.is_dir() {
+        return Ok(Vec::new());
     }
 
     let mut workers = Vec::new();
@@ -66,21 +118,7 @@ pub fn list_workers(project_dir: &Path) -> Result<(), Error> {
         });
     }
 
-    if workers.is_empty() {
-        eprintln!("no workers");
-        return Ok(());
-    }
-
-    for w in &workers {
-        let status = if w.alive { "working" } else { "dead" };
-        let pid_str = w.pid.map_or_else(|| "?".to_string(), |p| p.to_string());
-        println!(
-            "{}\t{}\tpid={}\tlines={}\t{}",
-            w.id, status, pid_str, w.line_count, w.last_activity
-        );
-    }
-
-    Ok(())
+    Ok(workers)
 }
 
 /// Show activity since last check (cursor-based).
@@ -387,8 +425,15 @@ pub fn land(project_dir: &Path, id: &str, main_branch: &str) -> Result<(), Error
         stop(project_dir, id)?;
     }
 
-    // Merge the branch.
+    // Merge the branch (also removes worktree and branch).
     merge::merge(project_dir, id, main_branch)?;
+
+    // Remove coordinator cursor dir from project root.
+    let cursor_dir = project_dir.join(".clc").join("workers").join(id);
+    if cursor_dir.is_dir() {
+        let _ = fs::remove_dir_all(&cursor_dir);
+    }
+
     eprintln!("landed '{id}' — merged into trunk");
 
     Ok(())
