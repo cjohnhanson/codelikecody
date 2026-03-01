@@ -1,19 +1,11 @@
-# clc
+# codelikecody
 
-## Context Injection Matrix
+Workflow engine and tooling for autonomous coding agents.
 
-What gets injected into the agent's context window, by hook event and workflow state.
+## Crates
 
-| | **Main** | **Feature (no phase)** | **tests-unwritten** | **tests-written** | **red** | **implementing** | **green** | **done** |
-|---|---|---|---|---|---|---|---|---|
-| **SessionStart** | worktree guidance | branch name only | ? | ? | ? | ? | ? | ? |
-| **UserPromptSubmit** | — | — | — | — | — | — | — | — |
-| **PreToolUse** | BLOCK writes | passthrough | BLOCK non-test edits | BLOCK non-test edits | BLOCK non-test edits | passthrough | BLOCK non-test edits | BLOCK non-test edits |
-| **PostToolUse** | — | — | — | — | — | — | — | — |
-| **PostToolUseFailure** | — | — | — | — | — | — | — | — |
-| **Stop** | — | — | — | — | — | — | — | — |
-
-**Legend:**
-- `BLOCK` = action is blocked, agent receives error message with guidance
-- `—` = passthrough, no context injected
-- `?` = not yet implemented
+- **[clc](clc/)** — CLI. Phase-gated TDD workflow, worktree isolation, hook system, worker orchestration.
+- **[clc-sdk](clc-sdk/)** — Traits for workspace lifecycle and agent tool detection.
+- **[claude-code](claude-code/)** — Protocol types and session management for Claude Code over piped stdio.
+- **[missouri](missouri/)** — E2E testing via directed graphs of filesystem states.
+- **[tisket](tisket/)** — Plaintext issue tracker with git-aware status and full-text search.
