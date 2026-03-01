@@ -1,0 +1,15 @@
+assertions:
+  - name: "permission request file is gone"
+    command: "! test -f .worktrees/test-feature/.clc/worker/permission-request.json"
+
+  - name: "worktree settings.local.json has allowedTools"
+    command: "jq -e '.allowedTools' .worktrees/test-feature/.claude/settings.local.json"
+
+  - name: "allowedTools contains the granted permission"
+    command: "jq -r '.allowedTools[]' .worktrees/test-feature/.claude/settings.local.json | grep -q 'npm install'"
+
+  - name: "clc permissions list shows no pending requests for this worker"
+    command: "! clc permissions list 2>&1 | grep -q 'test-feature'"
+
+  - name: "clc worker check does not mention pending permission request"
+    command: "! clc worker test-feature check 2>&1 | grep -qi 'permission request pending'"

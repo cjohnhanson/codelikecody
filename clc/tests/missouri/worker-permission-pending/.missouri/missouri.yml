@@ -1,0 +1,43 @@
+assertions:
+  - name: "permission request file exists"
+    command: "test -f .worktrees/test-feature/.clc/worker/permission-request.json"
+
+  - name: "permission request is valid JSON"
+    command: "jq empty .worktrees/test-feature/.clc/worker/permission-request.json"
+
+  - name: "permission request has description"
+    command: "jq -e '.description' .worktrees/test-feature/.clc/worker/permission-request.json"
+
+  - name: "permission request has pending status"
+    command: "jq -r '.status' .worktrees/test-feature/.clc/worker/permission-request.json | grep -q pending"
+
+  - name: "clc worker check mentions pending permission request"
+    command: "clc worker test-feature check 2>&1 | grep -qi 'permission'"
+
+  - name: "supervise exits non-zero for pending permission request"
+    command: "clc worker test-feature supervise --max-resumes 3 2>&1; test $? -ne 0"
+
+  - name: "supervise error message mentions permission request"
+    command: "clc worker test-feature supervise --max-resumes 3 2>&1 | grep -qi 'permission'"
+
+  - name: "clc permissions list shows the pending request"
+    command: "clc permissions list 2>&1 | grep -qi 'test-feature'"
+
+transitions:
+  - name: "grant the permission"
+    command: "clc permissions grant test-feature 'Bash(npm install:*)'"
+    target: "../worker-permission-granted"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".worktrees/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true
