@@ -1,12 +1,12 @@
 ---
 title: "Contextual skill management and preferences system for clc"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [clc]
 depends_on: []
-created: "2026-02-28T20:25:00Z"
-updated: "2026-02-28T20:25:00Z"
+created: 2026-02-28T20:25:00Z
+updated: "2026-03-01T16:52:21Z"
 ---
 
 ## Problem
