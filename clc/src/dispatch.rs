@@ -21,7 +21,7 @@ use crate::error::Error;
 use crate::git;
 use crate::pickup;
 
-/// Worker state directory name inside the worktree's `.clc/`.
+/// Worker state directory name inside `.clc/`.
 const WORKER_DIR: &str = "worker";
 
 pub fn dispatch(project_dir: &Path, id: &str, main_branch: &str, model: &str) -> Result<(), Error> {
@@ -54,9 +54,37 @@ pub fn dispatch(project_dir: &Path, id: &str, main_branch: &str, model: &str) ->
     let initial_prompt = build_worker_prompt(project_dir, id)?;
     let system_prompt = build_system_prompt(id);
 
-    // Set up worker state directory.
+    // Spawn the worker.
     let worker_dir = worktree_dir.join(".clc").join(WORKER_DIR);
-    fs::create_dir_all(&worker_dir)?;
+    let pid = spawn_worker_process(
+        &worktree_dir,
+        &worker_dir,
+        model,
+        &system_prompt,
+        &initial_prompt,
+        &[],
+    )?;
+
+    eprintln!("dispatched worker for '{id}' (pid {pid})");
+
+    Ok(())
+}
+
+/// Spawn a claude --print process with pipe infrastructure.
+///
+/// Creates the worker state directory with stdin.pipe, stdout.jsonl,
+/// stderr.log, and pid file. Sends the initial prompt via the pipe.
+///
+/// Returns the child PID.
+pub fn spawn_worker_process(
+    working_dir: &Path,
+    worker_dir: &Path,
+    model: &str,
+    system_prompt: &str,
+    initial_prompt: &str,
+    extra_args: &[&str],
+) -> Result<u32, Error> {
+    fs::create_dir_all(worker_dir)?;
 
     let pid_path = worker_dir.join("pid");
     let stdout_path = worker_dir.join("stdout.jsonl");
@@ -80,14 +108,18 @@ pub fn dispatch(project_dir: &Path, id: &str, main_branch: &str, model: &str) ->
 
     // Build the claude command.
     let mut cmd = Command::new("claude");
-    cmd.current_dir(&worktree_dir);
+    cmd.current_dir(working_dir);
     cmd.arg("--print");
     cmd.arg("--verbose");
     cmd.arg("--input-format").arg("stream-json");
     cmd.arg("--output-format").arg("stream-json");
     cmd.arg("--dangerously-skip-permissions");
     cmd.arg("--model").arg(model);
-    cmd.arg("--append-system-prompt").arg(&system_prompt);
+    cmd.arg("--append-system-prompt").arg(system_prompt);
+
+    for arg in extra_args {
+        cmd.arg(arg);
+    }
 
     cmd.stdin(Stdio::from(stdin_file));
     cmd.stdout(Stdio::from(stdout_file));
@@ -107,11 +139,9 @@ pub fn dispatch(project_dir: &Path, id: &str, main_branch: &str, model: &str) ->
     fs::write(&pid_path, pid.to_string())?;
 
     // Send the initial prompt via the named pipe.
-    send_initial_prompt(&stdin_pipe_path, &initial_prompt)?;
+    send_prompt(&stdin_pipe_path, initial_prompt)?;
 
-    eprintln!("dispatched worker for '{id}' (pid {pid})");
-
-    Ok(())
+    Ok(pid)
 }
 
 pub fn is_worker_alive(worktree_dir: &Path) -> bool {
@@ -139,7 +169,7 @@ fn create_named_pipe(path: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-fn send_initial_prompt(pipe_path: &Path, prompt: &str) -> Result<(), Error> {
+pub fn send_prompt(pipe_path: &Path, prompt: &str) -> Result<(), Error> {
     let input = claude_code::protocol::InputMessage::user(prompt);
     let json = serde_json::to_string(&input)?;
 

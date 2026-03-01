@@ -64,10 +64,9 @@ pub fn prune_workers(project_dir: &Path) -> Result<(), Error> {
     }
 
     for w in &dead {
-        let worktree_dir = project_dir.join(".worktrees").join(&w.id);
-        let worker_dir = worktree_dir.join(".clc").join(WORKER_DIR);
-        if worker_dir.is_dir() {
-            fs::remove_dir_all(&worker_dir)?;
+        let wdir = worker_dir_for(project_dir, &w.id);
+        if wdir.is_dir() {
+            fs::remove_dir_all(&wdir)?;
             eprintln!("pruned worker state for '{}'", w.id);
         }
         // Remove coordinator cursor dir from project root.
@@ -80,42 +79,59 @@ pub fn prune_workers(project_dir: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-/// Collect `WorkerInfo` for all worktrees that have a `.clc/worker/` directory.
+/// Collect `WorkerInfo` for all worktrees that have a `.clc/worker/` directory,
+/// plus the coordinator if it has worker state at the project root.
 fn collect_workers(project_dir: &Path) -> Result<Vec<WorkerInfo>, Error> {
-    let worktrees_dir = project_dir.join(".worktrees");
-    if !worktrees_dir.is_dir() {
-        return Ok(Vec::new());
-    }
-
     let mut workers = Vec::new();
 
-    let entries = fs::read_dir(&worktrees_dir)?;
-    for entry in entries {
-        let entry = entry?;
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-
-        let id = entry.file_name().to_str().unwrap_or("unknown").to_string();
-
-        let worker_dir = path.join(".clc").join(WORKER_DIR);
-        if !worker_dir.is_dir() {
-            continue;
-        }
-
-        let pid = read_pid(&worker_dir);
+    // Check for coordinator worker state on trunk.
+    let coord_worker_dir = worker_dir_for(project_dir, COORDINATOR_ID);
+    if coord_worker_dir.is_dir() {
+        let pid = read_pid(&coord_worker_dir);
         let alive = pid.is_some_and(is_process_alive);
-        let line_count = count_lines(&worker_dir.join("stdout.jsonl"));
-        let last_activity = last_activity_summary(&worker_dir.join("stdout.jsonl"));
+        let line_count = count_lines(&coord_worker_dir.join("stdout.jsonl"));
+        let last_activity = last_activity_summary(&coord_worker_dir.join("stdout.jsonl"));
 
         workers.push(WorkerInfo {
-            id,
+            id: COORDINATOR_ID.to_string(),
             pid,
             alive,
             line_count,
             last_activity,
         });
+    }
+
+    // Check worktrees for regular workers.
+    let worktrees_dir = project_dir.join(".worktrees");
+    if worktrees_dir.is_dir() {
+        let entries = fs::read_dir(&worktrees_dir)?;
+        for entry in entries {
+            let entry = entry?;
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+
+            let id = entry.file_name().to_str().unwrap_or("unknown").to_string();
+
+            let wdir = path.join(".clc").join(WORKER_DIR);
+            if !wdir.is_dir() {
+                continue;
+            }
+
+            let pid = read_pid(&wdir);
+            let alive = pid.is_some_and(is_process_alive);
+            let line_count = count_lines(&wdir.join("stdout.jsonl"));
+            let last_activity = last_activity_summary(&wdir.join("stdout.jsonl"));
+
+            workers.push(WorkerInfo {
+                id,
+                pid,
+                alive,
+                line_count,
+                last_activity,
+            });
+        }
     }
 
     Ok(workers)
@@ -169,12 +185,11 @@ pub fn log(project_dir: &Path, id: &str, max_lines: usize) -> Result<(), Error> 
 
 /// Send a follow-up message to the worker via the named pipe.
 pub fn send(project_dir: &Path, id: &str, message: &str) -> Result<(), Error> {
-    let worktree_dir = project_dir.join(".worktrees").join(id);
-    let worker_dir = worktree_dir.join(".clc").join(WORKER_DIR);
-    let pipe_path = worker_dir.join("stdin.pipe");
+    let wdir = worker_dir_for(project_dir, id);
+    let pipe_path = wdir.join("stdin.pipe");
 
     // Check the worker is alive.
-    let pid = read_pid(&worker_dir)
+    let pid = read_pid(&wdir)
         .ok_or_else(|| Error::NonBlocking(format!("no PID file for worker '{id}'")))?;
     if !is_process_alive(pid) {
         return Err(Error::NonBlocking(format!(
@@ -201,10 +216,9 @@ pub fn send(project_dir: &Path, id: &str, message: &str) -> Result<(), Error> {
 
 /// Stop the worker process. Leave worktree intact.
 pub fn stop(project_dir: &Path, id: &str) -> Result<(), Error> {
-    let worktree_dir = project_dir.join(".worktrees").join(id);
-    let worker_dir = worktree_dir.join(".clc").join(WORKER_DIR);
+    let wdir = worker_dir_for(project_dir, id);
 
-    let pid = read_pid(&worker_dir)
+    let pid = read_pid(&wdir)
         .ok_or_else(|| Error::NonBlocking(format!("no PID file for worker '{id}'")))?;
 
     if is_process_alive(pid) {
@@ -236,15 +250,17 @@ pub fn stop(project_dir: &Path, id: &str) -> Result<(), Error> {
 
 /// Resume a stopped worker by re-attaching to its existing session.
 pub fn resume(project_dir: &Path, id: &str) -> Result<(), Error> {
-    let worktree_dir = project_dir.join(".worktrees").join(id);
-    let worker_dir = worktree_dir.join(".clc").join(WORKER_DIR);
+    let work_dir = working_dir_for(project_dir, id);
+    let wdir = worker_dir_for(project_dir, id);
 
-    if !worktree_dir.is_dir() {
-        return Err(Error::NonBlocking(format!("no worktree for '{id}'")));
+    if !work_dir.is_dir() {
+        return Err(Error::NonBlocking(format!(
+            "no working directory for '{id}'"
+        )));
     }
 
     // Must not already be running.
-    if let Some(pid) = read_pid(&worker_dir)
+    if let Some(pid) = read_pid(&wdir)
         && is_process_alive(pid)
     {
         return Err(Error::NonBlocking(format!(
@@ -253,12 +269,12 @@ pub fn resume(project_dir: &Path, id: &str) -> Result<(), Error> {
     }
 
     // Extract session ID from stdout.
-    let stdout_path = worker_dir.join("stdout.jsonl");
+    let stdout_path = wdir.join("stdout.jsonl");
     let session_id = extract_session_id(&stdout_path)?;
 
-    let pid_path = worker_dir.join("pid");
-    let stderr_path = worker_dir.join("stderr.log");
-    let stdin_pipe_path = worker_dir.join("stdin.pipe");
+    let pid_path = wdir.join("pid");
+    let stderr_path = wdir.join("stderr.log");
+    let stdin_pipe_path = wdir.join("stdin.pipe");
 
     // Recreate the named pipe.
     if stdin_pipe_path.exists() {
@@ -285,7 +301,7 @@ pub fn resume(project_dir: &Path, id: &str) -> Result<(), Error> {
 
     // Build the claude command with --resume.
     let mut cmd = Command::new("claude");
-    cmd.current_dir(&worktree_dir);
+    cmd.current_dir(&work_dir);
     cmd.arg("--print");
     cmd.arg("--verbose");
     cmd.arg("--input-format").arg("stream-json");
@@ -320,21 +336,23 @@ pub fn resume(project_dir: &Path, id: &str) -> Result<(), Error> {
 
 /// Supervise a worker: poll until it reaches done, auto-resuming if it stops early.
 pub fn supervise(project_dir: &Path, id: &str, max_resumes: u32) -> Result<(), Error> {
-    let worktree_dir = project_dir.join(".worktrees").join(id);
-    let worker_dir = worktree_dir.join(".clc").join(WORKER_DIR);
+    let work_dir = working_dir_for(project_dir, id);
+    let wdir = worker_dir_for(project_dir, id);
 
-    if !worktree_dir.is_dir() {
-        return Err(Error::NonBlocking(format!("no worktree for '{id}'")));
+    if !work_dir.is_dir() {
+        return Err(Error::NonBlocking(format!(
+            "no working directory for '{id}'"
+        )));
     }
 
     let mut resumes = 0u32;
 
     loop {
         // Wait for the worker process to exit.
-        wait_for_exit(&worker_dir);
+        wait_for_exit(&wdir);
 
         // Check phase.
-        let phase = crate::phase::load(&worktree_dir).unwrap_or(None);
+        let phase = crate::phase::load(&work_dir).unwrap_or(None);
 
         if phase == Some(crate::phase::Phase::Done) {
             eprintln!("worker '{id}' reached done phase");
@@ -415,11 +433,10 @@ pub fn raw(project_dir: &Path, id: &str, max_lines: usize) -> Result<(), Error> 
 
 /// Land a worker: stop if alive, merge to trunk, cleanup worktree.
 pub fn land(project_dir: &Path, id: &str, main_branch: &str) -> Result<(), Error> {
-    let worktree_dir = project_dir.join(".worktrees").join(id);
-    let worker_dir = worktree_dir.join(".clc").join(WORKER_DIR);
+    let wdir = worker_dir_for(project_dir, id);
 
     // Stop worker if still alive.
-    if let Some(pid) = read_pid(&worker_dir)
+    if let Some(pid) = read_pid(&wdir)
         && is_process_alive(pid)
     {
         stop(project_dir, id)?;
@@ -442,12 +459,7 @@ pub fn land(project_dir: &Path, id: &str, main_branch: &str) -> Result<(), Error
 // --- Helpers ---
 
 fn worker_stdout_path(project_dir: &Path, id: &str) -> std::path::PathBuf {
-    project_dir
-        .join(".worktrees")
-        .join(id)
-        .join(".clc")
-        .join(WORKER_DIR)
-        .join("stdout.jsonl")
+    worker_dir_for(project_dir, id).join("stdout.jsonl")
 }
 
 fn cursor_path(project_dir: &Path, id: &str) -> std::path::PathBuf {
@@ -571,5 +583,135 @@ fn print_parsed_line(line: &str) {
         Err(_) => {
             println!("[raw] {line}");
         }
+    }
+}
+
+/// Coordinator worker ID.
+pub const COORDINATOR_ID: &str = "coordinator";
+
+/// Resolve the worker state directory for a given ID.
+///
+/// Regular workers: `.worktrees/{id}/.clc/worker/`
+/// Coordinator: `.clc/worker/` (on trunk root)
+pub fn worker_dir_for(project_dir: &Path, id: &str) -> std::path::PathBuf {
+    if id == COORDINATOR_ID {
+        project_dir.join(".clc").join(WORKER_DIR)
+    } else {
+        project_dir
+            .join(".worktrees")
+            .join(id)
+            .join(".clc")
+            .join(WORKER_DIR)
+    }
+}
+
+/// Resolve the working directory for a given worker ID.
+///
+/// Regular workers: `.worktrees/{id}/`
+/// Coordinator: project root (trunk)
+pub fn working_dir_for(project_dir: &Path, id: &str) -> std::path::PathBuf {
+    if id == COORDINATOR_ID {
+        project_dir.to_path_buf()
+    } else {
+        project_dir.join(".worktrees").join(id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn make_test_dir() -> PathBuf {
+        #[allow(deprecated)]
+        let dir = tempfile::tempdir().unwrap().into_path();
+        dir
+    }
+
+    fn create_worker_state(worker_dir: &Path, pid: i32) {
+        fs::create_dir_all(worker_dir).unwrap();
+        fs::write(worker_dir.join("pid"), pid.to_string()).unwrap();
+        fs::write(worker_dir.join("stdout.jsonl"), "").unwrap();
+        fs::write(worker_dir.join("stderr.log"), "").unwrap();
+    }
+
+    #[test]
+    fn worker_dir_for_regular_worker() {
+        let project = PathBuf::from("/tmp/project");
+        let dir = worker_dir_for(&project, "my-tisket");
+        assert_eq!(
+            dir,
+            PathBuf::from("/tmp/project/.worktrees/my-tisket/.clc/worker")
+        );
+    }
+
+    #[test]
+    fn worker_dir_for_coordinator() {
+        let project = PathBuf::from("/tmp/project");
+        let dir = worker_dir_for(&project, COORDINATOR_ID);
+        assert_eq!(dir, PathBuf::from("/tmp/project/.clc/worker"));
+    }
+
+    #[test]
+    fn working_dir_for_regular_worker() {
+        let project = PathBuf::from("/tmp/project");
+        let dir = working_dir_for(&project, "my-tisket");
+        assert_eq!(dir, PathBuf::from("/tmp/project/.worktrees/my-tisket"));
+    }
+
+    #[test]
+    fn working_dir_for_coordinator() {
+        let project = PathBuf::from("/tmp/project");
+        let dir = working_dir_for(&project, COORDINATOR_ID);
+        assert_eq!(dir, PathBuf::from("/tmp/project"));
+    }
+
+    #[test]
+    fn collect_workers_finds_coordinator_on_trunk() {
+        let project = make_test_dir();
+
+        // Create coordinator worker state at project root.
+        let coord_worker_dir = project.join(".clc").join("worker");
+        create_worker_state(&coord_worker_dir, 99999);
+
+        let workers = collect_workers(&project).unwrap();
+        let coord = workers.iter().find(|w| w.id == COORDINATOR_ID);
+        assert!(coord.is_some(), "coordinator should appear in worker list");
+    }
+
+    #[test]
+    fn collect_workers_finds_both_coordinator_and_regular_workers() {
+        let project = make_test_dir();
+
+        // Create coordinator.
+        let coord_worker_dir = project.join(".clc").join("worker");
+        create_worker_state(&coord_worker_dir, 99999);
+
+        // Create a regular worker.
+        let worktree_worker_dir = project
+            .join(".worktrees")
+            .join("my-tisket")
+            .join(".clc")
+            .join("worker");
+        create_worker_state(&worktree_worker_dir, 99998);
+
+        let workers = collect_workers(&project).unwrap();
+        assert_eq!(workers.len(), 2);
+
+        let ids: Vec<&str> = workers.iter().map(|w| w.id.as_str()).collect();
+        assert!(ids.contains(&COORDINATOR_ID));
+        assert!(ids.contains(&"my-tisket"));
+    }
+
+    #[test]
+    fn collect_workers_no_coordinator_without_state() {
+        let project = make_test_dir();
+
+        // No .clc/worker/ at project root.
+        let workers = collect_workers(&project).unwrap();
+        assert!(
+            !workers.iter().any(|w| w.id == COORDINATOR_ID),
+            "coordinator should not appear without .clc/worker/"
+        );
     }
 }

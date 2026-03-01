@@ -19,7 +19,6 @@ mod phase;
 mod pickup;
 mod tisket;
 mod worker;
-mod workspace;
 
 use std::path::Path;
 

@@ -1,26 +1,17 @@
-//! Coordinator: dispatch pickable tiskets to autonomous worker agents.
+//! Coordinator: spawn a coordinator agent that dispatches and monitors workers.
 //!
-//! The coordinator runs on trunk (read-only). For each pickable tisket it:
-//! 1. Runs `pickup` (creates worktree, sets status, inits clc hooks)
-//! 2. Launches a Claude Code worker in stream-json mode
-//! 3. Monitors the worker until completion or failure
-//! 4. Merges completed work back to trunk via `merge`
+//! The coordinator runs on trunk as a background claude --print process with
+//! the same pipe infrastructure as workers. The user talks to it via
+//! `clc worker coordinator send/check`.
 
 use std::path::Path;
 
 use camino::Utf8Path;
 
-use claude_code::protocol::OutputMessage;
-use clc_sdk::workspace::{Workspace, WorkspaceConfig, WorkspaceStatus};
-
+use crate::dispatch;
 use crate::error::Error;
-use crate::workspace::WorktreeWorkspace;
-use crate::{git, merge, pickup};
-
-enum WorkerOutcome {
-    Completed,
-    Failed(String),
-}
+use crate::git;
+use crate::worker;
 
 pub fn coordinate(
     project_dir: &Path,
@@ -39,134 +30,50 @@ pub fn coordinate(
         )));
     }
 
-    // Find pickable tiskets, optionally filtered to a single one.
-    let pickable = if let Some(id) = tisket_filter {
-        // Verify the requested tisket exists and is pickable.
-        let all = find_pickable_tiskets(project_dir)?;
-        if !all.iter().any(|t| t == id) {
-            return Err(Error::NonBlocking(format!(
-                "tisket '{id}' is not pickable (not found or dependencies unresolved)"
-            )));
-        }
-        vec![id.to_string()]
-    } else {
-        find_pickable_tiskets(project_dir)?
-    };
+    // Check if coordinator is already running.
+    let coord_worker_dir = worker::worker_dir_for(project_dir, worker::COORDINATOR_ID);
+    if coord_worker_dir.is_dir()
+        && let Some(pid) = read_pid(&coord_worker_dir)
+        && is_pid_alive(pid)
+    {
+        return Err(Error::NonBlocking(format!(
+            "coordinator already running (pid {pid}) — use `clc worker coordinator send` to talk to it"
+        )));
+    }
+
+    // Find pickable tiskets.
+    let pickable = find_pickable_tiskets(project_dir, tisket_filter)?;
 
     if pickable.is_empty() {
         eprintln!("no pickable tiskets found");
         return Ok(());
     }
 
-    eprintln!("found {} pickable tisket(s)", pickable.len());
+    // Build the initial prompt with pickable tiskets.
+    let initial_prompt = build_coordinator_prompt(&pickable, tisket_filter);
+    let system_prompt = build_coordinator_system_prompt();
 
-    // Process each tisket sequentially.
-    for tisket_id in &pickable {
-        eprintln!("--- picking up: {tisket_id} ---");
+    // Spawn coordinator as a worker on trunk.
+    let pid = dispatch::spawn_worker_process(
+        project_dir,
+        &coord_worker_dir,
+        model,
+        &system_prompt,
+        &initial_prompt,
+        &[],
+    )?;
 
-        // Pickup: creates worktree, sets status, inits clc hooks.
-        pickup::pickup(project_dir, tisket_id, main_branch)?;
-
-        // Build prompts from the tisket body.
-        let initial_prompt = build_worker_prompt(project_dir, tisket_id)?;
-        let system_prompt = build_system_prompt(tisket_id);
-
-        // Create and start workspace.
-        let config = WorkspaceConfig {
-            tisket_id: tisket_id.clone(),
-            project_dir: project_dir.to_path_buf(),
-            main_branch: main_branch.to_string(),
-            initial_prompt,
-            system_prompt: Some(system_prompt),
-            max_budget_usd: None,
-            model: Some(model.to_string()),
-        };
-
-        let mut ws = WorktreeWorkspace::new(config);
-        ws.start()
-            .map_err(|e| Error::NonBlocking(format!("failed to start workspace: {e}")))?;
-
-        eprintln!("--- {tisket_id}: worker launched ---");
-
-        // Monitor until completion or failure.
-        let outcome = monitor_worker(&mut ws)?;
-
-        // Always stop the workspace process.
-        let _ = ws.stop();
-
-        match outcome {
-            WorkerOutcome::Completed => {
-                eprintln!("--- {tisket_id}: completed, merging ---");
-
-                // Check for permission denials.
-                let denials = ws.permission_denials();
-                if !denials.is_empty() {
-                    eprintln!("--- {tisket_id}: permission denials: ---");
-                    for d in denials {
-                        eprintln!("  {}: {}", d.tool_name, d.message);
-                    }
-                }
-
-                match merge::merge(project_dir, tisket_id, main_branch) {
-                    Ok(()) => eprintln!("--- {tisket_id}: merged ---"),
-                    Err(e) => {
-                        eprintln!("--- {tisket_id}: merge failed: {e} ---");
-                        // Leave worktree intact for inspection.
-                    }
-                }
-            }
-            WorkerOutcome::Failed(reason) => {
-                eprintln!("--- {tisket_id}: failed: {reason} ---");
-                // Leave worktree intact for debugging.
-            }
-        }
-    }
+    eprintln!("coordinator launched (pid {pid})");
+    eprintln!("talk to it: clc worker coordinator send \"<message>\"");
+    eprintln!("check output: clc worker coordinator check");
 
     Ok(())
 }
 
-fn monitor_worker(ws: &mut WorktreeWorkspace) -> Result<WorkerOutcome, Error> {
-    loop {
-        let messages = ws
-            .recv_output()
-            .map_err(|e| Error::NonBlocking(format!("recv_output: {e}")))?;
-
-        for msg in &messages {
-            match msg {
-                OutputMessage::Result(result) => {
-                    eprintln!(
-                        "  result: cost=${:.4}, duration={:.1}s, error={}",
-                        result.cost_usd, result.duration_secs, result.is_error
-                    );
-                }
-                OutputMessage::Assistant(assistant) => {
-                    // Log tool uses for observability.
-                    for block in &assistant.message.content {
-                        if let claude_code::protocol::ContentBlock::ToolUse { name, .. } = block {
-                            eprintln!("  tool: {name}");
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        match ws.status() {
-            WorkspaceStatus::Completed => return Ok(WorkerOutcome::Completed),
-            WorkspaceStatus::Failed => {
-                return Ok(WorkerOutcome::Failed(
-                    "worker process exited with error".into(),
-                ));
-            }
-            WorkspaceStatus::Running => {
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
-            WorkspaceStatus::NotStarted => unreachable!(),
-        }
-    }
-}
-
-fn find_pickable_tiskets(project_dir: &Path) -> Result<Vec<String>, Error> {
+fn find_pickable_tiskets(
+    project_dir: &Path,
+    tisket_filter: Option<&str>,
+) -> Result<Vec<String>, Error> {
     let utf8_dir = Utf8Path::new(
         project_dir
             .to_str()
@@ -184,7 +91,6 @@ fn find_pickable_tiskets(project_dir: &Path) -> Result<Vec<String>, Error> {
         .into_iter()
         .filter(|i| i.frontmatter.status.is_pickable())
         .filter(|i| {
-            // Dependencies must all be closed.
             i.frontmatter.depends_on.iter().all(|dep_id| {
                 repo.find_issue(dep_id)
                     .map(|dep| dep.closed)
@@ -195,38 +101,75 @@ fn find_pickable_tiskets(project_dir: &Path) -> Result<Vec<String>, Error> {
         .collect();
 
     pickable.sort();
+
+    if let Some(filter) = tisket_filter {
+        if !pickable.iter().any(|t| t == filter) {
+            return Err(Error::NonBlocking(format!(
+                "tisket '{filter}' is not pickable (not found or dependencies unresolved)"
+            )));
+        }
+        return Ok(vec![filter.to_string()]);
+    }
+
     Ok(pickable)
 }
 
-fn build_worker_prompt(project_dir: &Path, tisket_id: &str) -> Result<String, Error> {
-    let utf8_dir = Utf8Path::new(
-        project_dir
-            .to_str()
-            .ok_or_else(|| Error::NonBlocking("non-UTF8 project directory".into()))?,
-    );
+fn build_coordinator_prompt(pickable: &[String], tisket_filter: Option<&str>) -> String {
+    let tisket_list = pickable
+        .iter()
+        .map(|id| format!("- {id}"))
+        .collect::<Vec<_>>()
+        .join("\n");
 
-    let repo =
-        tisket::Repo::open(utf8_dir).map_err(|e| Error::NonBlocking(format!("tisket: {e}")))?;
+    let scope = if tisket_filter.is_some() {
+        "You have been asked to work on a specific tisket."
+    } else {
+        "Dispatch and monitor these tiskets. Work through them sequentially or in parallel as appropriate."
+    };
 
-    let issue = repo
-        .find_issue(tisket_id)
-        .map_err(|e| Error::NonBlocking(format!("tisket '{tisket_id}': {e}")))?;
-
-    Ok(format!(
-        "You are working on tisket '{tisket_id}': {}\n\n\
-         {}\n\n\
-         Follow the clc workflow: write tests, implement, get green, run `clc done`.\n\
-         The hooks will guide you through each phase.",
-        issue.frontmatter.title, issue.body,
-    ))
+    format!(
+        "{scope}\n\n\
+         Pickable tiskets:\n{tisket_list}\n\n\
+         Read each tisket before dispatching to understand the task:\n\
+         \x20 tisket issue show <id>\n\n\
+         Dispatch a worker for each tisket:\n\
+         \x20 clc dispatch <id>\n\n\
+         Monitor worker progress:\n\
+         \x20 clc workers              # list all workers and their status\n\
+         \x20 clc worker <id> check    # see recent output from a worker\n\
+         \x20 clc worker <id> send \"<message>\"  # send a message to a worker\n\n\
+         Land completed work (worker must be in `done` phase):\n\
+         \x20 clc land <id>\n\n\
+         When all dispatched workers have completed and been landed, you are done."
+    )
 }
 
-fn build_system_prompt(tisket_id: &str) -> String {
-    format!(
-        "You are an autonomous worker agent managed by clc. \
-         Your task is defined by tisket '{tisket_id}'. \
-         Follow the phase system: tests-unwritten -> tests-written -> red -> implementing -> green -> done. \
-         When all tests pass and work is complete, run `clc done` to finalize. \
-         Do not stop before reaching the 'done' phase."
+fn build_coordinator_system_prompt() -> String {
+    // NOTE: This is prompt content. Approved in this commit.
+    String::from(
+        "You are the coordinator agent. You do not write code — you manage worker agents \
+         that do. You run on the main branch. Workers run in worktrees.\n\n\
+         Two CLI tools are available: `clc` (workflow engine) and `tisket` (issue tracker). \
+         Both support `--help` on every subcommand — use it to discover usage and flags.\n\n\
+         Your lifecycle:\n\
+         1. Read each tisket to understand the task: `tisket issue show <id>`\n\
+         2. Dispatch a worker: `clc dispatch <id>`\n\
+         3. Monitor progress: `clc workers` (overview), `clc worker <id> check` (detail)\n\
+         4. Intervene if needed: `clc worker <id> send \"<message>\"`\n\
+         5. Land completed work: `clc land <id>` (worker must be in `done` phase)\n\
+         6. Repeat until all tiskets are landed.\n\n\
+         The user communicates with you via messages on stdin. When you receive a user \
+         message, respond to it and act on their instructions. Between user messages, \
+         continue monitoring active workers and landing completed ones.",
     )
+}
+
+fn read_pid(worker_dir: &Path) -> Option<i32> {
+    std::fs::read_to_string(worker_dir.join("pid"))
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+}
+
+fn is_pid_alive(pid: i32) -> bool {
+    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None).is_ok()
 }
