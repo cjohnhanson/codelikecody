@@ -1,14 +1,13 @@
 ---
 title: "Consolidate external shell hooks into clc hook system with contextual execution"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [clc]
 depends_on: []
-created: "2026-02-28T19:56:00Z"
-updated: "2026-02-28T19:56:00Z"
+created: 2026-02-28T19:56:00Z
+updated: "2026-03-01T16:52:19Z"
 ---
-
 
 ## Problem
 
