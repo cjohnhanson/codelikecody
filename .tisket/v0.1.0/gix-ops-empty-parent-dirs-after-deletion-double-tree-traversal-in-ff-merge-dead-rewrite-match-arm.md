@@ -1,12 +1,12 @@
 ---
 title: "gix_ops: empty parent dirs after deletion, double tree traversal in ff_merge, dead Rewrite match arm"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [clc, review-finding]
 depends_on: []
-created: "2026-03-01T13:15:50Z"
-updated: "2026-03-01T13:15:50Z"
+created: 2026-03-01T13:15:50Z
+updated: "2026-03-01T16:51:48Z"
 ---
 
 Non-blocking review findings from admin and clean-tree branch reviews:
