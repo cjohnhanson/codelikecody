@@ -151,7 +151,8 @@ pub fn seed_baseline(working_dir: &Path) -> Result<(), Error> {
 
     let settings = serde_json::json!({
         "permissions": {
-            "allow": allow
+            "allow": allow,
+            "defaultMode": "dontAsk"
         }
     });
 
