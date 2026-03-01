@@ -30,12 +30,11 @@ struct PermissionRequest {
 /// Called by the worker: file a permission request and exit.
 ///
 /// Creates `permission-request.json` in the worker's state directory.
-pub fn request(project_dir: &Path, description: &str) -> Result<(), Error> {
-    // Determine worker ID from the current directory.
-    // If we're in a worktree, the directory name is the worker ID.
-    // If we're on trunk, we're the coordinator.
-    let worker_id = detect_worker_id(project_dir)?;
-    let wdir = worker::worker_dir_for(project_dir, &worker_id);
+/// `cwd` is the worker's current working directory (worktree root or trunk).
+pub fn request(cwd: &Path, description: &str) -> Result<(), Error> {
+    // The worker state dir is always at `.clc/worker/` relative to cwd,
+    // whether we're in a worktree or on trunk as the coordinator.
+    let wdir = cwd.join(".clc").join("worker");
     let request_path = wdir.join(REQUEST_FILE);
 
     if !wdir.is_dir() {
@@ -150,31 +149,6 @@ fn print_pending(project_dir: &Path, worker_id: &str) -> bool {
         println!("{worker_id}\t{description}");
         true
     })
-}
-
-/// Detect the worker ID from the current working directory.
-///
-/// If cwd is inside `.worktrees/{id}/`, the worker ID is `{id}`.
-/// If cwd is the project root (trunk), the worker ID is "coordinator".
-fn detect_worker_id(cwd: &Path) -> Result<String, Error> {
-    // Check if we're in a worktree: path contains `.worktrees/{id}`.
-    for ancestor in cwd.ancestors() {
-        if let Some(parent) = ancestor.parent()
-            && parent.file_name().and_then(|n| n.to_str()) == Some(".worktrees")
-            && let Some(id) = ancestor.file_name().and_then(|n| n.to_str())
-        {
-            return Ok(id.to_string());
-        }
-    }
-
-    // Not in a worktree — assume coordinator on trunk.
-    if cwd.join(".clc").join("worker").is_dir() {
-        return Ok(worker::COORDINATOR_ID.to_string());
-    }
-
-    Err(Error::NonBlocking(
-        "cannot determine worker ID — not in a worktree or coordinator context".into(),
-    ))
 }
 
 /// Return the pending permission request for a worker, if any.
