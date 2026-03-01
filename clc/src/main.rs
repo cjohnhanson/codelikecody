@@ -64,7 +64,7 @@ fn main() {
         cli::Command::Prime => cmd_prime(),
         cli::Command::Config { ref action } => cmd_config(action),
         cli::Command::Dispatch { ref id, ref model } => cmd_dispatch(id, model),
-        cli::Command::Workers => cmd_workers(),
+        cli::Command::Workers { all, prune } => cmd_workers(all, prune),
         cli::Command::Worker { ref id, ref action } => cmd_worker(id, action),
         cli::Command::Land { ref id } => cmd_land(id),
         cli::Command::Tisket { command } => cmd_tisket(command),
@@ -235,9 +235,13 @@ fn cmd_dispatch(id: &str, model: &str) -> Result<(), Error> {
     dispatch::dispatch(&project_dir, id, &cfg.main_branch, model)
 }
 
-fn cmd_workers() -> Result<(), Error> {
+fn cmd_workers(all: bool, prune: bool) -> Result<(), Error> {
     let project_dir = std::env::current_dir()?;
-    worker::list_workers(&project_dir)
+    if prune {
+        worker::prune_workers(&project_dir)
+    } else {
+        worker::list_workers(&project_dir, all)
+    }
 }
 
 fn cmd_worker(id: &str, action: &cli::WorkerAction) -> Result<(), Error> {

@@ -11,8 +11,14 @@ assertions:
   - name: "stdout contains at least a system init message"
     command: "grep -q '\"type\":\"system\"' .worktrees/test-feature/.clc/worker/stdout.jsonl"
 
-  - name: "clc workers shows worker as dead or does not list it"
-    command: "clc workers | grep -q test-feature && clc workers | grep test-feature | grep -q dead || ! clc workers | grep -q test-feature"
+  - name: "clc workers default does not show dead worker"
+    command: "! clc workers 2>&1 | grep -q test-feature"
+
+  - name: "clc workers --all shows dead worker"
+    command: "clc workers --all 2>&1 | grep -q test-feature"
+
+  - name: "clc workers --all shows worker status as dead"
+    command: "clc workers --all 2>&1 | grep test-feature | grep -q dead"
 
   - name: "clc worker log still works after stop"
     command: "clc worker test-feature log | grep -qE 'tool|text|system'"
@@ -39,6 +45,24 @@ transitions:
   - name: "resume the stopped worker"
     command: "cp .worktrees/test-feature/.clc/worker/pid /tmp/missouri-original-pid && clc worker test-feature resume"
     target: "../worker-resumed"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".worktrees/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true
+
+  - name: "prune dead worker state"
+    command: "mkdir -p .clc/workers/test-feature && echo '5' > .clc/workers/test-feature/cursor && clc workers --prune"
+    target: "../worker-pruned"
     comparators:
       files:
         - path: ".claude/settings.local.json"

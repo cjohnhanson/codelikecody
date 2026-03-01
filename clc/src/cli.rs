@@ -74,7 +74,14 @@ pub enum Command {
         model: String,
     },
     /// List active workers and their status.
-    Workers,
+    Workers {
+        /// Show all workers including dead ones.
+        #[arg(long)]
+        all: bool,
+        /// Remove worker state files for dead workers.
+        #[arg(long)]
+        prune: bool,
+    },
     /// Interact with a specific worker.
     Worker {
         /// The worker ID (tisket ID).
