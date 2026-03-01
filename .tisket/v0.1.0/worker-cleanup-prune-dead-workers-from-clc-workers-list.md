@@ -1,12 +1,12 @@
 ---
 title: "Worker cleanup — prune dead workers from clc workers list"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [clc]
 depends_on: []
-created: "2026-02-28T06:02:07Z"
-updated: "2026-02-28T06:02:07Z"
+created: 2026-02-28T06:02:07Z
+updated: "2026-03-01T02:56:55Z"
 ---
 
 `clc workers` lists every worktree with a `.clc/worker/` directory, including
