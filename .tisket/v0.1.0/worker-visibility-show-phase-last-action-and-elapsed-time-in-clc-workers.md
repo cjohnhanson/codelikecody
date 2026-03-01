@@ -1,6 +1,6 @@
 ---
 title: "Worker visibility: show phase, last action, and elapsed time in clc workers"
-status: in_progress
+status: discovery
 priority:
 assignee:
 labels: [clc]

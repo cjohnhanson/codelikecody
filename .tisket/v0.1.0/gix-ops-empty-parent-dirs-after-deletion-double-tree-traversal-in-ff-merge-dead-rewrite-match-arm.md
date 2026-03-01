@@ -1,6 +1,6 @@
 ---
 title: "gix_ops: empty parent dirs after deletion, double tree traversal in ff_merge, dead Rewrite match arm"
-status: in_progress
+status: discovery
 priority:
 assignee:
 labels: [clc, review-finding]

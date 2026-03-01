@@ -1,6 +1,6 @@
 ---
 title: "Belmont: secrets management for coding agents"
-status: in_progress
+status: discovery
 priority: 2
 assignee:
 labels: [new-crate, architecture]

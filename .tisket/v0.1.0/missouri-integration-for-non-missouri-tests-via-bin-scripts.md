@@ -1,6 +1,6 @@
 ---
 title: "Missouri integration for non-missouri tests via bin scripts"
-status: in_progress
+status: discovery
 priority: 2
 assignee:
 labels: [missouri]

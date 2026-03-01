@@ -1,6 +1,6 @@
 ---
 title: "Evaluate and improve all context injection surfaces"
-status: todo
+status: discovery
 priority:
 assignee:
 labels: [clc]

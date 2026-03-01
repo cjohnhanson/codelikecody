@@ -1,6 +1,6 @@
 ---
 title: "Tisket issues should include a Scratch Notes section by default"
-status: todo
+status: discovery
 priority:
 assignee:
 labels: [clc, tisket]

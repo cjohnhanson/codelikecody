@@ -1,6 +1,6 @@
 ---
 title: "Worker failure modes observed during coordinator operation"
-status: in_progress
+status: discovery
 priority:
 assignee:
 labels: [clc]

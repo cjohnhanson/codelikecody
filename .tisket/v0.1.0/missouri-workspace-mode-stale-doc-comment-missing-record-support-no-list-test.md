@@ -1,6 +1,6 @@
 ---
 title: "Missouri workspace mode: stale doc comment, missing --record support, no list test"
-status: in_progress
+status: discovery
 priority:
 assignee:
 labels: [missouri, review-finding]

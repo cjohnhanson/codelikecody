@@ -1,6 +1,6 @@
 ---
 title: "Agent ergonomics: track CLI friction points discovered during autonomous operation"
-status: in_progress
+status: discovery
 priority:
 assignee:
 labels: [tisket, ergonomics]

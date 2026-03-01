@@ -1,6 +1,6 @@
 ---
 title: "Document missouri comparators so they're usable without reading source"
-status: in_progress
+status: discovery
 priority: 3
 assignee:
 labels: [docs, missouri]

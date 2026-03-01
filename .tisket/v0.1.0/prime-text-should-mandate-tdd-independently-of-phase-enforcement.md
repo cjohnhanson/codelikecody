@@ -1,6 +1,6 @@
 ---
 title: "Prime text should mandate TDD independently of phase enforcement"
-status: in_progress
+status: discovery
 priority: 2
 assignee:
 labels: [clc, prompt]

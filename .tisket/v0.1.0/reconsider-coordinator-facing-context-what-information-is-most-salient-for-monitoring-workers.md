@@ -1,6 +1,6 @@
 ---
 title: "Reconsider coordinator-facing context -- what information is most salient for monitoring workers"
-status: in_progress
+status: discovery
 priority:
 assignee:
 labels: [clc]

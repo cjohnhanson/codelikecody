@@ -1,6 +1,6 @@
 ---
 title: "Contextual skill management and preferences system for clc"
-status: in_progress
+status: discovery
 priority:
 assignee:
 labels: [clc]

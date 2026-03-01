@@ -1,6 +1,6 @@
 ---
 title: "Configurable review guidance and prompt preferences"
-status: todo
+status: discovery
 priority:
 assignee:
 labels: [clc]

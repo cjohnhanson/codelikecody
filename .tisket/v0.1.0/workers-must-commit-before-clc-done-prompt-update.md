@@ -1,6 +1,6 @@
 ---
 title: "Workers must commit before clc done: prompt update"
-status: in_progress
+status: discovery
 priority:
 assignee:
 labels: [clc, prompt]

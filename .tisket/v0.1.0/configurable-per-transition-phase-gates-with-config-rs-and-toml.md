@@ -1,6 +1,6 @@
 ---
 title: "Configurable per-transition phase gates with config-rs and TOML"
-status: in_progress
+status: discovery
 priority:
 assignee:
 labels: [clc]

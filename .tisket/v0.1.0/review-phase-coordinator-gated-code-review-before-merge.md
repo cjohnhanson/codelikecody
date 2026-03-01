@@ -1,6 +1,6 @@
 ---
 title: "Review phase: coordinator-gated code review before merge"
-status: in_progress
+status: discovery
 priority:
 assignee:
 labels: [clc]

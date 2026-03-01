@@ -1,6 +1,6 @@
 ---
 title: "Consolidate external shell hooks into clc hook system with contextual execution"
-status: in_progress
+status: discovery
 priority:
 assignee:
 labels: [clc]

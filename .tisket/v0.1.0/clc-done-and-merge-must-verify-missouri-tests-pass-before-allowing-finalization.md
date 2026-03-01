@@ -1,6 +1,6 @@
 ---
 title: "clc done and merge must verify Missouri tests pass before allowing finalization"
-status: in_progress
+status: discovery
 priority:
 assignee:
 labels: []
