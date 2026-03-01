@@ -6,7 +6,7 @@ assignee:
 labels: [clc]
 depends_on: []
 created: 2026-02-28T06:02:07Z
-updated: "2026-03-01T03:06:19Z"
+updated: "2026-03-01T14:50:59Z"
 ---
 
 `clc workers` lists every worktree with a `.clc/worker/` directory, including
