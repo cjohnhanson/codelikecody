@@ -11,6 +11,7 @@ use camino::Utf8Path;
 use crate::dispatch;
 use crate::error::Error;
 use crate::git;
+use crate::permissions;
 use crate::worker;
 
 pub fn coordinate(
@@ -48,6 +49,10 @@ pub fn coordinate(
         eprintln!("no pickable tiskets found");
         return Ok(());
     }
+
+    // Seed baseline permissions so coordinator can function without
+    // --dangerously-skip-permissions.
+    permissions::seed_baseline(project_dir)?;
 
     // Build the initial prompt with pickable tiskets.
     let initial_prompt = build_coordinator_prompt(&pickable, tisket_filter);

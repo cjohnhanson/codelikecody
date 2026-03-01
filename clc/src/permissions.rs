@@ -251,3 +251,337 @@ pub fn pending_request(project_dir: &Path, worker_id: &str) -> Option<String> {
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn make_test_dir() -> PathBuf {
+        #[allow(deprecated)]
+        tempfile::tempdir().unwrap().into_path()
+    }
+
+    // --- seed_baseline tests ---
+
+    #[test]
+    fn seed_baseline_creates_settings_file() {
+        let dir = make_test_dir();
+        seed_baseline(&dir).unwrap();
+
+        let path = dir.join(".claude").join("settings.local.json");
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn seed_baseline_has_permissions_allow_array() {
+        let dir = make_test_dir();
+        seed_baseline(&dir).unwrap();
+
+        let content = fs::read_to_string(dir.join(".claude").join("settings.local.json")).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+        let allow = settings["permissions"]["allow"].as_array().unwrap();
+        assert!(!allow.is_empty());
+    }
+
+    #[test]
+    fn seed_baseline_includes_core_tools() {
+        let dir = make_test_dir();
+        seed_baseline(&dir).unwrap();
+
+        let content = fs::read_to_string(dir.join(".claude").join("settings.local.json")).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let allow: Vec<&str> = settings["permissions"]["allow"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
+
+        assert!(allow.contains(&"Read"), "missing Read");
+        assert!(allow.contains(&"Write"), "missing Write");
+        assert!(allow.contains(&"Edit"), "missing Edit");
+        assert!(allow.contains(&"Grep"), "missing Grep");
+        assert!(allow.contains(&"Glob"), "missing Glob");
+        assert!(allow.contains(&"WebFetch"), "missing WebFetch");
+        assert!(allow.contains(&"WebSearch"), "missing WebSearch");
+        assert!(allow.contains(&"Bash(clc *)"), "missing Bash(clc *)");
+        assert!(allow.contains(&"Bash(cargo *)"), "missing Bash(cargo *)");
+    }
+
+    #[test]
+    fn seed_baseline_sets_dont_ask_mode() {
+        let dir = make_test_dir();
+        seed_baseline(&dir).unwrap();
+
+        let content = fs::read_to_string(dir.join(".claude").join("settings.local.json")).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+        assert_eq!(settings["permissions"]["defaultMode"], "dontAsk");
+    }
+
+    #[test]
+    fn seed_baseline_is_idempotent() {
+        let dir = make_test_dir();
+        seed_baseline(&dir).unwrap();
+
+        // Modify the file to verify it doesn't get overwritten.
+        let path = dir.join(".claude").join("settings.local.json");
+        fs::write(&path, r#"{"custom": true}"#).unwrap();
+
+        seed_baseline(&dir).unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(
+            content.contains("custom"),
+            "seed_baseline overwrote existing file"
+        );
+    }
+
+    // --- add_permission_rule tests ---
+
+    #[test]
+    fn add_rule_to_empty_file() {
+        let dir = make_test_dir();
+        let path = dir.join("settings.local.json");
+        fs::write(&path, "{}").unwrap();
+
+        add_permission_rule(&path, "Bash(npm *)").unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let allow = settings["permissions"]["allow"].as_array().unwrap();
+
+        assert_eq!(allow.len(), 1);
+        assert_eq!(allow[0], "Bash(npm *)");
+    }
+
+    #[test]
+    fn add_rule_to_existing_baseline() {
+        let dir = make_test_dir();
+        seed_baseline(&dir).unwrap();
+
+        let path = dir.join(".claude").join("settings.local.json");
+        let before: serde_json::Value = {
+            let content = fs::read_to_string(&path).unwrap();
+            serde_json::from_str(&content).unwrap()
+        };
+        let before_count = before["permissions"]["allow"].as_array().unwrap().len();
+
+        add_permission_rule(&path, "Bash(npm *)").unwrap();
+
+        let after: serde_json::Value = {
+            let content = fs::read_to_string(&path).unwrap();
+            serde_json::from_str(&content).unwrap()
+        };
+        let after_allow = after["permissions"]["allow"].as_array().unwrap();
+
+        assert_eq!(after_allow.len(), before_count + 1);
+        assert!(after_allow.iter().any(|v| v == "Bash(npm *)"));
+        // Baseline still present.
+        assert!(after_allow.iter().any(|v| v == "Read"));
+    }
+
+    #[test]
+    fn add_rule_deduplicates() {
+        let dir = make_test_dir();
+        let path = dir.join("settings.local.json");
+        fs::write(&path, "{}").unwrap();
+
+        add_permission_rule(&path, "Bash(npm *)").unwrap();
+        add_permission_rule(&path, "Bash(npm *)").unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let allow = settings["permissions"]["allow"].as_array().unwrap();
+
+        assert_eq!(allow.len(), 1);
+    }
+
+    #[test]
+    fn add_rule_creates_file_if_missing() {
+        let dir = make_test_dir();
+        let path = dir.join("settings.local.json");
+
+        add_permission_rule(&path, "Bash(npm *)").unwrap();
+
+        assert!(path.exists());
+        let content = fs::read_to_string(&path).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(settings["permissions"]["allow"][0], "Bash(npm *)");
+    }
+
+    // --- request tests ---
+
+    #[test]
+    fn request_creates_pending_file() {
+        let dir = make_test_dir();
+        let wdir = dir.join(".clc").join("worker");
+        fs::create_dir_all(&wdir).unwrap();
+
+        request(&dir, "need npm install").unwrap();
+
+        let path = wdir.join(REQUEST_FILE);
+        assert!(path.exists());
+
+        let content = fs::read_to_string(&path).unwrap();
+        let req: PermissionRequest = serde_json::from_str(&content).unwrap();
+        assert_eq!(req.description, "need npm install");
+        assert_eq!(req.status, RequestStatus::Pending);
+    }
+
+    #[test]
+    fn request_fails_without_worker_dir() {
+        let dir = make_test_dir();
+        let result = request(&dir, "need something");
+        assert!(result.is_err());
+    }
+
+    // --- grant tests ---
+
+    #[test]
+    fn grant_adds_permission_and_removes_request() {
+        let project = make_test_dir();
+
+        // Set up worktree worker structure.
+        let worktree = project.join(".worktrees").join("test-worker");
+        let worker_dir = worktree.join(".clc").join("worker");
+        fs::create_dir_all(&worker_dir).unwrap();
+        fs::create_dir_all(worktree.join(".claude")).unwrap();
+
+        // Create a pending request.
+        let req = PermissionRequest {
+            description: "need npm".into(),
+            status: RequestStatus::Pending,
+        };
+        fs::write(
+            worker_dir.join(REQUEST_FILE),
+            serde_json::to_string(&req).unwrap(),
+        )
+        .unwrap();
+
+        grant(&project, "test-worker", "Bash(npm *)").unwrap();
+
+        // Request file removed.
+        assert!(!worker_dir.join(REQUEST_FILE).exists());
+
+        // Permission added.
+        let settings_path = worktree.join(".claude").join("settings.local.json");
+        let content = fs::read_to_string(&settings_path).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let allow = settings["permissions"]["allow"].as_array().unwrap();
+        assert!(allow.iter().any(|v| v == "Bash(npm *)"));
+    }
+
+    #[test]
+    fn grant_into_existing_baseline() {
+        let project = make_test_dir();
+
+        // Set up worktree with baseline permissions already seeded.
+        let worktree = project.join(".worktrees").join("test-worker");
+        let worker_dir = worktree.join(".clc").join("worker");
+        fs::create_dir_all(&worker_dir).unwrap();
+        seed_baseline(&worktree).unwrap();
+
+        // Create a pending request.
+        let req = PermissionRequest {
+            description: "need npm".into(),
+            status: RequestStatus::Pending,
+        };
+        fs::write(
+            worker_dir.join(REQUEST_FILE),
+            serde_json::to_string(&req).unwrap(),
+        )
+        .unwrap();
+
+        grant(&project, "test-worker", "Bash(npm *)").unwrap();
+
+        // New permission added alongside baseline.
+        let settings_path = worktree.join(".claude").join("settings.local.json");
+        let content = fs::read_to_string(&settings_path).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let allow = settings["permissions"]["allow"].as_array().unwrap();
+
+        assert!(
+            allow.iter().any(|v| v == "Bash(npm *)"),
+            "granted permission missing"
+        );
+        assert!(
+            allow.iter().any(|v| v == "Read"),
+            "baseline permission lost"
+        );
+        assert!(
+            allow.iter().any(|v| v == "Bash(clc *)"),
+            "baseline permission lost"
+        );
+    }
+
+    #[test]
+    fn grant_fails_for_nonexistent_worker() {
+        let project = make_test_dir();
+        let result = grant(&project, "nonexistent", "Read");
+        assert!(result.is_err());
+    }
+
+    // --- pending_request tests ---
+
+    #[test]
+    fn pending_request_returns_none_without_file() {
+        let project = make_test_dir();
+        let worktree = project.join(".worktrees").join("test-worker");
+        let worker_dir = worktree.join(".clc").join("worker");
+        fs::create_dir_all(&worker_dir).unwrap();
+
+        assert!(pending_request(&project, "test-worker").is_none());
+    }
+
+    #[test]
+    fn pending_request_returns_description() {
+        let project = make_test_dir();
+        let worker_dir = project
+            .join(".worktrees")
+            .join("test-worker")
+            .join(".clc")
+            .join("worker");
+        fs::create_dir_all(&worker_dir).unwrap();
+
+        let req = PermissionRequest {
+            description: "need docker".into(),
+            status: RequestStatus::Pending,
+        };
+        fs::write(
+            worker_dir.join(REQUEST_FILE),
+            serde_json::to_string(&req).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            pending_request(&project, "test-worker"),
+            Some("need docker".into())
+        );
+    }
+
+    #[test]
+    fn pending_request_returns_none_for_granted_status() {
+        let project = make_test_dir();
+        let worker_dir = project
+            .join(".worktrees")
+            .join("test-worker")
+            .join(".clc")
+            .join("worker");
+        fs::create_dir_all(&worker_dir).unwrap();
+
+        let req = PermissionRequest {
+            description: "was granted".into(),
+            status: RequestStatus::Granted,
+        };
+        fs::write(
+            worker_dir.join(REQUEST_FILE),
+            serde_json::to_string(&req).unwrap(),
+        )
+        .unwrap();
+
+        assert!(pending_request(&project, "test-worker").is_none());
+    }
+}
