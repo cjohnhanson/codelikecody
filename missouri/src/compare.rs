@@ -337,11 +337,13 @@ fn run_comparator(
     state_env: &BTreeMap<String, String>,
     sandbox: &crate::executor::Sandbox,
 ) -> Result<(), String> {
-    // Build PATH: bin dirs → state_env PATH → fallback
+    // Build PATH: bin dirs → state_env PATH → system PATH → fallback
+    let system_path =
+        std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin:/usr/bin:/bin".into());
     let base_path = state_env
         .get("PATH")
         .map(|s| s.as_str())
-        .unwrap_or("/usr/local/bin:/usr/bin:/bin");
+        .unwrap_or(&system_path);
     let mut path_parts: Vec<&str> = bin_dirs.iter().map(|b| b.as_str()).collect();
     path_parts.push(base_path);
     let path_env = path_parts.join(":");

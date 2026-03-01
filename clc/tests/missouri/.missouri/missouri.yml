@@ -1,2 +1,7 @@
-env:
-  PATH: "/Users/codyhanson/Projects/codelikecody/target/debug:/Users/codyhanson/.nix-profile/bin:/usr/local/bin:/usr/bin:/bin"
+setup:
+  - name: "build clc"
+    command: "cargo build --quiet --manifest-path ../../Cargo.toml"
+
+packages:
+  - git
+  - jq

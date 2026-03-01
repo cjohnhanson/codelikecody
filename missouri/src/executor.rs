@@ -694,10 +694,12 @@ fn run_single_assertion(
     } else {
         None
     };
+    let system_path =
+        std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin:/usr/bin:/bin".into());
     let base_path = state_env
         .get("PATH")
         .map(|s| s.as_str())
-        .unwrap_or("/usr/local/bin:/usr/bin:/bin");
+        .unwrap_or(&system_path);
     let path_env = build_path_env(bin_dir_opt, graph.project_bin.as_deref(), base_path);
 
     let output = match sandbox {
@@ -911,10 +913,12 @@ fn execute_transition(
     } else {
         None
     };
+    let system_path =
+        std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin:/usr/bin:/bin".into());
     let base_path = source_env
         .get("PATH")
         .map(|s| s.as_str())
-        .unwrap_or("/usr/local/bin:/usr/bin:/bin");
+        .unwrap_or(&system_path);
     let path_env = build_path_env(bin_dir_opt, graph.project_bin.as_deref(), base_path);
 
     // Run the command — using recorder if recording is enabled, otherwise normal execution.

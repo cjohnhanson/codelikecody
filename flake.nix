@@ -82,6 +82,8 @@
                 cargo
                 rustc
                 coreutils
+                git
+                jq
               ];
               # MISSOURI_SANDBOX=preinstalled tells missouri to skip `nix shell`
               # wrapping — the packages above are already on PATH via
@@ -107,6 +109,8 @@
           default = pkgs.mkShell {
             buildInputs = [
               pkgs.rust-bin.stable.latest.default
+              pkgs.git
+              pkgs.jq
             ]
             ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
               pkgs.libiconv
