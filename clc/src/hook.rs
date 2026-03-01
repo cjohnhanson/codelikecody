@@ -173,15 +173,13 @@ fn assemble_prime(cwd: &Path, git: Option<&git::GitState>, phase: Option<phase::
     // --- working memory ---
     out.push_str(
         "## Working memory\n\n\
-         Your active tisket contains a `## Scratch Notes` section — working memory\n\
-         that persists across sessions.\n\n\
-         Write to it as you work: decisions made, approaches tried, files consulted,\n\
-         what turned out irrelevant, next steps. On session start, read the scratch\n\
-         notes to recover context.\n\n\
-         To find the file: `tisket issue path <id>`\n\n\
-         The scratch section is tracked separately from the issue body and is not\n\
-         shown by `tisket issue show`. It is internal working state, not task\n\
-         description.\n\n",
+         Your tisket file has a `## Scratch Notes` section. Find it with\n\
+         `tisket issue path <id>`. Read it at session start. Write to it as you work.\n\n\
+         This is your only persistent state. Context compaction and session\n\
+         boundaries destroy everything else. If it's not in scratch notes, it's gone.\n\n\
+         Write: decisions, files consulted (and which were irrelevant), approaches\n\
+         tried, current status, next steps. Update proactively throughout the session,\n\
+         not at the end.\n\n",
     );
 
     // --- commit discipline ---
@@ -189,7 +187,10 @@ fn assemble_prime(cwd: &Path, git: Option<&git::GitState>, phase: Option<phase::
         "## Commit discipline\n\n\
          Commit frequently. Commits are checkpoints, not milestones. Good pre-commit\n\
          hooks mean every commit is a validated state. Don't accumulate large\n\
-         uncommitted diffs — stage and commit as you go.\n\n",
+         uncommitted diffs — stage and commit as you go.\n\n\
+         Stage and commit all implementation changes before running `clc done` to\n\
+         finalize. The done command requires a clean working tree — uncommitted\n\
+         changes will cause it to fail.\n\n",
     );
 
     // --- capturing discovered work ---
