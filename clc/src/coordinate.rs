@@ -163,6 +163,12 @@ fn build_coordinator_system_prompt() -> String {
          4. Intervene if needed: `clc worker <id> send \"<message>\"`\n\
          5. Land completed work: `clc land <id>` (worker must be in `done` phase)\n\
          6. Repeat until all tiskets are landed.\n\n\
+         Workers have limited permissions. When a worker needs a tool that isn't \
+         pre-approved, it files a request with `clc permissions request` and stops. \
+         Check for pending requests with `clc permissions list` or `clc worker <id> check`. \
+         Grant with `clc permissions grant <id> \"<permission rule>\"`, then resume the worker. \
+         If the request seems inappropriate or dangerous, deny it by sending the worker \
+         new instructions with `clc worker <id> send` instead of granting.\n\n\
          The user communicates with you via messages on stdin. When you receive a user \
          message, respond to it and act on their instructions. Between user messages, \
          continue monitoring active workers and landing completed ones.",
