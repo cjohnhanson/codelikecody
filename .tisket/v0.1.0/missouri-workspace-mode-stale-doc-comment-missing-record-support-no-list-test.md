@@ -1,12 +1,12 @@
 ---
 title: "Missouri workspace mode: stale doc comment, missing --record support, no list test"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [missouri, review-finding]
 depends_on: []
-created: "2026-03-01T13:15:49Z"
-updated: "2026-03-01T13:15:49Z"
+created: 2026-03-01T13:15:49Z
+updated: "2026-03-01T16:51:49Z"
 ---
 
 Non-blocking review findings from workspace mode branch review:
