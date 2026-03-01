@@ -1,12 +1,12 @@
 ---
 title: "Missouri integration for non-missouri tests via bin scripts"
-status: backlog
+status: in_progress
 priority: 2
 assignee:
 labels: [missouri]
 depends_on: []
-created: "2026-02-26T04:24:25Z"
-updated: "2026-02-26T04:24:25Z"
+created: 2026-02-26T04:24:25Z
+updated: "2026-03-01T16:52:16Z"
 ---
 
 Merge guards and workflow checks should require ALL tests pass, not just missouri
