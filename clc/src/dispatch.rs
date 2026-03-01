@@ -19,6 +19,7 @@ use nix::unistd::{self, Pid};
 
 use crate::error::Error;
 use crate::git;
+use crate::permissions;
 use crate::pickup;
 
 /// Worker state directory name inside `.clc/`.
@@ -49,6 +50,10 @@ pub fn dispatch(project_dir: &Path, id: &str, main_branch: &str, model: &str) ->
     // If the worktree already exists (previous dispatch), pickup will fail,
     // which is the correct behavior — re-dispatch after `land` or manual cleanup.
     pickup::pickup(project_dir, id, main_branch)?;
+
+    // Seed baseline permissions so the worker can function without
+    // --dangerously-skip-permissions.
+    permissions::seed_baseline(&worktree_dir)?;
 
     // Build prompts.
     let initial_prompt = build_worker_prompt(project_dir, id)?;

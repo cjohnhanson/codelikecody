@@ -62,7 +62,7 @@ pub fn request(cwd: &Path, description: &str) -> Result<(), Error> {
 
 /// Called by the coordinator: grant a permission to a worker.
 ///
-/// Adds the permission to `allowedTools` in the worker's `.claude/settings.local.json`
+/// Adds the permission to `permissions.allow` in the worker's `.claude/settings.local.json`
 /// and removes the pending permission request file.
 pub fn grant(project_dir: &Path, worker_id: &str, permission: &str) -> Result<(), Error> {
     let work_dir = worker::working_dir_for(project_dir, worker_id);
@@ -74,35 +74,8 @@ pub fn grant(project_dir: &Path, worker_id: &str, permission: &str) -> Result<()
         )));
     }
 
-    // Read (or create) settings.local.json in the worker's worktree.
     let settings_path = work_dir.join(".claude").join("settings.local.json");
-    let mut settings: serde_json::Value = if settings_path.exists() {
-        let content = fs::read_to_string(&settings_path)?;
-        serde_json::from_str(&content)?
-    } else {
-        serde_json::json!({})
-    };
-
-    // Add to allowedTools array.
-    let allowed = settings
-        .get_mut("allowedTools")
-        .and_then(|v| v.as_array_mut());
-
-    if let Some(arr) = allowed {
-        // Avoid duplicates.
-        let already_present = arr.iter().any(|v| v.as_str() == Some(permission));
-        if !already_present {
-            arr.push(serde_json::Value::String(permission.to_string()));
-        }
-    } else {
-        settings["allowedTools"] = serde_json::json!([permission]);
-    }
-
-    let json = serde_json::to_string_pretty(&settings)?;
-    if let Some(parent) = settings_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(&settings_path, json)?;
+    add_permission_rule(&settings_path, permission)?;
 
     // Remove the pending request file.
     let request_path = worker_dir.join(REQUEST_FILE);
@@ -114,6 +87,114 @@ pub fn grant(project_dir: &Path, worker_id: &str, permission: &str) -> Result<()
         "Permission granted for worker '{worker_id}': {permission}\n\
          Resume the worker with: `clc worker {worker_id} resume`"
     );
+
+    Ok(())
+}
+
+/// Baseline permissions pre-seeded into every worker's `.claude/settings.local.json`
+/// at dispatch time. These cover the tools workers need to function within the clc
+/// workflow without hitting permission prompts for routine operations.
+const BASELINE_PERMISSIONS: &[&str] = &[
+    // File operations — workers need to read, write, and edit code.
+    "Read",
+    "Write",
+    "Edit",
+    "MultiEdit",
+    // Search tools.
+    "Grep",
+    "Glob",
+    // Web tools for documentation lookup.
+    "WebFetch",
+    "WebSearch",
+    // clc workflow commands.
+    "Bash(clc *)",
+    // Tisket issue tracker commands.
+    "Bash(tisket *)",
+    // Missouri test runner.
+    "Bash(missouri *)",
+    // Cargo build and test.
+    "Bash(cargo *)",
+    // Git operations (staging, committing — not push).
+    "Bash(git add *)",
+    "Bash(git commit *)",
+    "Bash(git status *)",
+    "Bash(git diff *)",
+    "Bash(git log *)",
+    "Bash(git show *)",
+    // Basic filesystem commands.
+    "Bash(ls *)",
+    "Bash(mkdir *)",
+    "Bash(cat *)",
+    "Bash(head *)",
+    "Bash(tail *)",
+    "Bash(wc *)",
+    "Bash(find *)",
+    "Bash(test *)",
+];
+
+/// Write baseline permissions into a worker's `.claude/settings.local.json`.
+///
+/// Called at dispatch time so the worker can function without `--dangerously-skip-permissions`.
+/// Only writes if the file doesn't already exist (idempotent for re-dispatch after resume).
+pub fn seed_baseline(working_dir: &Path) -> Result<(), Error> {
+    let settings_path = working_dir.join(".claude").join("settings.local.json");
+
+    // Don't overwrite if already seeded (e.g., re-dispatch after grant).
+    if settings_path.exists() {
+        return Ok(());
+    }
+
+    let allow: Vec<serde_json::Value> = BASELINE_PERMISSIONS
+        .iter()
+        .map(|p| serde_json::Value::String(p.to_string()))
+        .collect();
+
+    let settings = serde_json::json!({
+        "permissions": {
+            "allow": allow
+        }
+    });
+
+    let json = serde_json::to_string_pretty(&settings)?;
+    if let Some(parent) = settings_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(&settings_path, json)?;
+
+    Ok(())
+}
+
+/// Add a permission rule to `permissions.allow` in a settings.local.json file.
+fn add_permission_rule(settings_path: &Path, permission: &str) -> Result<(), Error> {
+    let mut settings: serde_json::Value = if settings_path.exists() {
+        let content = fs::read_to_string(settings_path)?;
+        serde_json::from_str(&content)?
+    } else {
+        serde_json::json!({})
+    };
+
+    // Ensure permissions.allow array exists.
+    if settings.get("permissions").is_none() {
+        settings["permissions"] = serde_json::json!({});
+    }
+
+    let perms = settings.get_mut("permissions").unwrap();
+    let allowed = perms.get_mut("allow").and_then(|v| v.as_array_mut());
+
+    if let Some(arr) = allowed {
+        let already_present = arr.iter().any(|v| v.as_str() == Some(permission));
+        if !already_present {
+            arr.push(serde_json::Value::String(permission.to_string()));
+        }
+    } else {
+        perms["allow"] = serde_json::json!([permission]);
+    }
+
+    let json = serde_json::to_string_pretty(&settings)?;
+    if let Some(parent) = settings_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(settings_path, json)?;
 
     Ok(())
 }

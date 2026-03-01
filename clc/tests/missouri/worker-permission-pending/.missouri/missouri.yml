@@ -25,7 +25,7 @@ assertions:
 
 transitions:
   - name: "grant the permission"
-    command: "clc permissions grant test-feature 'Bash(npm install:*)'"
+    command: "clc permissions grant test-feature 'Bash(npm install *)'"
     target: "../worker-permission-granted"
     comparators:
       files:
