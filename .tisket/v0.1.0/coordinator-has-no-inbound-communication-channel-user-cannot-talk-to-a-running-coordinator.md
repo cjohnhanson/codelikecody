@@ -1,12 +1,12 @@
 ---
 title: "Coordinator has no inbound communication channel — user cannot talk to a running coordinator"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [clc]
 depends_on: []
-created: "2026-03-01T15:43:20Z"
-updated: "2026-03-01T15:43:20Z"
+created: 2026-03-01T15:43:20Z
+updated: "2026-03-01T15:45:26Z"
 ---
 
 The coordinator was designed to be the user's interface for managing workers — the user talks to the coordinator, the coordinator handles dispatch and monitoring. But the coordinator has no inbound communication channel.
