@@ -1,12 +1,12 @@
 ---
 title: "Coordinator should auto-dispatch todo tiskets without asking for permission"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: []
 depends_on: []
-created: "2026-03-02T04:09:33Z"
-updated: "2026-03-02T04:09:33Z"
+created: 2026-03-02T04:09:33Z
+updated: "2026-03-02T04:12:17Z"
 ---
 
 The coordinator's job is to manage workers autonomously. Currently it finds todo tiskets and then asks "Want me to dispatch workers for these?" — defeating the purpose of having a coordinator at all.
