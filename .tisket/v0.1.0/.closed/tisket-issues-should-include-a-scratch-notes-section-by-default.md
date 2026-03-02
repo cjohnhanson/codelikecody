@@ -1,12 +1,12 @@
 ---
 title: "Tisket issues should include a Scratch Notes section by default"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: [clc, tisket]
 depends_on: []
 created: 2026-03-01T16:56:52Z
-updated: "2026-03-02T03:21:13Z"
+updated: "2026-03-02T03:44:19Z"
 ---
 
 When tisket creates an issue (or when clc pickup picks one up), the issue file should have a `## Scratch Notes` section at the bottom. This is working memory for agents — decisions, approaches tried, files consulted, next steps.
