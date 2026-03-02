@@ -5,7 +5,7 @@
 //!   Lines 2+: `[timestamp, "o", data]`
 
 use std::io::Write;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::time::Instant;
 
 use camino::{Utf8Path, Utf8PathBuf};
@@ -29,7 +29,7 @@ pub fn record_command(
     env: &std::collections::BTreeMap<String, String>,
     path_env: &str,
     cast_path: &Utf8Path,
-    sandbox: &crate::executor::Sandbox,
+    sandbox: &dyn crate::executor::Backend,
 ) -> std::io::Result<std::process::Output> {
     let mut child = build_recording_command(command, shell, work_dir, env, path_env, sandbox)?;
     let signal_slot = crate::signal::register_child(child.id());
@@ -97,83 +97,21 @@ fn build_recording_command(
     work_dir: &Utf8Path,
     env: &std::collections::BTreeMap<String, String>,
     path_env: &str,
-    sandbox: &crate::executor::Sandbox,
+    sandbox: &dyn crate::executor::Backend,
 ) -> std::io::Result<std::process::Child> {
-    match sandbox {
-        crate::executor::Sandbox::None => {
-            if shell {
-                Command::new("sh")
-                    .arg("-c")
-                    .arg(command)
-                    .current_dir(work_dir.as_std_path())
-                    .env_clear()
-                    .envs(env.iter())
-                    .env("PATH", path_env)
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .spawn()
-            } else {
-                let parts: Vec<&str> = command.split_whitespace().collect();
-                if parts.is_empty() {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        "empty command",
-                    ));
-                }
-                Command::new(parts[0])
-                    .args(&parts[1..])
-                    .current_dir(work_dir.as_std_path())
-                    .env_clear()
-                    .envs(env.iter())
-                    .env("PATH", path_env)
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .spawn()
-            }
+    let mut cmd = if shell {
+        sandbox.build_shell_command(command, work_dir, env, path_env)
+    } else {
+        let parts: Vec<&str> = command.split_whitespace().collect();
+        if parts.is_empty() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "empty command",
+            ));
         }
-        crate::executor::Sandbox::Nix { nix_bin, packages } => {
-            let mut args: Vec<String> = vec!["shell".into()];
-            args.push("--extra-experimental-features".into());
-            args.push("nix-command flakes".into());
-            for pkg in packages {
-                args.push(format!("nixpkgs#{pkg}"));
-            }
-            args.push("--command".into());
-
-            if shell {
-                args.extend(["sh".into(), "-c".into(), command.to_string()]);
-                Command::new(nix_bin.as_str())
-                    .args(&args)
-                    .current_dir(work_dir.as_std_path())
-                    .env_clear()
-                    .envs(env.iter())
-                    .env("PATH", path_env)
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .spawn()
-            } else {
-                let parts: Vec<&str> = command.split_whitespace().collect();
-                if parts.is_empty() {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        "empty command",
-                    ));
-                }
-                for p in parts {
-                    args.push(p.to_string());
-                }
-                Command::new(nix_bin.as_str())
-                    .args(&args)
-                    .current_dir(work_dir.as_std_path())
-                    .env_clear()
-                    .envs(env.iter())
-                    .env("PATH", path_env)
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .spawn()
-            }
-        }
-    }
+        sandbox.build_direct_command(&parts, work_dir, env, path_env)
+    };
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()
 }
 
 /// Write asciicast v2 format.

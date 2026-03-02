@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
@@ -10,45 +11,151 @@ use crate::error;
 use crate::graph::{Assertion, SandboxConfig, StateGraph, StateId, Transition};
 use crate::paths::TestPath;
 
-/// Sandbox configuration for transition execution.
-#[derive(Debug, Clone)]
-pub enum Sandbox {
-    /// No sandbox — env_clear + manual PATH construction.
-    None,
-    /// Nix shell sandbox: commands run inside `nix shell nixpkgs#pkg1 ... --command`.
-    Nix {
-        /// Absolute path to the `nix` binary.
-        nix_bin: Utf8PathBuf,
-        /// Package names to provide via nixpkgs.
-        packages: Vec<String>,
-    },
+/// Backend for building commands in a specific execution environment.
+pub trait Backend: std::fmt::Debug + Send + Sync {
+    /// Build a Command for a shell command (sh -c "...").
+    fn build_shell_command(
+        &self,
+        command: &str,
+        work_dir: &Utf8Path,
+        env: &BTreeMap<String, String>,
+        path_env: &str,
+    ) -> Command;
+
+    /// Build a Command for a direct (non-shell) command.
+    fn build_direct_command(
+        &self,
+        parts: &[&str],
+        work_dir: &Utf8Path,
+        env: &BTreeMap<String, String>,
+        path_env: &str,
+    ) -> Command;
 }
 
-/// Detect and prepare sandbox from project-level config.
+/// No sandbox — env_clear + manual PATH construction.
+#[derive(Debug)]
+pub struct BareBackend;
+
+impl Backend for BareBackend {
+    fn build_shell_command(
+        &self,
+        command: &str,
+        work_dir: &Utf8Path,
+        env: &BTreeMap<String, String>,
+        path_env: &str,
+    ) -> Command {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c")
+            .arg(command)
+            .current_dir(work_dir.as_std_path())
+            .env_clear()
+            .envs(env.iter())
+            .env("PATH", path_env);
+        cmd
+    }
+
+    fn build_direct_command(
+        &self,
+        parts: &[&str],
+        work_dir: &Utf8Path,
+        env: &BTreeMap<String, String>,
+        path_env: &str,
+    ) -> Command {
+        let mut cmd = Command::new(parts[0]);
+        cmd.args(&parts[1..])
+            .current_dir(work_dir.as_std_path())
+            .env_clear()
+            .envs(env.iter())
+            .env("PATH", path_env);
+        cmd
+    }
+}
+
+/// Nix shell sandbox: commands run inside `nix shell nixpkgs#pkg1 ... --command`.
+#[derive(Debug)]
+pub struct NixBackend {
+    /// Absolute path to the `nix` binary.
+    pub nix_bin: Utf8PathBuf,
+    /// Package names to provide via nixpkgs.
+    pub packages: Vec<String>,
+}
+
+impl NixBackend {
+    fn nix_prefix_args(&self) -> Vec<String> {
+        let mut args: Vec<String> = vec!["shell".into()];
+        args.push("--extra-experimental-features".into());
+        args.push("nix-command flakes".into());
+        for pkg in &self.packages {
+            args.push(format!("nixpkgs#{pkg}"));
+        }
+        args.push("--command".into());
+        args
+    }
+}
+
+impl Backend for NixBackend {
+    fn build_shell_command(
+        &self,
+        command: &str,
+        work_dir: &Utf8Path,
+        env: &BTreeMap<String, String>,
+        path_env: &str,
+    ) -> Command {
+        let mut args = self.nix_prefix_args();
+        args.extend(["sh".into(), "-c".into(), command.to_string()]);
+        let mut cmd = Command::new(self.nix_bin.as_str());
+        cmd.args(&args)
+            .current_dir(work_dir.as_std_path())
+            .env_clear()
+            .envs(env.iter())
+            .env("PATH", path_env);
+        cmd
+    }
+
+    fn build_direct_command(
+        &self,
+        parts: &[&str],
+        work_dir: &Utf8Path,
+        env: &BTreeMap<String, String>,
+        path_env: &str,
+    ) -> Command {
+        let mut args = self.nix_prefix_args();
+        args.extend(parts.iter().map(|s| s.to_string()));
+        let mut cmd = Command::new(self.nix_bin.as_str());
+        cmd.args(&args)
+            .current_dir(work_dir.as_std_path())
+            .env_clear()
+            .envs(env.iter())
+            .env("PATH", path_env);
+        cmd
+    }
+}
+
+/// Detect and prepare backend from project-level config.
 ///
-/// Reads `graph.sandbox_config` to determine the sandbox mode:
-/// - `SandboxConfig::None` → `Sandbox::None`
-/// - `SandboxConfig::Packages(pkgs)` → `Sandbox::Nix` (or `Sandbox::None` if preinstalled)
+/// Reads `graph.sandbox_config` to determine the backend:
+/// - `SandboxConfig::None` → `BareBackend`
+/// - `SandboxConfig::Packages(pkgs)` → `NixBackend` (or `BareBackend` if preinstalled)
 ///
 /// When `MISSOURI_SANDBOX=preinstalled` is set, packages config resolves to
-/// `Sandbox::None` — tools are assumed to already be on PATH (e.g., inside a
+/// `BareBackend` — tools are assumed to already be on PATH (e.g., inside a
 /// nix derivation where packages are `nativeCheckInputs`).
-pub fn detect_sandbox(graph: &StateGraph) -> error::Result<Sandbox> {
+pub fn detect_sandbox(graph: &StateGraph) -> error::Result<Box<dyn Backend>> {
     // Check for preinstalled override
     if std::env::var("MISSOURI_SANDBOX").ok().as_deref() == Some("preinstalled") {
-        return Ok(Sandbox::None);
+        return Ok(Box::new(BareBackend));
     }
 
     match &graph.sandbox_config {
-        SandboxConfig::None => Ok(Sandbox::None),
+        SandboxConfig::None => Ok(Box::new(BareBackend)),
         SandboxConfig::Packages(packages) => {
             let nix_bin = which_nix().ok_or_else(|| error::Error::NixNotFound {
                 root: graph.root.clone(),
             })?;
-            Ok(Sandbox::Nix {
+            Ok(Box::new(NixBackend {
                 nix_bin,
                 packages: packages.clone(),
-            })
+            }))
         }
     }
 }
@@ -142,7 +249,7 @@ pub struct RecordingConfig {
 pub struct RunOptions {
     pub keep_temp: bool,
     pub verbose: bool,
-    pub sandbox: Sandbox,
+    pub sandbox: Box<dyn Backend>,
     pub check_mode: CheckMode,
     /// If set, record transition output to .cast files.
     pub recording: Option<RecordingConfig>,
@@ -175,7 +282,7 @@ pub fn run_setup_phase(graph: &StateGraph, opts: &RunOptions) -> Vec<SetupResult
                 &graph.project_root,
                 &path_env,
                 &graph.project_env,
-                &opts.sandbox,
+                &*opts.sandbox,
             );
             if !result.passed {
                 *still_passing = false;
@@ -191,42 +298,15 @@ fn run_single_setup(
     work_dir: &Utf8Path,
     path_env: &str,
     project_env: &std::collections::BTreeMap<String, String>,
-    sandbox: &Sandbox,
+    sandbox: &dyn Backend,
 ) -> SetupResult {
     let output = if cmd.shell {
-        match sandbox {
-            Sandbox::None => crate::signal::run_tracked(
-                Command::new("sh")
-                    .arg("-c")
-                    .arg(&cmd.command)
-                    .current_dir(work_dir.as_std_path())
-                    .env_clear()
-                    .envs(project_env.iter())
-                    .env("PATH", path_env),
-            ),
-            Sandbox::Nix { nix_bin, packages } => {
-                let mut args: Vec<String> = vec!["shell".into()];
-                args.push("--extra-experimental-features".into());
-                args.push("nix-command flakes".into());
-                for pkg in packages {
-                    args.push(format!("nixpkgs#{pkg}"));
-                }
-                args.extend([
-                    "--command".into(),
-                    "sh".into(),
-                    "-c".into(),
-                    cmd.command.clone(),
-                ]);
-                crate::signal::run_tracked(
-                    Command::new(nix_bin.as_str())
-                        .args(&args)
-                        .current_dir(work_dir.as_std_path())
-                        .env_clear()
-                        .envs(project_env.iter())
-                        .env("PATH", path_env),
-                )
-            }
-        }
+        crate::signal::run_tracked(&mut sandbox.build_shell_command(
+            &cmd.command,
+            work_dir,
+            project_env,
+            path_env,
+        ))
     } else {
         let parts: Vec<&str> = cmd.command.split_whitespace().collect();
         if parts.is_empty() {
@@ -238,36 +318,12 @@ fn run_single_setup(
                 stderr: "empty command".into(),
             };
         }
-        match sandbox {
-            Sandbox::None => crate::signal::run_tracked(
-                Command::new(parts[0])
-                    .args(&parts[1..])
-                    .current_dir(work_dir.as_std_path())
-                    .env_clear()
-                    .envs(project_env.iter())
-                    .env("PATH", path_env),
-            ),
-            Sandbox::Nix { nix_bin, packages } => {
-                let mut args: Vec<String> = vec!["shell".into()];
-                args.push("--extra-experimental-features".into());
-                args.push("nix-command flakes".into());
-                for pkg in packages {
-                    args.push(format!("nixpkgs#{pkg}"));
-                }
-                args.push("--command".into());
-                for p in parts {
-                    args.push(p.to_string());
-                }
-                crate::signal::run_tracked(
-                    Command::new(nix_bin.as_str())
-                        .args(&args)
-                        .current_dir(work_dir.as_std_path())
-                        .env_clear()
-                        .envs(project_env.iter())
-                        .env("PATH", path_env),
-                )
-            }
-        }
+        crate::signal::run_tracked(&mut sandbox.build_direct_command(
+            &parts,
+            work_dir,
+            project_env,
+            path_env,
+        ))
     };
 
     match output {
@@ -425,7 +481,7 @@ fn run_path_check_only(
         };
 
         let assertion_results =
-            run_assertions(&assertions, &work_dir, &state.env, graph, &opts.sandbox);
+            run_assertions(&assertions, &work_dir, &state.env, graph, &*opts.sandbox);
         let assertions_passed = assertion_results.iter().all(|a| a.passed);
         if !assertions_passed {
             passed = false;
@@ -555,7 +611,7 @@ fn run_path_transitions(
                     &work_dir,
                     &source.env,
                     graph,
-                    &opts.sandbox,
+                    &*opts.sandbox,
                 );
             }
         }
@@ -573,7 +629,7 @@ fn run_path_transitions(
             &source.env,
             target,
             graph,
-            &opts.sandbox,
+            &*opts.sandbox,
             run_assertions_flag,
             recording_path.as_ref(),
         );
@@ -671,7 +727,7 @@ fn run_assertions(
     work_dir: &Utf8Path,
     state_env: &std::collections::BTreeMap<String, String>,
     graph: &StateGraph,
-    sandbox: &Sandbox,
+    sandbox: &dyn Backend,
 ) -> Vec<AssertionResult> {
     assertions
         .iter()
@@ -685,7 +741,7 @@ fn run_single_assertion(
     work_dir: &Utf8Path,
     state_env: &std::collections::BTreeMap<String, String>,
     graph: &StateGraph,
-    sandbox: &Sandbox,
+    sandbox: &dyn Backend,
 ) -> AssertionResult {
     let state = &graph.states[assertion.state.0];
     let bin_dir = state.path.join(&graph.config_dir).join("bin");
@@ -702,11 +758,19 @@ fn run_single_assertion(
         .unwrap_or(&system_path);
     let path_env = build_path_env(bin_dir_opt, graph.project_bin.as_deref(), base_path);
 
-    let output = match sandbox {
-        Sandbox::None => build_assertion_command_bare(assertion, work_dir, state_env, &path_env),
-        Sandbox::Nix { nix_bin, packages } => build_assertion_command_nix(
-            assertion, work_dir, state_env, &path_env, nix_bin, packages,
-        ),
+    let output = if assertion.shell {
+        Some(crate::signal::run_tracked(
+            &mut sandbox.build_shell_command(&assertion.command, work_dir, state_env, &path_env),
+        ))
+    } else {
+        let parts: Vec<&str> = assertion.command.split_whitespace().collect();
+        if parts.is_empty() {
+            None
+        } else {
+            Some(crate::signal::run_tracked(
+                &mut sandbox.build_direct_command(&parts, work_dir, state_env, &path_env),
+            ))
+        }
     };
 
     let output = match output {
@@ -809,87 +873,6 @@ fn run_single_assertion(
     }
 }
 
-/// Build a bare assertion command (no sandbox).
-fn build_assertion_command_bare(
-    assertion: &Assertion,
-    work_dir: &Utf8Path,
-    state_env: &std::collections::BTreeMap<String, String>,
-    path_env: &str,
-) -> Option<std::io::Result<std::process::Output>> {
-    if assertion.shell {
-        Some(crate::signal::run_tracked(
-            Command::new("sh")
-                .arg("-c")
-                .arg(&assertion.command)
-                .current_dir(work_dir.as_std_path())
-                .env_clear()
-                .envs(state_env.iter())
-                .env("PATH", path_env),
-        ))
-    } else {
-        let parts: Vec<&str> = assertion.command.split_whitespace().collect();
-        if parts.is_empty() {
-            return None;
-        }
-        Some(crate::signal::run_tracked(
-            Command::new(parts[0])
-                .args(&parts[1..])
-                .current_dir(work_dir.as_std_path())
-                .env_clear()
-                .envs(state_env.iter())
-                .env("PATH", path_env),
-        ))
-    }
-}
-
-/// Build an assertion command wrapped in `nix shell`.
-fn build_assertion_command_nix(
-    assertion: &Assertion,
-    work_dir: &Utf8Path,
-    state_env: &std::collections::BTreeMap<String, String>,
-    path_env: &str,
-    nix_bin: &Utf8Path,
-    packages: &[String],
-) -> Option<std::io::Result<std::process::Output>> {
-    let mut args: Vec<String> = vec!["shell".into()];
-    args.push("--extra-experimental-features".into());
-    args.push("nix-command flakes".into());
-    for pkg in packages {
-        args.push(format!("nixpkgs#{pkg}"));
-    }
-    args.push("--command".into());
-
-    if assertion.shell {
-        args.push("sh".into());
-        args.push("-c".into());
-        args.push(assertion.command.clone());
-        Some(crate::signal::run_tracked(
-            Command::new(nix_bin.as_str())
-                .args(&args)
-                .current_dir(work_dir.as_std_path())
-                .env_clear()
-                .envs(state_env.iter())
-                .env("PATH", path_env),
-        ))
-    } else {
-        let parts: Vec<&str> = assertion.command.split_whitespace().collect();
-        if parts.is_empty() {
-            return None;
-        }
-        for p in parts {
-            args.push(p.to_string());
-        }
-        Some(crate::signal::run_tracked(
-            Command::new(nix_bin.as_str())
-                .args(&args)
-                .current_dir(work_dir.as_std_path())
-                .env_clear()
-                .envs(state_env.iter())
-                .env("PATH", path_env),
-        ))
-    }
-}
-
 /// Execute a single transition command and compare the result.
 fn execute_transition(
     transition: &Transition,
@@ -897,7 +880,7 @@ fn execute_transition(
     source_env: &std::collections::BTreeMap<String, String>,
     target: &crate::graph::State,
     graph: &StateGraph,
-    sandbox: &Sandbox,
+    sandbox: &dyn Backend,
     run_assertions_flag: bool,
     recording_path: Option<&Utf8PathBuf>,
 ) -> StepResult {
@@ -932,12 +915,18 @@ fn execute_transition(
             cast_path,
             sandbox,
         ))
+    } else if transition.shell {
+        Some(crate::signal::run_tracked(
+            &mut sandbox.build_shell_command(&transition.command, work_dir, source_env, &path_env),
+        ))
     } else {
-        match sandbox {
-            Sandbox::None => build_command_bare(transition, work_dir, source_env, &path_env),
-            Sandbox::Nix { nix_bin, packages } => build_command_nix(
-                transition, work_dir, source_env, &path_env, nix_bin, packages,
-            ),
+        let parts: Vec<&str> = transition.command.split_whitespace().collect();
+        if parts.is_empty() {
+            None
+        } else {
+            Some(crate::signal::run_tracked(
+                &mut sandbox.build_direct_command(&parts, work_dir, source_env, &path_env),
+            ))
         }
     };
 
@@ -1090,90 +1079,6 @@ fn execute_transition(
     }
 }
 
-/// Build a command without any sandbox wrapping (env_clear + manual PATH).
-fn build_command_bare(
-    transition: &Transition,
-    work_dir: &Utf8Path,
-    source_env: &std::collections::BTreeMap<String, String>,
-    path_env: &str,
-) -> Option<std::io::Result<std::process::Output>> {
-    if transition.shell {
-        Some(crate::signal::run_tracked(
-            Command::new("sh")
-                .arg("-c")
-                .arg(&transition.command)
-                .current_dir(work_dir.as_std_path())
-                .env_clear()
-                .envs(source_env.iter())
-                .env("PATH", path_env),
-        ))
-    } else {
-        let parts: Vec<&str> = transition.command.split_whitespace().collect();
-        if parts.is_empty() {
-            return None;
-        }
-        Some(crate::signal::run_tracked(
-            Command::new(parts[0])
-                .args(&parts[1..])
-                .current_dir(work_dir.as_std_path())
-                .env_clear()
-                .envs(source_env.iter())
-                .env("PATH", path_env),
-        ))
-    }
-}
-
-/// Build a command wrapped in `nix shell` (env_clear + state vars + PATH).
-///
-/// Shell mode: `nix shell nixpkgs#pkg1 ... --command sh -c "<command>"`
-/// Non-shell:  `nix shell nixpkgs#pkg1 ... --command <cmd> <args...>`
-fn build_command_nix(
-    transition: &Transition,
-    work_dir: &Utf8Path,
-    source_env: &std::collections::BTreeMap<String, String>,
-    path_env: &str,
-    nix_bin: &Utf8Path,
-    packages: &[String],
-) -> Option<std::io::Result<std::process::Output>> {
-    let mut args: Vec<String> = vec!["shell".into()];
-    args.push("--extra-experimental-features".into());
-    args.push("nix-command flakes".into());
-    for pkg in packages {
-        args.push(format!("nixpkgs#{pkg}"));
-    }
-    args.push("--command".into());
-
-    if transition.shell {
-        args.push("sh".into());
-        args.push("-c".into());
-        args.push(transition.command.clone());
-        Some(crate::signal::run_tracked(
-            Command::new(nix_bin.as_str())
-                .args(&args)
-                .current_dir(work_dir.as_std_path())
-                .env_clear()
-                .envs(source_env.iter())
-                .env("PATH", path_env),
-        ))
-    } else {
-        let parts: Vec<&str> = transition.command.split_whitespace().collect();
-        if parts.is_empty() {
-            return None;
-        }
-        for p in parts {
-            args.push(p.to_string());
-        }
-        Some(crate::signal::run_tracked(
-            Command::new(nix_bin.as_str())
-                .args(&args)
-                .current_dir(work_dir.as_std_path())
-                .env_clear()
-                .envs(source_env.iter())
-                .env("PATH", path_env),
-        ))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1205,8 +1110,12 @@ transitions:
 
         let graph = StateGraph::discover(root, ".missouri").unwrap();
         assert!(matches!(graph.sandbox_config, SandboxConfig::None));
-        let sandbox = detect_sandbox(&graph).unwrap();
-        assert!(matches!(sandbox, Sandbox::None));
+        let backend = detect_sandbox(&graph).unwrap();
+        let debug = format!("{backend:?}");
+        assert!(
+            debug.starts_with("BareBackend"),
+            "expected BareBackend, got {debug}"
+        );
     }
 
     #[test]
@@ -1237,7 +1146,7 @@ transitions:
         let graph = StateGraph::discover(root, ".missouri").unwrap();
         assert!(matches!(graph.sandbox_config, SandboxConfig::Packages(_)));
 
-        // nix must be on PATH for this test to produce Sandbox::Nix
+        // nix must be on PATH for this test to produce NixBackend
         if which_nix().is_none() {
             eprintln!("skipping detect_sandbox_packages_resolves_to_nix: nix not on PATH");
             return;
@@ -1248,20 +1157,27 @@ transitions:
         let saved = std::env::var("MISSOURI_SANDBOX").ok();
         unsafe { std::env::remove_var("MISSOURI_SANDBOX") };
 
-        let sandbox = detect_sandbox(&graph).unwrap();
+        let backend = detect_sandbox(&graph).unwrap();
 
         // Restore if it was set
         if let Some(val) = saved {
             unsafe { std::env::set_var("MISSOURI_SANDBOX", val) };
         }
 
-        match sandbox {
-            Sandbox::Nix { nix_bin, packages } => {
-                assert!(nix_bin.as_str().contains("nix"));
-                assert_eq!(packages, vec!["python3", "uv"]);
-            }
-            _ => panic!("expected Sandbox::Nix, got {sandbox:?}"),
-        }
+        let debug = format!("{backend:?}");
+        assert!(
+            debug.starts_with("NixBackend"),
+            "expected NixBackend, got {debug}"
+        );
+        assert!(
+            debug.contains("nix"),
+            "nix_bin should contain 'nix': {debug}"
+        );
+        assert!(
+            debug.contains("python3"),
+            "packages should contain python3: {debug}"
+        );
+        assert!(debug.contains("uv"), "packages should contain uv: {debug}");
     }
 
     #[test]
@@ -1293,14 +1209,15 @@ transitions:
         assert!(matches!(graph.sandbox_config, SandboxConfig::Packages(_)));
 
         // With MISSOURI_SANDBOX=preinstalled, packages config should resolve
-        // to Sandbox::None (tools assumed already on PATH).
+        // to BareBackend (tools assumed already on PATH).
         // SAFETY: test is single-threaded for this env var manipulation.
         unsafe { std::env::set_var("MISSOURI_SANDBOX", "preinstalled") };
-        let sandbox = detect_sandbox(&graph).unwrap();
+        let backend = detect_sandbox(&graph).unwrap();
         unsafe { std::env::remove_var("MISSOURI_SANDBOX") };
+        let debug = format!("{backend:?}");
         assert!(
-            matches!(sandbox, Sandbox::None),
-            "expected Sandbox::None when MISSOURI_SANDBOX=preinstalled, got {sandbox:?}"
+            debug.starts_with("BareBackend"),
+            "expected BareBackend when MISSOURI_SANDBOX=preinstalled, got {debug}"
         );
     }
 
@@ -1312,5 +1229,51 @@ transitions:
             return;
         }
         assert!(result.unwrap().as_str().ends_with("nix"));
+    }
+
+    #[test]
+    fn bare_backend_shell_command_runs() {
+        let backend = BareBackend;
+        let tmp = tempfile::tempdir().unwrap();
+        let work_dir = Utf8Path::from_path(tmp.path()).unwrap();
+        let env = BTreeMap::new();
+
+        let output = backend
+            .build_shell_command("echo hello", work_dir, &env, "/usr/bin:/bin")
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "hello");
+    }
+
+    #[test]
+    fn bare_backend_direct_command_runs() {
+        let backend = BareBackend;
+        let tmp = tempfile::tempdir().unwrap();
+        let work_dir = Utf8Path::from_path(tmp.path()).unwrap();
+        let env = BTreeMap::new();
+
+        let output = backend
+            .build_direct_command(&["echo", "world"], work_dir, &env, "/usr/bin:/bin")
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "world");
+    }
+
+    #[test]
+    fn bare_backend_env_cleared_and_set() {
+        let backend = BareBackend;
+        let tmp = tempfile::tempdir().unwrap();
+        let work_dir = Utf8Path::from_path(tmp.path()).unwrap();
+        let mut env = BTreeMap::new();
+        env.insert("MY_VAR".to_string(), "myvalue".to_string());
+
+        let output = backend
+            .build_shell_command("echo $MY_VAR", work_dir, &env, "/usr/bin:/bin")
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "myvalue");
     }
 }

@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::process::Command;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use ignore::gitignore::Gitignore;
@@ -73,7 +72,7 @@ pub fn compare_trees(
     state_env: &BTreeMap<String, String>,
     config_dir: &str,
     ignore: &Gitignore,
-    sandbox: &crate::executor::Sandbox,
+    sandbox: &dyn crate::executor::Backend,
 ) -> ComparisonResult {
     let actual_files = walk_tree(actual, config_dir);
     let expected_files = walk_tree(expected, config_dir);
@@ -183,7 +182,7 @@ pub fn compare_env(
     env_comparators: &[(String, EnvComparator)],
     bin_dirs: &[&Utf8Path],
     state_env: &BTreeMap<String, String>,
-    sandbox: &crate::executor::Sandbox,
+    sandbox: &dyn crate::executor::Backend,
 ) -> Vec<EnvDiff> {
     let mut diffs = Vec::new();
     let all_keys: BTreeSet<&String> = actual_env.keys().chain(expected_env.keys()).collect();
@@ -335,7 +334,7 @@ fn run_comparator(
     arg2: &Utf8Path,
     bin_dirs: &[&Utf8Path],
     state_env: &BTreeMap<String, String>,
-    sandbox: &crate::executor::Sandbox,
+    sandbox: &dyn crate::executor::Backend,
 ) -> Result<(), String> {
     // Build PATH: bin dirs → state_env PATH → system PATH → fallback
     let system_path =
@@ -354,39 +353,13 @@ fn run_comparator(
         shell_quote(arg2.as_str())
     );
 
-    let output = match sandbox {
-        crate::executor::Sandbox::Nix { nix_bin, packages } => {
-            let mut args: Vec<String> = vec!["shell".into()];
-            args.push("--extra-experimental-features".into());
-            args.push("nix-command flakes".into());
-            for pkg in packages {
-                args.push(format!("nixpkgs#{pkg}"));
-            }
-            args.extend([
-                "--command".into(),
-                "sh".into(),
-                "-c".into(),
-                inner_cmd.clone(),
-            ]);
-            crate::signal::run_tracked(
-                Command::new(nix_bin.as_str())
-                    .args(&args)
-                    .env_clear()
-                    .envs(state_env.iter())
-                    .env("PATH", &path_env),
-            )
-            .map_err(|e| format!("failed to run comparator via nix: {e}"))?
-        }
-        crate::executor::Sandbox::None => crate::signal::run_tracked(
-            Command::new("sh")
-                .arg("-c")
-                .arg(&inner_cmd)
-                .env_clear()
-                .envs(state_env.iter())
-                .env("PATH", &path_env),
-        )
-        .map_err(|e| format!("failed to run comparator: {e}"))?,
-    };
+    // Comparators always run as shell commands (the inner_cmd is a shell expression).
+    // Use a dummy work_dir since comparators don't need a working directory context.
+    let work_dir = camino::Utf8Path::new("/");
+    let output = crate::signal::run_tracked(
+        &mut sandbox.build_shell_command(&inner_cmd, work_dir, state_env, &path_env),
+    )
+    .map_err(|e| format!("failed to run comparator: {e}"))?;
 
     if output.status.success() {
         Ok(())
@@ -430,7 +403,7 @@ mod tests {
             &BTreeMap::new(),
             ".missouri",
             &empty_ignore(),
-            &crate::executor::Sandbox::None,
+            &crate::executor::BareBackend,
         );
         assert!(result.passed);
         assert!(result.file_diffs.is_empty());
@@ -457,7 +430,7 @@ mod tests {
             &BTreeMap::new(),
             ".missouri",
             &empty_ignore(),
-            &crate::executor::Sandbox::None,
+            &crate::executor::BareBackend,
         );
         assert!(!result.passed);
         assert_eq!(result.file_diffs.len(), 1);
@@ -489,7 +462,7 @@ mod tests {
             &BTreeMap::new(),
             ".missouri",
             &empty_ignore(),
-            &crate::executor::Sandbox::None,
+            &crate::executor::BareBackend,
         );
         assert!(!result.passed);
         assert!(
@@ -522,7 +495,7 @@ mod tests {
             &BTreeMap::new(),
             ".missouri",
             &empty_ignore(),
-            &crate::executor::Sandbox::None,
+            &crate::executor::BareBackend,
         );
         assert!(!result.passed);
         assert!(
@@ -557,7 +530,7 @@ mod tests {
             &BTreeMap::new(),
             ".missouri",
             &empty_ignore(),
-            &crate::executor::Sandbox::None,
+            &crate::executor::BareBackend,
         );
         assert!(result.passed);
     }
@@ -585,7 +558,7 @@ mod tests {
             &BTreeMap::new(),
             ".missouri",
             &empty_ignore(),
-            &crate::executor::Sandbox::None,
+            &crate::executor::BareBackend,
         );
         assert!(result.passed);
     }
@@ -603,7 +576,7 @@ mod tests {
             &[],
             &[],
             &BTreeMap::new(),
-            &crate::executor::Sandbox::None,
+            &crate::executor::BareBackend,
         );
         assert!(diffs.is_empty());
     }
@@ -621,7 +594,7 @@ mod tests {
             &[],
             &[],
             &BTreeMap::new(),
-            &crate::executor::Sandbox::None,
+            &crate::executor::BareBackend,
         );
         assert_eq!(diffs.len(), 1);
         assert!(matches!(&diffs[0], EnvDiff::ValueMismatch { name, .. } if name == "KEY"));
@@ -641,7 +614,7 @@ mod tests {
             &comparators,
             &[],
             &BTreeMap::new(),
-            &crate::executor::Sandbox::None,
+            &crate::executor::BareBackend,
         );
         assert!(diffs.is_empty());
     }
@@ -678,7 +651,7 @@ mod tests {
             &BTreeMap::new(),
             ".missouri",
             &ignore,
-            &crate::executor::Sandbox::None,
+            &crate::executor::BareBackend,
         );
         assert!(result.passed);
     }
@@ -708,7 +681,7 @@ mod tests {
             &BTreeMap::new(),
             ".missouri",
             &ignore,
-            &crate::executor::Sandbox::None,
+            &crate::executor::BareBackend,
         );
         assert!(result.passed);
     }
@@ -741,7 +714,7 @@ mod tests {
             &BTreeMap::new(),
             ".missouri",
             &ignore,
-            &crate::executor::Sandbox::None,
+            &crate::executor::BareBackend,
         );
         assert!(result.passed);
     }
@@ -769,7 +742,7 @@ mod tests {
             &BTreeMap::new(),
             ".missouri",
             &ignore,
-            &crate::executor::Sandbox::None,
+            &crate::executor::BareBackend,
         );
         assert!(!result.passed);
     }
