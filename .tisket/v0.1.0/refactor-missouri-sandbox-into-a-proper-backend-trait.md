@@ -1,6 +1,6 @@
 ---
 title: "Refactor missouri sandbox into a proper backend trait"
-status: in_progress
+status: todo
 priority:
 assignee:
 labels: [missouri]
