@@ -566,13 +566,16 @@ mod tests {
         #[allow(deprecated)]
         let dir = tempfile::tempdir().unwrap().into_path();
 
-        let repo = gix::init(&dir).unwrap();
+        gix::init(&dir).unwrap();
 
         // Set git identity for nix sandbox (no global git config).
+        // Written before reopening so gix picks up the config.
         let config_path = dir.join(".git").join("config");
         let mut config = std::fs::read_to_string(&config_path).unwrap_or_default();
         config.push_str("[user]\n\tname = test\n\temail = test@test\n");
         std::fs::write(&config_path, config).unwrap();
+
+        let repo = gix::open(&dir).unwrap();
 
         for (path, content) in files {
             let full = dir.join(path);
