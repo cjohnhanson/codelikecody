@@ -1,0 +1,37 @@
+assertions:
+  - name: "escalation file exists"
+    command: "test -f .clc/escalations/test-feature.json"
+
+  - name: "escalation file is valid JSON"
+    command: "jq empty .clc/escalations/test-feature.json"
+
+  - name: "escalation has worker_id"
+    command: "jq -e '.worker_id == \"test-feature\"' .clc/escalations/test-feature.json"
+
+  - name: "escalation has description"
+    command: "jq -e '.description' .clc/escalations/test-feature.json | grep -q 'docker'"
+
+  - name: "clc permissions inbox shows the escalation"
+    command: "clc permissions inbox 2>&1 | grep -q 'test-feature'"
+
+  - name: "clc permissions inbox shows the description"
+    command: "clc permissions inbox 2>&1 | grep -q 'docker'"
+
+transitions:
+  - name: "grant resolves escalation"
+    command: "clc permissions grant test-feature 'Bash(docker *)'"
+    target: "../escalation-resolved"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".worktrees/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true

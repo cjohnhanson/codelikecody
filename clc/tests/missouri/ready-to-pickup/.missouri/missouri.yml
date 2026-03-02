@@ -71,3 +71,21 @@ transitions:
           ignore: true
         - path: "tisket.yml"
           ignore: true
+
+  - name: "dispatch with config-level permissions"
+    command: "printf 'main_branch: main\\npermissions:\\n  allow:\\n    - \"Bash(npm *)\"\\n    - \"Bash(make *)\"\\n' > .clc/config.yml && clc dispatch test-feature --model haiku"
+    target: "../dispatched-with-config-permissions"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".worktrees/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true

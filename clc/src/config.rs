@@ -6,6 +6,12 @@ use crate::error::Error;
 
 const CONFIG_FILENAME: &str = "config.yml";
 
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct PermissionsConfig {
+    #[serde(default)]
+    pub allow: Vec<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default = "default_main_branch")]
@@ -13,6 +19,9 @@ pub struct Config {
 
     #[serde(default = "default_required_attempts")]
     pub required_attempts: u32,
+
+    #[serde(default)]
+    pub permissions: PermissionsConfig,
 }
 
 impl Default for Config {
@@ -20,6 +29,7 @@ impl Default for Config {
         Self {
             main_branch: default_main_branch(),
             required_attempts: default_required_attempts(),
+            permissions: PermissionsConfig::default(),
         }
     }
 }

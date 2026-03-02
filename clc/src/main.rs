@@ -158,7 +158,13 @@ fn cmd_status_set(target: &str) -> Result<(), Error> {
 fn cmd_coordinate(model: &str, tisket: Option<&str>) -> Result<(), Error> {
     let project_dir = std::env::current_dir()?;
     let cfg = config::load(&project_dir).unwrap_or_default();
-    coordinate::coordinate(&project_dir, &cfg.main_branch, model, tisket)
+    coordinate::coordinate(
+        &project_dir,
+        &cfg.main_branch,
+        model,
+        tisket,
+        &cfg.permissions.allow,
+    )
 }
 
 fn cmd_config(action: &cli::ConfigAction) -> Result<(), Error> {
@@ -233,7 +239,13 @@ fn cmd_missouri(command: ::missouri::cli::Command) -> Result<(), Error> {
 fn cmd_dispatch(id: &str, model: &str) -> Result<(), Error> {
     let project_dir = std::env::current_dir()?;
     let cfg = config::load(&project_dir).unwrap_or_default();
-    dispatch::dispatch(&project_dir, id, &cfg.main_branch, model)
+    dispatch::dispatch(
+        &project_dir,
+        id,
+        &cfg.main_branch,
+        model,
+        &cfg.permissions.allow,
+    )
 }
 
 fn cmd_workers(all: bool, prune: bool) -> Result<(), Error> {
@@ -275,6 +287,11 @@ fn cmd_permissions(action: &cli::PermissionsAction) -> Result<(), Error> {
             permission,
         } => permissions::grant(&cwd, worker_id, permission),
         cli::PermissionsAction::List => permissions::list(&cwd),
+        cli::PermissionsAction::Escalate {
+            worker_id,
+            description,
+        } => permissions::escalate(&cwd, worker_id, description),
+        cli::PermissionsAction::Inbox => permissions::inbox(&cwd),
     }
 }
 

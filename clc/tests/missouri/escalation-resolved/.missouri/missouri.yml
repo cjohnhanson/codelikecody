@@ -1,0 +1,12 @@
+assertions:
+  - name: "escalation file is gone"
+    command: "! test -f .clc/escalations/test-feature.json"
+
+  - name: "clc permissions inbox shows no pending escalations"
+    command: "clc permissions inbox 2>&1 | grep -q 'no pending escalations'"
+
+  - name: "worktree settings has the granted permission"
+    command: "jq -r '.permissions.allow[]' .worktrees/test-feature/.claude/settings.local.json | grep -q 'docker'"
+
+  - name: "clc permissions list shows no pending requests"
+    command: "clc permissions list 2>&1 | grep -q 'no pending'"

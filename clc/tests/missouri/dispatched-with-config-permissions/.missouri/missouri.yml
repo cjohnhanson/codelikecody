@@ -1,0 +1,30 @@
+assertions:
+  - name: "worktree directory exists"
+    command: "test -d .worktrees/test-feature"
+
+  - name: "worker process is alive"
+    command: "kill -0 $(cat .worktrees/test-feature/.clc/worker/pid)"
+
+  - name: "worktree settings has permissions.allow"
+    command: "jq -e '.permissions.allow' .worktrees/test-feature/.claude/settings.local.json"
+
+  - name: "worktree settings has baseline Read permission"
+    command: "jq -r '.permissions.allow[]' .worktrees/test-feature/.claude/settings.local.json | grep -qx 'Read'"
+
+  - name: "worktree settings has baseline Bash(cargo *) permission"
+    command: "jq -r '.permissions.allow[]' .worktrees/test-feature/.claude/settings.local.json | grep -qx 'Bash(cargo \\*)'"
+
+  - name: "worktree settings has config-level Bash(npm *) permission"
+    command: "jq -r '.permissions.allow[]' .worktrees/test-feature/.claude/settings.local.json | grep -qx 'Bash(npm \\*)'"
+
+  - name: "worktree settings has config-level Bash(make *) permission"
+    command: "jq -r '.permissions.allow[]' .worktrees/test-feature/.claude/settings.local.json | grep -qx 'Bash(make \\*)'"
+
+  - name: "worktree settings has dontAsk defaultMode"
+    command: "jq -e '.permissions.defaultMode == \"dontAsk\"' .worktrees/test-feature/.claude/settings.local.json"
+
+  - name: "config show reflects permissions section"
+    command: "clc config show 2>&1 | grep -q 'permissions'"
+
+  - name: "stop the config-dispatched worker for cleanup"
+    command: "clc worker test-feature stop"

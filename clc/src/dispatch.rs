@@ -25,7 +25,13 @@ use crate::pickup;
 /// Worker state directory name inside `.clc/`.
 const WORKER_DIR: &str = "worker";
 
-pub fn dispatch(project_dir: &Path, id: &str, main_branch: &str, model: &str) -> Result<(), Error> {
+pub fn dispatch(
+    project_dir: &Path,
+    id: &str,
+    main_branch: &str,
+    model: &str,
+    extra_allow: &[String],
+) -> Result<(), Error> {
     // Must be on main branch.
     let git_state = git::detect(project_dir, main_branch)
         .ok_or_else(|| Error::NonBlocking("not inside a git repository".into()))?;
@@ -53,7 +59,7 @@ pub fn dispatch(project_dir: &Path, id: &str, main_branch: &str, model: &str) ->
 
     // Seed baseline permissions so the worker can function without
     // --dangerously-skip-permissions.
-    permissions::seed_baseline(&worktree_dir)?;
+    permissions::seed_baseline(&worktree_dir, extra_allow)?;
 
     // Build prompts.
     let initial_prompt = build_worker_prompt(project_dir, id)?;

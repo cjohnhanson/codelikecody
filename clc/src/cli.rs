@@ -122,6 +122,15 @@ pub enum PermissionsAction {
     },
     /// List all pending permission requests across workers.
     List,
+    /// Escalate a permission decision to the user (called by the coordinator).
+    Escalate {
+        /// The worker ID (tisket ID) this escalation is about.
+        worker_id: String,
+        /// Description of what the worker needs and why it requires user review.
+        description: String,
+    },
+    /// View pending escalations from the coordinator.
+    Inbox,
 }
 
 #[derive(Subcommand)]

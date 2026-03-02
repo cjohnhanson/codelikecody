@@ -83,6 +83,15 @@ pub fn grant(project_dir: &Path, worker_id: &str, permission: &str) -> Result<()
         fs::remove_file(&request_path)?;
     }
 
+    // Resolve matching escalation if one exists.
+    let escalation_path = project_dir
+        .join(".clc")
+        .join("escalations")
+        .join(format!("{worker_id}.json"));
+    if escalation_path.exists() {
+        fs::remove_file(&escalation_path)?;
+    }
+
     eprintln!(
         "Permission granted for worker '{worker_id}': {permission}\n\
          Resume the worker with: `clc worker {worker_id} resume`"
@@ -137,7 +146,10 @@ const BASELINE_PERMISSIONS: &[&str] = &[
 /// Called at dispatch time so the worker can function without `--dangerously-skip-permissions`.
 /// Merges permissions into existing settings (e.g., hooks from `clc init`). Idempotent —
 /// skips if `permissions.allow` is already present.
-pub fn seed_baseline(working_dir: &Path) -> Result<(), Error> {
+///
+/// `extra_allow` contains project-level permission rules from `config.yml` that are
+/// appended after baseline permissions (deduplicated).
+pub fn seed_baseline(working_dir: &Path, extra_allow: &[String]) -> Result<(), Error> {
     let settings_path = working_dir.join(".claude").join("settings.local.json");
 
     // Read existing settings or start fresh.
@@ -158,10 +170,20 @@ pub fn seed_baseline(working_dir: &Path) -> Result<(), Error> {
         return Ok(());
     }
 
-    let allow: Vec<serde_json::Value> = BASELINE_PERMISSIONS
-        .iter()
-        .map(|p| serde_json::Value::String(p.to_string()))
-        .collect();
+    // Build allow list: baseline + project-level extras, deduplicated.
+    let mut seen = std::collections::HashSet::new();
+    let mut allow: Vec<serde_json::Value> = Vec::new();
+
+    for p in BASELINE_PERMISSIONS {
+        if seen.insert(*p) {
+            allow.push(serde_json::Value::String(p.to_string()));
+        }
+    }
+    for p in extra_allow {
+        if seen.insert(p.as_str()) {
+            allow.push(serde_json::Value::String(p.clone()));
+        }
+    }
 
     // Merge permissions into existing settings (preserving hooks, etc.).
     settings["permissions"] = serde_json::json!({
@@ -265,6 +287,74 @@ pub fn pending_request(project_dir: &Path, worker_id: &str) -> Option<String> {
     }
 }
 
+// --- Escalation system ---
+// The coordinator escalates permission decisions to the user when a request
+// seems dangerous, broad, or unclear. Escalation files live in `.clc/escalations/`
+// on trunk. One file per worker (latest wins).
+
+const ESCALATIONS_DIR: &str = "escalations";
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Escalation {
+    worker_id: String,
+    description: String,
+}
+
+/// Called by the coordinator: escalate a permission decision to the user.
+///
+/// Creates `.clc/escalations/{worker_id}.json` on trunk.
+pub fn escalate(project_dir: &Path, worker_id: &str, description: &str) -> Result<(), Error> {
+    let escalations_dir = project_dir.join(".clc").join(ESCALATIONS_DIR);
+    fs::create_dir_all(&escalations_dir)?;
+
+    let escalation = Escalation {
+        worker_id: worker_id.to_string(),
+        description: description.to_string(),
+    };
+
+    let path = escalations_dir.join(format!("{worker_id}.json"));
+    let json = serde_json::to_string_pretty(&escalation)?;
+    fs::write(&path, json)?;
+
+    eprintln!(
+        "Escalated to user: worker '{worker_id}' — {description}\n\
+         User: run `clc permissions inbox` to review pending escalations."
+    );
+
+    Ok(())
+}
+
+/// Called by the user: view pending escalations from the coordinator.
+///
+/// Scans `.clc/escalations/` for escalation files and prints them.
+pub fn inbox(project_dir: &Path) -> Result<(), Error> {
+    let escalations_dir = project_dir.join(".clc").join(ESCALATIONS_DIR);
+
+    if !escalations_dir.is_dir() {
+        eprintln!("no pending escalations");
+        return Ok(());
+    }
+
+    let mut found = false;
+    for entry in fs::read_dir(&escalations_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().is_some_and(|ext| ext == "json") {
+            let content = fs::read_to_string(&path)?;
+            if let Ok(esc) = serde_json::from_str::<Escalation>(&content) {
+                println!("{}\t{}", esc.worker_id, esc.description);
+                found = true;
+            }
+        }
+    }
+
+    if !found {
+        eprintln!("no pending escalations");
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -280,7 +370,7 @@ mod tests {
     #[test]
     fn seed_baseline_creates_settings_file() {
         let dir = make_test_dir();
-        seed_baseline(&dir).unwrap();
+        seed_baseline(&dir, &[]).unwrap();
 
         let path = dir.join(".claude").join("settings.local.json");
         assert!(path.exists());
@@ -289,7 +379,7 @@ mod tests {
     #[test]
     fn seed_baseline_has_permissions_allow_array() {
         let dir = make_test_dir();
-        seed_baseline(&dir).unwrap();
+        seed_baseline(&dir, &[]).unwrap();
 
         let content = fs::read_to_string(dir.join(".claude").join("settings.local.json")).unwrap();
         let settings: serde_json::Value = serde_json::from_str(&content).unwrap();
@@ -301,7 +391,7 @@ mod tests {
     #[test]
     fn seed_baseline_includes_core_tools() {
         let dir = make_test_dir();
-        seed_baseline(&dir).unwrap();
+        seed_baseline(&dir, &[]).unwrap();
 
         let content = fs::read_to_string(dir.join(".claude").join("settings.local.json")).unwrap();
         let settings: serde_json::Value = serde_json::from_str(&content).unwrap();
@@ -326,7 +416,7 @@ mod tests {
     #[test]
     fn seed_baseline_sets_dont_ask_mode() {
         let dir = make_test_dir();
-        seed_baseline(&dir).unwrap();
+        seed_baseline(&dir, &[]).unwrap();
 
         let content = fs::read_to_string(dir.join(".claude").join("settings.local.json")).unwrap();
         let settings: serde_json::Value = serde_json::from_str(&content).unwrap();
@@ -337,7 +427,7 @@ mod tests {
     #[test]
     fn seed_baseline_is_idempotent() {
         let dir = make_test_dir();
-        seed_baseline(&dir).unwrap();
+        seed_baseline(&dir, &[]).unwrap();
 
         let path = dir.join(".claude").join("settings.local.json");
 
@@ -351,7 +441,7 @@ mod tests {
                 .len();
 
         // Second seed should not overwrite since permissions.allow exists.
-        seed_baseline(&dir).unwrap();
+        seed_baseline(&dir, &[]).unwrap();
 
         let after = fs::read_to_string(&path).unwrap();
         let after_count = serde_json::from_str::<serde_json::Value>(&after).unwrap()["permissions"]
@@ -379,7 +469,7 @@ mod tests {
         )
         .unwrap();
 
-        seed_baseline(&dir).unwrap();
+        seed_baseline(&dir, &[]).unwrap();
 
         let content = fs::read_to_string(&path).unwrap();
         let settings: serde_json::Value = serde_json::from_str(&content).unwrap();
@@ -390,6 +480,43 @@ mod tests {
         let allow = settings["permissions"]["allow"].as_array().unwrap();
         assert!(!allow.is_empty(), "permissions not seeded");
         assert!(allow.iter().any(|v| v == "Read"), "missing Read");
+    }
+
+    #[test]
+    fn seed_baseline_includes_extra_allow() {
+        let dir = make_test_dir();
+        let extras = vec!["Bash(npm *)".to_string(), "Bash(make *)".to_string()];
+        seed_baseline(&dir, &extras).unwrap();
+
+        let content = fs::read_to_string(dir.join(".claude").join("settings.local.json")).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let allow: Vec<&str> = settings["permissions"]["allow"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
+
+        // Baseline present.
+        assert!(allow.contains(&"Read"), "missing baseline Read");
+        // Extras present.
+        assert!(allow.contains(&"Bash(npm *)"), "missing extra npm");
+        assert!(allow.contains(&"Bash(make *)"), "missing extra make");
+    }
+
+    #[test]
+    fn seed_baseline_deduplicates_extras() {
+        let dir = make_test_dir();
+        // "Read" is already in baseline — should not appear twice.
+        let extras = vec!["Read".to_string(), "Bash(npm *)".to_string()];
+        seed_baseline(&dir, &extras).unwrap();
+
+        let content = fs::read_to_string(dir.join(".claude").join("settings.local.json")).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let allow = settings["permissions"]["allow"].as_array().unwrap();
+
+        let read_count = allow.iter().filter(|v| v.as_str() == Some("Read")).count();
+        assert_eq!(read_count, 1, "Read duplicated");
     }
 
     // --- add_permission_rule tests ---
@@ -413,7 +540,7 @@ mod tests {
     #[test]
     fn add_rule_to_existing_baseline() {
         let dir = make_test_dir();
-        seed_baseline(&dir).unwrap();
+        seed_baseline(&dir, &[]).unwrap();
 
         let path = dir.join(".claude").join("settings.local.json");
         let before: serde_json::Value = {
@@ -535,7 +662,7 @@ mod tests {
         let worktree = project.join(".worktrees").join("test-worker");
         let worker_dir = worktree.join(".clc").join("worker");
         fs::create_dir_all(&worker_dir).unwrap();
-        seed_baseline(&worktree).unwrap();
+        seed_baseline(&worktree, &[]).unwrap();
 
         // Create a pending request.
         let req = PermissionRequest {
@@ -636,5 +763,66 @@ mod tests {
         .unwrap();
 
         assert!(pending_request(&project, "test-worker").is_none());
+    }
+
+    // --- escalation tests ---
+
+    #[test]
+    fn escalate_creates_file() {
+        let project = make_test_dir();
+        fs::create_dir_all(project.join(".clc")).unwrap();
+
+        escalate(&project, "test-worker", "needs docker access").unwrap();
+
+        let path = project
+            .join(".clc")
+            .join("escalations")
+            .join("test-worker.json");
+        assert!(path.exists());
+
+        let content = fs::read_to_string(&path).unwrap();
+        let esc: Escalation = serde_json::from_str(&content).unwrap();
+        assert_eq!(esc.worker_id, "test-worker");
+        assert_eq!(esc.description, "needs docker access");
+    }
+
+    #[test]
+    fn escalate_overwrites_previous() {
+        let project = make_test_dir();
+        fs::create_dir_all(project.join(".clc")).unwrap();
+
+        escalate(&project, "test-worker", "first request").unwrap();
+        escalate(&project, "test-worker", "second request").unwrap();
+
+        let path = project
+            .join(".clc")
+            .join("escalations")
+            .join("test-worker.json");
+        let content = fs::read_to_string(&path).unwrap();
+        let esc: Escalation = serde_json::from_str(&content).unwrap();
+        assert_eq!(esc.description, "second request");
+    }
+
+    #[test]
+    fn grant_resolves_escalation() {
+        let project = make_test_dir();
+
+        // Set up worktree.
+        let worktree = project.join(".worktrees").join("test-worker");
+        let worker_dir = worktree.join(".clc").join("worker");
+        fs::create_dir_all(&worker_dir).unwrap();
+        fs::create_dir_all(worktree.join(".claude")).unwrap();
+
+        // Create an escalation.
+        escalate(&project, "test-worker", "needs docker").unwrap();
+        let esc_path = project
+            .join(".clc")
+            .join("escalations")
+            .join("test-worker.json");
+        assert!(esc_path.exists());
+
+        // Grant resolves the escalation.
+        grant(&project, "test-worker", "Bash(docker *)").unwrap();
+        assert!(!esc_path.exists(), "escalation not resolved after grant");
     }
 }

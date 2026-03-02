@@ -19,6 +19,7 @@ pub fn coordinate(
     main_branch: &str,
     model: &str,
     tisket_filter: Option<&str>,
+    extra_allow: &[String],
 ) -> Result<(), Error> {
     // Must be on trunk.
     let git_state = git::detect(project_dir, main_branch)
@@ -52,7 +53,7 @@ pub fn coordinate(
 
     // Seed baseline permissions so coordinator can function without
     // --dangerously-skip-permissions.
-    permissions::seed_baseline(project_dir)?;
+    permissions::seed_baseline(project_dir, extra_allow)?;
 
     // Build the initial prompt with pickable tiskets.
     let initial_prompt = build_coordinator_prompt(&pickable, tisket_filter);
@@ -167,8 +168,21 @@ fn build_coordinator_system_prompt() -> String {
          pre-approved, it files a request with `clc permissions request` and stops. \
          Check for pending requests with `clc permissions list` or `clc worker <id> check`. \
          Grant with `clc permissions grant <id> \"<permission rule>\"`, then resume the worker. \
-         If the request seems inappropriate or dangerous, deny it by sending the worker \
-         new instructions with `clc worker <id> send` instead of granting.\n\n\
+         If the request seems inappropriate or dangerous, escalate to the user with \
+         `clc permissions escalate <id> \"<description>\"` instead of granting directly. \
+         The user can review pending escalations with `clc permissions inbox`.\n\n\
+         Missouri is the project's state-graph test framework. Tests live in `tests/missouri/` \
+         as a directed graph of states. Each state is a directory with fixture files and a \
+         `.missouri/missouri.yml` that defines assertions (invariants that must hold in that \
+         state) and transitions (commands that move to the next state, with file comparators). \
+         States chain together to form end-to-end paths through the system. Run \
+         `clc missouri run` to execute all paths.\n\n\
+         Before landing a worker, consider whether the work should have Missouri test coverage. \
+         Not everything needs it — but changes to CLI commands, workflow behavior, file formats, \
+         or state transitions are good candidates. If the worker's diff touches areas that \
+         existing Missouri tests cover, check that the tests still pass. If the change adds \
+         new behavior that fits the state graph, ask the worker to add a new state or extend \
+         an existing path before landing.\n\n\
          The user communicates with you via messages on stdin. When you receive a user \
          message, respond to it and act on their instructions. Between user messages, \
          continue monitoring active workers and landing completed ones.",
