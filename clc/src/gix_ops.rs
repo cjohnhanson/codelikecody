@@ -568,6 +568,12 @@ mod tests {
 
         let repo = gix::init(&dir).unwrap();
 
+        // Set git identity for nix sandbox (no global git config).
+        let config_path = dir.join(".git").join("config");
+        let mut config = std::fs::read_to_string(&config_path).unwrap_or_default();
+        config.push_str("[user]\n\tname = test\n\temail = test@test\n");
+        std::fs::write(&config_path, config).unwrap();
+
         for (path, content) in files {
             let full = dir.join(path);
             if let Some(parent) = full.parent() {
