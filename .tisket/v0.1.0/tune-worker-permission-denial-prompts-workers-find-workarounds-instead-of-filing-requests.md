@@ -1,6 +1,6 @@
 ---
 title: "tune-worker-permission-denial-prompts-workers-find-workarounds-instead-of-filing-requests"
-status: todo
+status: discovery
 priority:
 assignee:
 labels: []
