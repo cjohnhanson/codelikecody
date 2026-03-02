@@ -39,3 +39,10 @@ This is an ongoing collection, not a single fix. Individual items can be spun ou
 - `tisket issue create` has no `-b`/`--body` flag — body must be appended to the file after creation
 - `tisket issue create` title becomes a slug that drops punctuation unpredictably (clc.yaml → clcyaml)
 - git-add-validator false positive: `git add clc/src/permissions.rs` blocked as "adding a directory: clc" — had to use `./clc/src/permissions.rs` with leading `./`
+
+## Session: coordinator-run-scratch-notes-tisket (2026-03-02)
+
+- Worker completed scratch-notes tisket successfully, but `clc land` failed because main advanced (tisket scoping commits) while the branch was in flight. `clc land` requires fast-forward, so the branch needs rebasing.
+- Neither the coordinator nor workers can run `git rebase` — blocked by both the trunk allowlist (coordinator runs on trunk) and Claude Code's permission system (workers run with `--dangerously-skip-permissions` but that doesn't cover rebase).
+- Coordinator got stuck and died trying to resolve this. No automatic recovery path.
+- **Gap**: `clc land` should either rebase automatically or the coordinator needs permission to rebase worker branches. This is a fundamental issue for any coordinator run where main advances during worker execution.
