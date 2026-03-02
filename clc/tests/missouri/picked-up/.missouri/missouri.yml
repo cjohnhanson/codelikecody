@@ -11,6 +11,9 @@ assertions:
   - name: "tisket status changed to in_progress"
     command: "grep -q 'status: in_progress' .tisket/v0.1.0/test-feature.md"
 
+  - name: "issue has Scratch Notes section after pickup"
+    command: "grep -q '## Scratch Notes' .tisket/v0.1.0/test-feature.md"
+
   - name: "pickup committed the status change on trunk"
     command: "git log -1 --format=%s | grep -q 'clc: pickup test-feature'"
 

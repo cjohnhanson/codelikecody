@@ -62,6 +62,9 @@ pub fn pickup(project_dir: &Path, id: &str, main_branch: &str) -> Result<(), Err
     repo.edit_issue(id, Some("in_progress"))
         .map_err(|e| Error::NonBlocking(format!("failed to update tisket status: {e}")))?;
 
+    repo.ensure_scratch_notes(id)
+        .map_err(|e| Error::NonBlocking(format!("failed to add scratch notes section: {e}")))?;
+
     let msg = format!("clc: pickup {id}");
     crate::gix_ops::commit_paths(project_dir, &msg, &[".tisket/"])?;
 
