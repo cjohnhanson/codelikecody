@@ -188,3 +188,121 @@ fn is_test_path(path: &str) -> bool {
     // Match both relative and absolute paths containing tests/missouri/
     path.contains("tests/missouri/") || path.starts_with("tests/missouri")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn feature_branch() -> GitState {
+        GitState {
+            branch: "feat-xyz".to_string(),
+            is_main: false,
+            is_worktree: true,
+        }
+    }
+
+    fn stop_event() -> Event {
+        Event::Stop
+    }
+
+    fn edit_src_event() -> Event {
+        Event::PreToolUse {
+            tool_name: "Edit".to_string(),
+            tool_input: json!({"file_path": "src/main.rs"}),
+        }
+    }
+
+    fn edit_test_event() -> Event {
+        Event::PreToolUse {
+            tool_name: "Edit".to_string(),
+            tool_input: json!({"file_path": "tests/missouri/foo/.missouri/missouri.yml"}),
+        }
+    }
+
+    // --- Stop hook: review-requested allows exit ---
+
+    #[test]
+    fn stop_allowed_at_review_requested() {
+        let git = feature_branch();
+        let resp = evaluate(&stop_event(), Some(&git), Some(Phase::ReviewRequested));
+        assert!(matches!(resp, Response::Passthrough));
+    }
+
+    // --- Stop hook: reviewed allows exit ---
+
+    #[test]
+    fn stop_allowed_at_reviewed() {
+        let git = feature_branch();
+        let resp = evaluate(&stop_event(), Some(&git), Some(Phase::Reviewed));
+        assert!(matches!(resp, Response::Passthrough));
+    }
+
+    // --- Stop hook: in-review blocks exit ---
+
+    #[test]
+    fn stop_blocked_at_in_review() {
+        let git = feature_branch();
+        let resp = evaluate(&stop_event(), Some(&git), Some(Phase::InReview));
+        assert!(matches!(resp, Response::Block { .. }));
+    }
+
+    // --- Stop hook: done still allows exit ---
+
+    #[test]
+    fn stop_allowed_at_done() {
+        let git = feature_branch();
+        let resp = evaluate(&stop_event(), Some(&git), Some(Phase::Done));
+        assert!(matches!(resp, Response::Passthrough));
+    }
+
+    // --- Stop hook: green still blocks exit ---
+
+    #[test]
+    fn stop_blocked_at_green() {
+        let git = feature_branch();
+        let resp = evaluate(&stop_event(), Some(&git), Some(Phase::Green));
+        assert!(matches!(resp, Response::Block { .. }));
+    }
+
+    // --- PreToolUse: in-review unrestricted (like implementing) ---
+
+    #[test]
+    fn edit_src_allowed_in_in_review() {
+        let git = feature_branch();
+        let resp = evaluate(&edit_src_event(), Some(&git), Some(Phase::InReview));
+        assert!(matches!(resp, Response::Passthrough));
+    }
+
+    // --- PreToolUse: review-requested restricted (only test paths) ---
+
+    #[test]
+    fn edit_src_blocked_in_review_requested() {
+        let git = feature_branch();
+        let resp = evaluate(&edit_src_event(), Some(&git), Some(Phase::ReviewRequested));
+        assert!(matches!(resp, Response::Block { .. }));
+    }
+
+    #[test]
+    fn edit_test_allowed_in_review_requested() {
+        let git = feature_branch();
+        let resp = evaluate(&edit_test_event(), Some(&git), Some(Phase::ReviewRequested));
+        assert!(matches!(resp, Response::Passthrough));
+    }
+
+    // --- PreToolUse: reviewed restricted (only test paths) ---
+
+    #[test]
+    fn edit_src_blocked_in_reviewed() {
+        let git = feature_branch();
+        let resp = evaluate(&edit_src_event(), Some(&git), Some(Phase::Reviewed));
+        assert!(matches!(resp, Response::Block { .. }));
+    }
+
+    #[test]
+    fn edit_test_allowed_in_reviewed() {
+        let git = feature_branch();
+        let resp = evaluate(&edit_test_event(), Some(&git), Some(Phase::Reviewed));
+        assert!(matches!(resp, Response::Passthrough));
+    }
+}

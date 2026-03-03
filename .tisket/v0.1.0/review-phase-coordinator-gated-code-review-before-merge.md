@@ -102,3 +102,48 @@ The review worker prompt includes:
 - coordinate.rs: detect `review-requested`, dispatch reviewer, read `reviewed` artifacts, apply decision logic, handle rejection dispatch with summarized blockers, enforce 3-cycle limit
 - done.rs: only callable from `done` phase (coordinator advances to done before calling)
 - New: review worker prime text / prompt (requires user approval per CLAUDE.md)
+
+## Scratch Notes
+
+### Tests written (phase: tests-unwritten → tests-written)
+
+**Unit tests:**
+- phase.rs: 15 tests — parse, display, ordering, next(), transitions for ReviewRequested/InReview/Reviewed
+- guard.rs: 10 tests — Stop allows review-requested/reviewed, blocks in-review; PreToolUse: in-review unrestricted, review-requested/reviewed restricted
+
+**Missouri states:**
+- phase-review-requested: assertions + transitions (from phase-green, forward to phase-in-review, back to implementing)
+- phase-in-review: assertions + transitions (unrestricted like implementing, Stop blocks, forward to reviewed)
+- phase-reviewed: assertions + transitions (Stop allows, forward to done, rejection back to implementing)
+- phase-done-via-review: terminal state verifying phase=done after review chain
+- ready-to-done-via-review: integration test for `clc done` from done phase (full project setup)
+- ready-to-done-via-review-pickup-style: same but with pre-committed tisket
+
+**Key decisions:**
+- `in-review` phase is unrestricted (like implementing) — review worker needs write access for `.clc/review/`
+- `review-requested` and `reviewed` are restricted (test paths only)
+- `clc done` now requires phase=done, not green. Coordinator must advance to done first.
+- No done.rs unit tests — they require git repos which would mean shelling out to git. Testing done.rs behavior through missouri instead.
+- Updated ready-to-done and ready-to-done-pickup-style: removed direct `clc done` transitions, added review chain transitions
+- done-completed's "done fails when already done" assertion still valid — checks tisket already closed
+
+**Files modified:**
+- clc/src/phase.rs (unit tests)
+- clc/src/guard.rs (unit tests)
+- clc/tests/missouri/phase-green/.missouri/missouri.yml (added review-requested transition)
+- clc/tests/missouri/ready-to-done/.missouri/missouri.yml (rewrote: removed old done tests, added review chain)
+- clc/tests/missouri/ready-to-done-pickup-style/.missouri/missouri.yml (same treatment)
+
+**New files:**
+- clc/tests/missouri/phase-review-requested/ (full state)
+- clc/tests/missouri/phase-in-review/ (full state)
+- clc/tests/missouri/phase-reviewed/ (full state)
+- clc/tests/missouri/phase-done-via-review/ (full state)
+- clc/tests/missouri/ready-to-done-via-review/ (full state)
+- clc/tests/missouri/ready-to-done-via-review-pickup-style/ (full state)
+
+**Next steps:**
+- Advance to tests-written
+- Implement: phase.rs (add 3 variants), guard.rs (Stop + PreToolUse), done.rs (require Done phase)
+- coordinate.rs: review loop (detect review-requested, dispatch reviewer, read reviewed, accept/reject, 3-cycle limit)
+- Review worker prompt (needs user approval per CLAUDE.md)

@@ -1,0 +1,12 @@
+assertions:
+  - name: "state file exists"
+    command: "test -f .clc/state"
+
+  - name: "status reports phase done"
+    command: "clc status 2>&1 | grep 'phase: done'"
+
+  - name: "Stop hook allowed in done"
+    command: "git init -q -b main && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init && git checkout -q -B feat-xyz && echo '{\"hook_event_name\":\"Stop\",\"session_id\":\"test\",\"cwd\":\".\"}' | clc hook"
+
+  - name: "phase reached via review chain not direct from green"
+    command: "test $(cat .clc/state | head -1) = 'phase: done'"

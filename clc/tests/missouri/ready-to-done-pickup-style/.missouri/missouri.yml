@@ -14,10 +14,13 @@ assertions:
   - name: "missouri tests pass"
     command: "clc status 2>&1 | grep 'missouri: 1/1 passing'"
 
+  - name: "done rejects green phase (review required)"
+    command: "clc done 2>&1; test $? -ne 0"
+
 transitions:
-  - name: "finalize work"
-    command: "clc done"
-    target: "../done-completed-pickup-style"
+  - name: "advance through review chain to done"
+    command: "clc status set review-requested && clc status set in-review && clc status set reviewed && clc status set done"
+    target: "../ready-to-done-via-review-pickup-style"
     comparators:
       files:
         - path: ".claude/settings.local.json"

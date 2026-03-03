@@ -1,0 +1,48 @@
+assertions:
+  - name: "state file exists"
+    command: "test -f .clc/state"
+
+  - name: "status reports phase in-review"
+    command: "clc status 2>&1 | grep 'phase: in-review'"
+
+  - name: "status set to same phase is rejected"
+    command: "clc status set in-review 2>&1; test $? -ne 0"
+
+  - name: "phase guard allows Edit in src on feature branch (unrestricted like implementing)"
+    command: "git init -q -b main && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init && git checkout -q -B feat-xyz && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"src/main.rs\"}}' | clc hook"
+
+  - name: "phase guard allows Edit in tests/missouri on feature branch"
+    command: "git init -q -b main && (git checkout -B feat-xyz 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"tests/missouri/foo/.missouri/missouri.yml\"}}' | clc hook"
+
+  - name: "phase guard allows Write to Cargo.toml on feature branch"
+    command: "git init -q -b main && (git checkout -B feat-xyz 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"Cargo.toml\"}}' | clc hook"
+
+  - name: "phase guard allows Bash on feature branch"
+    command: "git init -q -b main && (git checkout -B feat-xyz 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cargo test\"}}' | clc hook"
+
+  - name: "Stop hook blocked in in-review"
+    command: "git init -q -b main && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init && git checkout -q -B feat-xyz && echo '{\"hook_event_name\":\"Stop\",\"session_id\":\"test\",\"cwd\":\".\"}' | clc hook 2>/dev/null; test $? -eq 2"
+
+  - name: "prime shows current phase"
+    command: "clc prime | grep 'in-review'"
+
+transitions:
+  - name: "advance to reviewed"
+    command: "clc status set reviewed"
+    target: "../phase-reviewed"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc"
+          ignore: true
+
+  - name: "go back to implementing"
+    command: "clc status set implementing"
+    target: "../phase-implementing"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc"
+          ignore: true

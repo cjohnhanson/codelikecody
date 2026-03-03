@@ -42,6 +42,16 @@ assertions:
     command: "git init -q -b main && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init && git checkout -q -B feat-xyz && echo '{\"hook_event_name\":\"Stop\",\"session_id\":\"test\",\"cwd\":\".\"}' | clc hook 2>&1 | grep -i 'clc done'"
 
 transitions:
+  - name: "advance to review-requested"
+    command: "clc status set review-requested"
+    target: "../phase-review-requested"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc"
+          ignore: true
+
   - name: "go back to red"
     command: "clc status set red"
     target: "../phase-red"

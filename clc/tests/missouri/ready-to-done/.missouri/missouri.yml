@@ -11,26 +11,11 @@ assertions:
   - name: "missouri tests pass"
     command: "clc status 2>&1 | grep 'missouri: 1/1 passing'"
 
-  - name: "done fails on main branch"
-    command: "git checkout -q main && clc done 2>&1; RET=$?; git checkout -q test-feature; test $RET -ne 0"
+  - name: "done rejects green phase (review required)"
+    command: "clc done 2>&1; test $? -ne 0"
 
-  - name: "done fails with untracked file"
-    command: "echo 'dirty' > dirty.txt && clc done 2>&1; RET=$?; rm -f dirty.txt; test $RET -ne 0"
-
-  - name: "done fails with modified tracked file"
-    command: "echo 'dirty' >> src/main.rs && clc done 2>&1; RET=$?; git checkout HEAD -- src/main.rs; test $RET -ne 0"
-
-  - name: "done fails with staged change"
-    command: "echo 'dirty' >> src/main.rs && git add src/main.rs && clc done 2>&1; RET=$?; git checkout HEAD -- src/main.rs; test $RET -ne 0"
-
-  - name: "done error mentions commit"
-    command: "echo 'dirty' > dirty.txt && OUT=$(clc done 2>&1); RET=$?; rm -f dirty.txt; test $RET -ne 0 && echo \"$OUT\" | grep -i 'commit'"
-
-  - name: "done ignores .clc changes"
-    command: "D=$(mktemp -d) && cd \"$D\" && git init -q -b main && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init && git checkout -q -b test-feature && mkdir -p .clc && printf 'phase: green\\n' > .clc/state && echo ephemeral > .clc/extra && clc done 2>&1; RET=$?; cd /tmp; rm -rf \"$D\"; test $RET -eq 0"
-
-  - name: "done ignores .claude changes"
-    command: "D=$(mktemp -d) && cd \"$D\" && git init -q -b main && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init && git checkout -q -b test-feature && mkdir -p .clc .claude && printf 'phase: green\\n' > .clc/state && echo ephemeral > .claude/ephemeral && clc done 2>&1; RET=$?; cd /tmp; rm -rf \"$D\"; test $RET -eq 0"
+  - name: "done rejection message mentions done phase"
+    command: "OUT=$(clc done 2>&1); test $? -ne 0 && echo \"$OUT\" | grep -i 'done'"
 
   - name: "prime includes all three sections"
     command: "clc prime | grep -i 'workflow' && clc prime | grep -i 'tisket' && clc prime | grep -i 'missouri'"
@@ -54,9 +39,9 @@ assertions:
     command: "echo '{\"hook_event_name\":\"Stop\",\"session_id\":\"test\",\"cwd\":\".\"}' | clc hook 2>/dev/null; test $? -eq 2"
 
 transitions:
-  - name: "finalize work"
-    command: "clc done"
-    target: "../done-completed"
+  - name: "advance through review chain to done"
+    command: "clc status set review-requested && clc status set in-review && clc status set reviewed && clc status set done"
+    target: "../ready-to-done-via-review"
     comparators:
       files:
         - path: ".claude/settings.local.json"

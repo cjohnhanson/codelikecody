@@ -179,6 +179,178 @@ pub fn set(project_dir: &Path, target: &str, required_attempts: u32) -> Result<(
     write_state(project_dir, target_phase, 0)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- Parsing new review phases ---
+
+    #[test]
+    fn parse_review_requested() {
+        let phase: Phase = "review-requested".parse().unwrap();
+        assert_eq!(phase, Phase::ReviewRequested);
+    }
+
+    #[test]
+    fn parse_in_review() {
+        let phase: Phase = "in-review".parse().unwrap();
+        assert_eq!(phase, Phase::InReview);
+    }
+
+    #[test]
+    fn parse_reviewed() {
+        let phase: Phase = "reviewed".parse().unwrap();
+        assert_eq!(phase, Phase::Reviewed);
+    }
+
+    // --- Display for new review phases ---
+
+    #[test]
+    fn display_review_requested() {
+        assert_eq!(Phase::ReviewRequested.to_string(), "review-requested");
+    }
+
+    #[test]
+    fn display_in_review() {
+        assert_eq!(Phase::InReview.to_string(), "in-review");
+    }
+
+    #[test]
+    fn display_reviewed() {
+        assert_eq!(Phase::Reviewed.to_string(), "reviewed");
+    }
+
+    // --- Ordering: new phases sit between green and done ---
+
+    #[test]
+    fn review_requested_follows_green() {
+        assert_eq!(Phase::Green.next(), Some(Phase::ReviewRequested));
+    }
+
+    #[test]
+    fn in_review_follows_review_requested() {
+        assert_eq!(Phase::ReviewRequested.next(), Some(Phase::InReview));
+    }
+
+    #[test]
+    fn reviewed_follows_in_review() {
+        assert_eq!(Phase::InReview.next(), Some(Phase::Reviewed));
+    }
+
+    #[test]
+    fn done_follows_reviewed() {
+        assert_eq!(Phase::Reviewed.next(), Some(Phase::Done));
+    }
+
+    #[test]
+    fn done_has_no_next() {
+        assert_eq!(Phase::Done.next(), None);
+    }
+
+    #[test]
+    fn ordinal_ordering_is_correct() {
+        assert!(Phase::Green.ordinal() < Phase::ReviewRequested.ordinal());
+        assert!(Phase::ReviewRequested.ordinal() < Phase::InReview.ordinal());
+        assert!(Phase::InReview.ordinal() < Phase::Reviewed.ordinal());
+        assert!(Phase::Reviewed.ordinal() < Phase::Done.ordinal());
+    }
+
+    // --- Phase transitions via set() ---
+
+    #[test]
+    fn set_green_to_review_requested_succeeds() {
+        let dir = tempfile::tempdir().unwrap();
+        let clc_dir = dir.path().join(".clc");
+        std::fs::create_dir_all(&clc_dir).unwrap();
+        std::fs::write(clc_dir.join("state"), "phase: green\n").unwrap();
+
+        set(dir.path(), "review-requested", 1).unwrap();
+        let loaded = load(dir.path()).unwrap();
+        assert_eq!(loaded, Some(Phase::ReviewRequested));
+    }
+
+    #[test]
+    fn set_review_requested_to_in_review_succeeds() {
+        let dir = tempfile::tempdir().unwrap();
+        let clc_dir = dir.path().join(".clc");
+        std::fs::create_dir_all(&clc_dir).unwrap();
+        std::fs::write(clc_dir.join("state"), "phase: review-requested\n").unwrap();
+
+        set(dir.path(), "in-review", 1).unwrap();
+        let loaded = load(dir.path()).unwrap();
+        assert_eq!(loaded, Some(Phase::InReview));
+    }
+
+    #[test]
+    fn set_in_review_to_reviewed_succeeds() {
+        let dir = tempfile::tempdir().unwrap();
+        let clc_dir = dir.path().join(".clc");
+        std::fs::create_dir_all(&clc_dir).unwrap();
+        std::fs::write(clc_dir.join("state"), "phase: in-review\n").unwrap();
+
+        set(dir.path(), "reviewed", 1).unwrap();
+        let loaded = load(dir.path()).unwrap();
+        assert_eq!(loaded, Some(Phase::Reviewed));
+    }
+
+    #[test]
+    fn set_reviewed_to_done_succeeds() {
+        let dir = tempfile::tempdir().unwrap();
+        let clc_dir = dir.path().join(".clc");
+        std::fs::create_dir_all(&clc_dir).unwrap();
+        std::fs::write(clc_dir.join("state"), "phase: reviewed\n").unwrap();
+
+        set(dir.path(), "done", 1).unwrap();
+        let loaded = load(dir.path()).unwrap();
+        assert_eq!(loaded, Some(Phase::Done));
+    }
+
+    #[test]
+    fn set_green_to_done_rejects_skipping() {
+        let dir = tempfile::tempdir().unwrap();
+        let clc_dir = dir.path().join(".clc");
+        std::fs::create_dir_all(&clc_dir).unwrap();
+        std::fs::write(clc_dir.join("state"), "phase: green\n").unwrap();
+
+        let result = set(dir.path(), "done", 1);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn set_green_to_in_review_rejects_skipping() {
+        let dir = tempfile::tempdir().unwrap();
+        let clc_dir = dir.path().join(".clc");
+        std::fs::create_dir_all(&clc_dir).unwrap();
+        std::fs::write(clc_dir.join("state"), "phase: green\n").unwrap();
+
+        let result = set(dir.path(), "in-review", 1);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn backward_reviewed_to_implementing_succeeds() {
+        let dir = tempfile::tempdir().unwrap();
+        let clc_dir = dir.path().join(".clc");
+        std::fs::create_dir_all(&clc_dir).unwrap();
+        std::fs::write(clc_dir.join("state"), "phase: reviewed\n").unwrap();
+
+        set(dir.path(), "implementing", 1).unwrap();
+        let loaded = load(dir.path()).unwrap();
+        assert_eq!(loaded, Some(Phase::Implementing));
+    }
+
+    // --- Roundtrip: all phases ---
+
+    #[test]
+    fn all_phases_roundtrip_through_display_and_parse() {
+        for &phase in Phase::ALL {
+            let s = phase.to_string();
+            let parsed: Phase = s.parse().unwrap();
+            assert_eq!(parsed, phase, "roundtrip failed for {s}");
+        }
+    }
+}
+
 fn write_state(project_dir: &Path, phase: Phase, attempts: u32) -> Result<(), Error> {
     use std::fmt::Write;
 

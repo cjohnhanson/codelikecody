@@ -1,0 +1,52 @@
+assertions:
+  - name: "phase is done"
+    command: "clc status 2>&1 | grep 'phase: done'"
+
+  - name: "on feature branch"
+    command: "test $(git rev-parse --abbrev-ref HEAD) = test-feature"
+
+  - name: "tisket is still in_progress (not yet finalized)"
+    command: "grep -q 'status: in_progress' .tisket/v0.1.0/test-feature.md"
+
+  - name: "done fails on main branch"
+    command: "git checkout -q main && clc done 2>&1; RET=$?; git checkout -q test-feature; test $RET -ne 0"
+
+  - name: "done fails with untracked file"
+    command: "echo 'dirty' > dirty.txt && clc done 2>&1; RET=$?; rm -f dirty.txt; test $RET -ne 0"
+
+  - name: "done fails with modified tracked file"
+    command: "echo 'dirty' >> src/main.rs && clc done 2>&1; RET=$?; git checkout HEAD -- src/main.rs; test $RET -ne 0"
+
+  - name: "done fails with staged change"
+    command: "echo 'dirty' >> src/main.rs && git add src/main.rs && clc done 2>&1; RET=$?; git checkout HEAD -- src/main.rs; test $RET -ne 0"
+
+  - name: "done error mentions commit"
+    command: "echo 'dirty' > dirty.txt && OUT=$(clc done 2>&1); RET=$?; rm -f dirty.txt; test $RET -ne 0 && echo \"$OUT\" | grep -i 'commit'"
+
+  - name: "done ignores .clc changes"
+    command: "D=$(mktemp -d) && cd \"$D\" && git init -q -b main && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init && git checkout -q -b test-feature && mkdir -p .clc && printf 'phase: done\\n' > .clc/state && echo ephemeral > .clc/extra && clc done 2>&1; RET=$?; cd /tmp; rm -rf \"$D\"; test $RET -eq 0"
+
+  - name: "done ignores .claude changes"
+    command: "D=$(mktemp -d) && cd \"$D\" && git init -q -b main && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init && git checkout -q -b test-feature && mkdir -p .clc .claude && printf 'phase: done\\n' > .clc/state && echo ephemeral > .claude/ephemeral && clc done 2>&1; RET=$?; cd /tmp; rm -rf \"$D\"; test $RET -eq 0"
+
+  - name: "Stop hook allowed in done"
+    command: "echo '{\"hook_event_name\":\"Stop\",\"session_id\":\"test\",\"cwd\":\".\"}' | clc hook"
+
+transitions:
+  - name: "finalize work"
+    command: "clc done"
+    target: "../done-completed"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true
+        - path: "tests/"
+          ignore: true
