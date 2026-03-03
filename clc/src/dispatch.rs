@@ -52,9 +52,14 @@ pub fn dispatch(
         )));
     }
 
+    // Clean up stale worktree from a prior failed run so dispatch is idempotent.
+    // A worktree is stale if it exists but has no live worker process.
+    if worktree_dir.is_dir() {
+        eprintln!("cleaning up stale worktree for '{id}'");
+        cleanup_stale_worktree(project_dir, &worktree_dir, id)?;
+    }
+
     // Pickup creates worktree, sets tisket status, inits clc.
-    // If the worktree already exists (previous dispatch), pickup will fail,
-    // which is the correct behavior — re-dispatch after `land` or manual cleanup.
     pickup::pickup(project_dir, id, main_branch)?;
 
     // Seed baseline permissions so the worker can function without
@@ -165,6 +170,43 @@ pub fn is_worker_alive(worktree_dir: &Path) -> bool {
 
     // Signal 0 checks if the process exists without sending a signal.
     nix::sys::signal::kill(Pid::from_raw(pid), None).is_ok()
+}
+
+/// Clean up a stale worktree left behind by a prior failed dispatch.
+///
+/// Removes the worktree directory and git metadata, deletes the branch ref,
+/// and resets the tisket status back to `todo` so pickup can re-acquire it.
+fn cleanup_stale_worktree(project_dir: &Path, worktree_dir: &Path, id: &str) -> Result<(), Error> {
+    // Remove worktree directory and .git/worktrees/<id>/ metadata.
+    crate::gix_ops::remove_worktree(project_dir, worktree_dir, id)?;
+
+    // Delete the branch ref (may not exist if the prior run failed mid-creation).
+    if let Err(e) = crate::gix_ops::delete_branch(project_dir, id) {
+        eprintln!("note: branch cleanup for '{id}': {e}");
+    }
+
+    // Reset tisket status to todo so pickup can re-acquire it.
+    let utf8_dir = Utf8Path::new(
+        project_dir
+            .to_str()
+            .ok_or_else(|| Error::NonBlocking("non-UTF8 project directory".into()))?,
+    );
+    if let Ok(repo) = tisket::Repo::open(utf8_dir)
+        && let Ok(issue) = repo.find_issue(id)
+        && !issue.frontmatter.status.is_pickable()
+        && !issue.frontmatter.status.is_terminal()
+    {
+        repo.edit_issue(id, Some("todo"))
+            .map_err(|e| Error::NonBlocking(format!("failed to reset tisket status: {e}")))?;
+        // Commit the status reset on trunk so pickup sees it.
+        crate::gix_ops::commit_paths(
+            project_dir,
+            &format!("clc: reset {id} for re-dispatch"),
+            &[".tisket/"],
+        )?;
+    }
+
+    Ok(())
 }
 
 fn create_named_pipe(path: &Path) -> Result<(), Error> {
