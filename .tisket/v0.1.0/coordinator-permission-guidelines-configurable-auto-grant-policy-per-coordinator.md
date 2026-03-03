@@ -1,12 +1,12 @@
 ---
 title: "Coordinator permission guidelines: configurable auto-grant policy per coordinator"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: []
 depends_on: []
-created: "2026-03-03T01:33:44Z"
-updated: "2026-03-03T01:33:44Z"
+created: 2026-03-03T01:33:44Z
+updated: "2026-03-03T04:15:22Z"
 ---
 
 ## Problem
