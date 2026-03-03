@@ -575,11 +575,10 @@ transitions:
       git -c user.name=test -c user.email=test@test add -A &&
       git -c user.name=test -c user.email=test@test commit -q -m init &&
       mkdir -p .clc/coordinators/test-coord &&
-      mkfifo .clc/coordinators/test-coord/stdin.pipe &&
-      (cat < .clc/coordinators/test-coord/stdin.pipe > /dev/null &) &&
+      touch .clc/coordinators/test-coord/stdin.pipe &&
       printf '{"type":"system","subtype":"init","session_id":"test-session-123","tools":[],"model":"opus"}\n' > .clc/coordinators/test-coord/stdout.jsonl &&
       printf '{"type":"assistant","message":{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"Coordinator starting..."}],"model":"claude-opus-4-6","stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}\n' >> .clc/coordinators/test-coord/stdout.jsonl &&
-      (sleep 3600 & echo $! > .clc/coordinators/test-coord/pid)
+      (nohup sleep 3600 </dev/null >/dev/null 2>&1 & echo $! > .clc/coordinators/test-coord/pid)
     target: "../coordinator-registered"
     comparators:
       files:
