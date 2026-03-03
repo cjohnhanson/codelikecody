@@ -1,0 +1,52 @@
+assertions:
+  - name: "worktree directory exists for feat-alpha"
+    command: "test -d .worktrees/feat-alpha"
+
+  - name: "git branch exists for feat-alpha"
+    command: "git branch --list feat-alpha | grep -q feat-alpha"
+
+  - name: "tisket status changed to in_progress"
+    command: "grep -q 'status: in_progress' .tisket/v0.1.0/feat-alpha.md"
+
+  - name: "tisket assignee set to coord-infra"
+    command: "grep -q 'assignee: coord-infra' .tisket/v0.1.0/feat-alpha.md"
+
+  - name: "worker PID file exists"
+    command: "test -f .worktrees/feat-alpha/.clc/worker/pid"
+
+  - name: "worker PID file contains a number"
+    command: "grep -qE '^[0-9]+$' .worktrees/feat-alpha/.clc/worker/pid"
+
+  - name: "worker stdout file exists"
+    command: "test -f .worktrees/feat-alpha/.clc/worker/stdout.jsonl"
+
+  - name: "worker stdin pipe exists"
+    command: "test -p .worktrees/feat-alpha/.clc/worker/stdin.pipe"
+
+  - name: "worker process is alive"
+    command: "kill -0 $(cat .worktrees/feat-alpha/.clc/worker/pid)"
+
+  - name: "feat-beta still claimed by coord-ui (unchanged)"
+    command: "grep -q 'assignee: coord-ui' .tisket/v0.1.0/feat-beta.md"
+
+  - name: "dispatch of already-claimed tisket by different coordinator fails"
+    command: "clc dispatch feat-beta --coordinator-id coord-infra --model haiku 2>&1; test $? -ne 0"
+
+transitions:
+  - name: "stop the claimed worker"
+    command: "clc worker feat-alpha stop"
+    target: "../claimed-worker-stopped"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".worktrees/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true

@@ -1,0 +1,12 @@
+assertions:
+  - name: "worker process is not alive"
+    command: "! kill -0 $(cat .worktrees/feat-alpha/.clc/worker/pid) 2>/dev/null"
+
+  - name: "tisket assignee preserved after stop"
+    command: "grep -q 'assignee: coord-infra' .tisket/v0.1.0/feat-alpha.md"
+
+  - name: "tisket status still in_progress after stop"
+    command: "grep -q 'status: in_progress' .tisket/v0.1.0/feat-alpha.md"
+
+  - name: "worktree still exists after stop"
+    command: "test -d .worktrees/feat-alpha"

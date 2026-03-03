@@ -1,0 +1,43 @@
+assertions:
+  - name: "feat-alpha tisket exists"
+    command: "test -f .tisket/v0.1.0/feat-alpha.md"
+
+  - name: "feat-alpha is in todo status"
+    command: "grep -q 'status: todo' .tisket/v0.1.0/feat-alpha.md"
+
+  - name: "feat-alpha has no assignee"
+    command: "grep -qE '^assignee:$' .tisket/v0.1.0/feat-alpha.md"
+
+  - name: "feat-beta tisket exists"
+    command: "test -f .tisket/v0.1.0/feat-beta.md"
+
+  - name: "feat-beta is in_progress"
+    command: "grep -q 'status: in_progress' .tisket/v0.1.0/feat-beta.md"
+
+  - name: "feat-beta is claimed by coord-ui"
+    command: "grep -q 'assignee: coord-ui' .tisket/v0.1.0/feat-beta.md"
+
+  - name: "dispatch --help shows --coordinator-id flag"
+    command: "clc dispatch --help 2>&1 | grep -q 'coordinator-id'"
+
+  - name: "coordinate --help shows --id flag"
+    command: "clc coordinate --help 2>&1 | grep -q '\\-\\-id'"
+
+transitions:
+  - name: "dispatch with coordinator id"
+    command: "clc dispatch feat-alpha --coordinator-id coord-infra --model haiku"
+    target: "../claimed-via-dispatch"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".worktrees/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true
