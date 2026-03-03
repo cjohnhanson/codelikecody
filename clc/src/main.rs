@@ -3,6 +3,7 @@ mod admin;
 mod cli;
 mod config;
 mod coordinate;
+mod coordinator_mgmt;
 mod dispatch;
 mod done;
 mod error;
@@ -103,6 +104,8 @@ fn main() {
         cli::Command::Missouri { command } => cmd_missouri(command),
         cli::Command::Permissions { ref action } => cmd_permissions(action),
         cli::Command::Integrate { ref action } => cmd_integrate(action),
+        cli::Command::Coordinators { all } => cmd_coordinators(all),
+        cli::Command::Coordinator { ref id, ref action } => cmd_coordinator(id, action),
         cli::Command::Hook => unreachable!(),
     };
 
@@ -354,6 +357,27 @@ fn cmd_integrate(action: &cli::IntegrateAction) -> Result<(), Error> {
         }
     }
     Ok(())
+}
+
+fn cmd_coordinators(all: bool) -> Result<(), Error> {
+    let project_dir = std::env::current_dir()?;
+    coordinator_mgmt::list_coordinators(&project_dir, all)
+}
+
+fn cmd_coordinator(id: &str, action: &cli::CoordinatorAction) -> Result<(), Error> {
+    let project_dir = std::env::current_dir()?;
+    match action {
+        cli::CoordinatorAction::Check => coordinator_mgmt::check(&project_dir, id),
+        cli::CoordinatorAction::Log { lines } => coordinator_mgmt::log(&project_dir, id, *lines),
+        cli::CoordinatorAction::Send { message } => {
+            coordinator_mgmt::send(&project_dir, id, message)
+        }
+        cli::CoordinatorAction::Stop => coordinator_mgmt::stop(&project_dir, id),
+        cli::CoordinatorAction::Land => {
+            let cfg = config::load(&project_dir).unwrap_or_default();
+            coordinator_mgmt::land(&project_dir, id, &cfg.main_branch)
+        }
+    }
 }
 
 fn cmd_init(untracked: bool, force: bool) -> Result<(), Error> {

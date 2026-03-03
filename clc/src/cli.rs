@@ -142,6 +142,19 @@ pub enum Command {
         #[command(subcommand)]
         action: IntegrateAction,
     },
+    /// List running coordinators with status.
+    Coordinators {
+        /// Show all coordinators including dead ones.
+        #[arg(long)]
+        all: bool,
+    },
+    /// Interact with a specific coordinator.
+    Coordinator {
+        /// The coordinator ID.
+        id: String,
+        #[command(subcommand)]
+        action: CoordinatorAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -220,6 +233,27 @@ pub enum WorkerAction {
     },
     /// Recover a stranded worker: finalize work without re-dispatching.
     Recover,
+}
+
+#[derive(Subcommand)]
+pub enum CoordinatorAction {
+    /// Show activity since last check (cursor-based).
+    Check,
+    /// Show parsed output log.
+    Log {
+        /// Number of lines to show.
+        #[arg(long, default_value = "50")]
+        lines: usize,
+    },
+    /// Send a follow-up message to the coordinator.
+    Send {
+        /// The message to send.
+        message: String,
+    },
+    /// Stop the coordinator process.
+    Stop,
+    /// Squash-merge the coordinator's integration branch into main.
+    Land,
 }
 
 #[derive(Subcommand)]

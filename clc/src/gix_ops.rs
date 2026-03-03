@@ -402,6 +402,22 @@ fn is_ephemeral_path(path: &gix::bstr::BStr) -> bool {
         || path == ".claude"
 }
 
+/// Switch HEAD to point to the given branch (without updating the worktree).
+pub fn checkout_branch(project_dir: &Path, branch_name: &str) -> Result<(), Error> {
+    let repo = open(project_dir)?;
+    let ref_name = format!("refs/heads/{branch_name}");
+
+    // Verify the branch exists.
+    repo.find_reference(&ref_name)
+        .map_err(|_| Error::NonBlocking(format!("branch '{branch_name}' not found")))?;
+
+    let head_path = repo.path().join("HEAD");
+    std::fs::write(&head_path, format!("ref: {ref_name}\n"))
+        .map_err(|e| Error::NonBlocking(format!("failed to switch to '{branch_name}': {e}")))?;
+
+    Ok(())
+}
+
 // --- Internal helpers ---
 
 fn open(project_dir: &Path) -> Result<gix::Repository, Error> {
