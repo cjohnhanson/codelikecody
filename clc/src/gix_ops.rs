@@ -716,4 +716,219 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&main_dir);
     }
+
+    /// Create a commit on a specific branch without affecting the working tree.
+    /// Adds/modifies the given files relative to the branch's current tree.
+    fn commit_on_branch(dir: &Path, branch: &str, files: &[(&str, &str)], message: &str) {
+        let repo = gix::open(dir).unwrap();
+        let ref_name = format!("refs/heads/{branch}");
+        let branch_commit_id = repo.find_reference(&ref_name).unwrap().id().detach();
+        let commit = repo.find_object(branch_commit_id).unwrap().into_commit();
+        let tree = commit.tree().unwrap();
+
+        let mut editor = tree.edit().unwrap();
+        for (path, content) in files {
+            let blob_id = repo.write_blob(content.as_bytes()).unwrap();
+            editor.upsert(*path, EntryKind::Blob, blob_id).unwrap();
+        }
+        let new_tree_id = editor.write().unwrap();
+
+        repo.commit(ref_name.as_str(), message, new_tree_id, [branch_commit_id])
+            .unwrap();
+    }
+
+    /// Create a commit on HEAD without affecting the working tree.
+    fn commit_on_head(dir: &Path, files: &[(&str, &str)], message: &str) {
+        let repo = gix::open(dir).unwrap();
+        let head_id = repo.head_id().unwrap().detach();
+        let commit = repo.find_object(head_id).unwrap().into_commit();
+        let tree = commit.tree().unwrap();
+
+        let mut editor = tree.edit().unwrap();
+        for (path, content) in files {
+            let blob_id = repo.write_blob(content.as_bytes()).unwrap();
+            editor.upsert(*path, EntryKind::Blob, blob_id).unwrap();
+        }
+        let new_tree_id = editor.write().unwrap();
+
+        repo.commit("HEAD", message, new_tree_id, [head_id])
+            .unwrap();
+    }
+
+    #[test]
+    #[ignore = "pending rebase_onto_head implementation"]
+    fn ff_merge_rebases_when_main_advanced_non_overlapping() {
+        let dir = make_test_repo(&[("a.txt", "initial")]);
+
+        // Create feature branch from HEAD.
+        let repo = gix::open(&dir).unwrap();
+        let head_id = repo.head_id().unwrap().detach();
+        repo.reference(
+            "refs/heads/feature",
+            head_id,
+            PreviousValue::MustNotExist,
+            "create feature",
+        )
+        .unwrap();
+        drop(repo);
+
+        // Add a commit on the feature branch (non-overlapping file).
+        commit_on_branch(
+            &dir,
+            "feature",
+            &[("b.txt", "from branch")],
+            "branch: add b.txt",
+        );
+
+        // Advance main with a different file — main and branch have diverged.
+        commit_on_head(&dir, &[("c.txt", "from main")], "main: add c.txt");
+
+        // ff_merge should succeed by rebasing the branch onto HEAD.
+        ff_merge(&dir, "feature").unwrap();
+
+        // All files should be present in HEAD's tree.
+        let paths = tree_paths(&dir);
+        assert!(
+            paths.contains(&"a.txt".to_string()),
+            "a.txt missing: {paths:?}"
+        );
+        assert!(
+            paths.contains(&"b.txt".to_string()),
+            "b.txt missing: {paths:?}"
+        );
+        assert!(
+            paths.contains(&"c.txt".to_string()),
+            "c.txt missing: {paths:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    #[ignore = "pending rebase_onto_head implementation"]
+    fn ff_merge_aborts_on_conflicting_paths() {
+        let dir = make_test_repo(&[("shared.txt", "initial")]);
+
+        // Create feature branch from HEAD.
+        let repo = gix::open(&dir).unwrap();
+        let head_id = repo.head_id().unwrap().detach();
+        repo.reference(
+            "refs/heads/feature",
+            head_id,
+            PreviousValue::MustNotExist,
+            "create feature",
+        )
+        .unwrap();
+        drop(repo);
+
+        // Both modify the same file.
+        commit_on_branch(
+            &dir,
+            "feature",
+            &[("shared.txt", "branch version")],
+            "branch: modify shared.txt",
+        );
+        commit_on_head(
+            &dir,
+            &[("shared.txt", "main version")],
+            "main: modify shared.txt",
+        );
+
+        // ff_merge should fail with a conflict error.
+        let result = ff_merge(&dir, "feature");
+        assert!(result.is_err(), "expected conflict error but got success");
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(
+            err_msg.to_lowercase().contains("conflict") || err_msg.contains("shared.txt"),
+            "error should indicate conflict: {err_msg}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    #[ignore = "pending rebase_onto_head implementation"]
+    fn ff_merge_rebase_preserves_multi_commit_history() {
+        let dir = make_test_repo(&[("a.txt", "initial")]);
+
+        // Create feature branch from HEAD.
+        let repo = gix::open(&dir).unwrap();
+        let head_id = repo.head_id().unwrap().detach();
+        repo.reference(
+            "refs/heads/feature",
+            head_id,
+            PreviousValue::MustNotExist,
+            "create feature",
+        )
+        .unwrap();
+        drop(repo);
+
+        // Three commits on the feature branch.
+        commit_on_branch(&dir, "feature", &[("b.txt", "v1")], "branch: add b.txt");
+        commit_on_branch(&dir, "feature", &[("c.txt", "v1")], "branch: add c.txt");
+        commit_on_branch(&dir, "feature", &[("d.txt", "v1")], "branch: add d.txt");
+
+        // One commit on main (non-overlapping).
+        commit_on_head(&dir, &[("e.txt", "main")], "main: add e.txt");
+
+        // ff_merge should succeed.
+        ff_merge(&dir, "feature").unwrap();
+
+        // All files present.
+        let paths = tree_paths(&dir);
+        for f in &["a.txt", "b.txt", "c.txt", "d.txt", "e.txt"] {
+            assert!(
+                paths.contains(&f.to_string()),
+                "{f} missing from tree: {paths:?}"
+            );
+        }
+
+        // Walk commit history — branch commits should have preserved messages.
+        let repo = gix::open(&dir).unwrap();
+        let mut messages = Vec::new();
+        let mut current = repo.head_id().unwrap().detach();
+        loop {
+            let commit = repo.find_object(current).unwrap().into_commit();
+            let msg = String::from_utf8_lossy(commit.message_raw_sloppy().as_ref()).to_string();
+            messages.push(msg.trim().to_string());
+            let parents: Vec<_> = commit.parent_ids().map(gix::Id::detach).collect();
+            if let Some(&p) = parents.first() {
+                current = p;
+            } else {
+                break;
+            }
+        }
+
+        assert!(
+            messages.iter().any(|m| m.contains("add b.txt")),
+            "missing b.txt commit message: {messages:?}"
+        );
+        assert!(
+            messages.iter().any(|m| m.contains("add c.txt")),
+            "missing c.txt commit message: {messages:?}"
+        );
+        assert!(
+            messages.iter().any(|m| m.contains("add d.txt")),
+            "missing d.txt commit message: {messages:?}"
+        );
+        assert!(
+            messages.iter().any(|m| m.contains("add e.txt")),
+            "missing main's e.txt commit: {messages:?}"
+        );
+
+        // All commits should have exactly one parent (linear history, no merges).
+        let mut current = repo.head_id().unwrap().detach();
+        for _ in 0..4 {
+            let commit = repo.find_object(current).unwrap().into_commit();
+            let parents: Vec<_> = commit.parent_ids().map(gix::Id::detach).collect();
+            assert_eq!(
+                parents.len(),
+                1,
+                "expected single parent for linear history"
+            );
+            current = parents[0];
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

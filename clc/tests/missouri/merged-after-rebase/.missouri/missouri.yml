@@ -1,0 +1,30 @@
+assertions:
+  - name: "still on main after merge"
+    command: "test $(git rev-parse --abbrev-ref HEAD) = main"
+
+  - name: "feature branch was cleaned up"
+    command: "! git branch --list test-feature | grep -q test-feature"
+
+  - name: "working tree is clean after merge"
+    command: "test -z \"$(git status --porcelain -uno)\""
+
+  - name: "closed tisket exists on main after merge"
+    command: "test -f .tisket/v0.1.0/.closed/test-feature.md"
+
+  - name: "open tisket is absent from main after merge"
+    command: "! test -f .tisket/v0.1.0/test-feature.md"
+
+  - name: "committed tree has closed tisket"
+    command: "git cat-file -e HEAD:.tisket/v0.1.0/.closed/test-feature.md"
+
+  - name: "committed tree does not have open tisket"
+    command: "! git cat-file -e HEAD:.tisket/v0.1.0/test-feature.md"
+
+  - name: "CHANGELOG.md preserved from main"
+    command: "test -f CHANGELOG.md"
+
+  - name: "CHANGELOG.md in committed tree"
+    command: "git cat-file -e HEAD:CHANGELOG.md"
+
+  - name: "feature branch commits are in history"
+    command: "git log --oneline main | grep -q 'add project setup'"

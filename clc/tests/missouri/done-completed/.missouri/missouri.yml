@@ -44,3 +44,21 @@ transitions:
           ignore: true
         - path: "tests/"
           ignore: true
+
+  - name: "switch to main and advance for diverged merge"
+    command: "git checkout -q main && printf '# Changelog\\nInitial entry\\n' > CHANGELOG.md && git -c user.name=test -c user.email=test@test add CHANGELOG.md && git -c user.name=test -c user.email=test@test commit -q -m 'add changelog'"
+    target: "../ready-to-merge-diverged"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true
+        - path: "tests/"
+          ignore: true
