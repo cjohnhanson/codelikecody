@@ -35,3 +35,30 @@ The current escalate command writes to `.clc/escalations/` on the coordinator's 
 ## Depends on
 - `coordinator-permission-guidelines-configurable-auto-grant-policy-per-coordinator`
 - `admin-session-manage-coordinators-like-coordinators-manage-workers`
+
+## Scratch Notes
+
+### Analysis (2026-03-02)
+
+**Current state**: Permission chain worker → coordinator → user exists but only works from trunk. The `cmd_permissions` function in main.rs uses `std::env::current_dir()` for all subcommands. When admin runs from `.worktrees/clc-admin/`, it can't see escalations on trunk.
+
+**Root cause**: `permissions::inbox()`, `permissions::grant()`, `permissions::list()`, `permissions::escalate()` all receive `cwd` as `project_dir`. They need `home::home(cwd)` to resolve the project root from any worktree.
+
+**Key files**:
+- `clc/src/permissions.rs` — core logic
+- `clc/src/cli.rs` — PermissionsAction enum (needs Deny variant)
+- `clc/src/main.rs:315-330` — cmd_permissions routing (needs home resolution)
+- `clc/src/home.rs` — project root resolution via gix
+
+**What needs to change**:
+1. `cmd_permissions` should use `home::home(&cwd)` for grant/list/escalate/inbox/deny
+2. `request` still uses `cwd` (worker perspective)
+3. New `Deny` subcommand: removes escalation, updates request to denied status
+4. `PermissionRequest` struct needs `Denied` status variant and optional `denial_reason` field
+
+**Test plan**: Three new Missouri states:
+- `escalation-admin-visible` — admin worktree can see trunk escalations
+- `escalation-admin-granted` — admin grants from worktree, resolves cross-worktree
+- `escalation-admin-denied` — admin denies from worktree, updates request status
+
+**Graph**: escalation-pending → (clc admin) → escalation-admin-visible → (grant) → escalation-admin-granted / (deny) → escalation-admin-denied

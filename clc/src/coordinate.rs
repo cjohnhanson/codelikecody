@@ -82,7 +82,8 @@ pub fn coordinate(
     permissions::seed_baseline(project_dir, extra_allow)?;
 
     // Build the initial prompt with pickable tiskets.
-    let initial_prompt = build_coordinator_prompt(&pickable, filters.tisket, filters.coordinator_id);
+    let initial_prompt =
+        build_coordinator_prompt(&pickable, filters.tisket, filters.coordinator_id);
     let system_prompt = build_coordinator_system_prompt();
 
     // Spawn coordinator as a worker on trunk.
