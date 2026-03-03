@@ -1,12 +1,12 @@
 ---
 title: "Multiple concurrent coordinators with tisket claim registry"
-status: in_progress
+status: todo
 priority:
 assignee:
 labels: []
 depends_on: []
 created: 2026-03-03T01:33:44Z
-updated: "2026-03-03T03:02:27Z"
+updated: "2026-03-03T03:32:40Z"
 ---
 
 ## Problem
