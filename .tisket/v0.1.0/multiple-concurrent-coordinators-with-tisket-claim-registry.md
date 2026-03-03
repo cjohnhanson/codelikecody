@@ -44,7 +44,7 @@ If two coordinators race on the same tisket:
 
 ## Scratch Notes
 
-### Phase: tests-written
+### Phase: done
 
 #### Test design decisions
 
