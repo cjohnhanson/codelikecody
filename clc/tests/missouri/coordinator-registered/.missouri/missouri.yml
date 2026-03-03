@@ -1,0 +1,61 @@
+assertions:
+  # CLI command existence
+  - name: "coordinators --help shows usage"
+    command: "clc coordinators --help"
+
+  - name: "coordinator --help shows usage"
+    command: "clc coordinator --help"
+
+  # Listing
+  - name: "clc coordinators shows test-coord"
+    command: "clc coordinators | grep -q test-coord"
+
+  - name: "clc coordinators shows test-coord as working"
+    command: "clc coordinators | grep test-coord | grep -qE 'working|alive'"
+
+  - name: "clc coordinators shows pid"
+    command: "clc coordinators | grep test-coord | grep -q 'pid='"
+
+  # Check (cursor-based)
+  - name: "clc coordinator test-coord check produces output"
+    command: "clc coordinator test-coord check | grep -qE 'system|text|tool|raw'"
+
+  # Log
+  - name: "clc coordinator test-coord log produces output"
+    command: "clc coordinator test-coord log | grep -qE 'system|text|tool|raw'"
+
+  # Send (to alive coordinator)
+  - name: "clc coordinator test-coord send succeeds"
+    command: "clc coordinator test-coord send 'test message'"
+
+  # Error cases
+  - name: "coordinator check fails for nonexistent coordinator"
+    command: "clc coordinator nonexistent check 2>&1; test $? -ne 0"
+
+  - name: "coordinator send fails for nonexistent coordinator"
+    command: "clc coordinator nonexistent send 'hello' 2>&1; test $? -ne 0"
+
+  - name: "coordinator log fails for nonexistent coordinator"
+    command: "clc coordinator nonexistent log 2>&1; test $? -ne 0"
+
+  - name: "coordinator stop fails for nonexistent coordinator"
+    command: "clc coordinator nonexistent stop 2>&1; test $? -ne 0"
+
+transitions:
+  - name: "stop the coordinator"
+    command: "clc coordinator test-coord stop"
+    target: "../coordinator-stopped"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".worktrees/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true

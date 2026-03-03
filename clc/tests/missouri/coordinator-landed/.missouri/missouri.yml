@@ -1,0 +1,15 @@
+assertions:
+  - name: "integration branch no longer exists"
+    command: "! git branch --list integrate/test-coord | grep -q integrate/test-coord"
+
+  - name: "main has the integration content"
+    command: "git show main:integration-file.txt | grep -q 'new content'"
+
+  - name: "coordinator registration cleaned up"
+    command: "! test -d .clc/coordinators/test-coord"
+
+  - name: "still on main after landing"
+    command: "test $(git rev-parse --abbrev-ref HEAD) = main"
+
+  - name: "clc coordinators shows no coordinators after landing"
+    command: "clc coordinators 2>&1 | grep -q 'no coordinators'"
