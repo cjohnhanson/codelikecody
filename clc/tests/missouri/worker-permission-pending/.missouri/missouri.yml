@@ -41,3 +41,21 @@ transitions:
           ignore: true
         - path: "tisket.yml"
           ignore: true
+
+  - name: "coordinator escalates then admin worktree created for review"
+    command: "clc permissions escalate test-feature 'worker needs docker access to build container images' && clc admin"
+    target: "../escalation-admin-visible"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".worktrees/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true
