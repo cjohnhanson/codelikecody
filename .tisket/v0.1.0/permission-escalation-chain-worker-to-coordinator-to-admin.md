@@ -1,12 +1,12 @@
 ---
 title: "Permission escalation chain: worker to coordinator to admin"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: []
 depends_on: []
 created: 2026-03-03T01:33:43Z
-updated: "2026-03-03T01:35:07Z"
+updated: "2026-03-03T04:38:35Z"
 ---
 
 ## Problem
