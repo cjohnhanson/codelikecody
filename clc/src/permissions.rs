@@ -19,12 +19,15 @@ const REQUEST_FILE: &str = "permission-request.json";
 enum RequestStatus {
     Pending,
     Granted,
+    Denied,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct PermissionRequest {
     description: String,
     status: RequestStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    denial_reason: Option<String>,
 }
 
 /// Called by the worker: file a permission request and exit.
@@ -46,6 +49,7 @@ pub fn request(cwd: &Path, description: &str) -> Result<(), Error> {
     let req = PermissionRequest {
         description: description.to_string(),
         status: RequestStatus::Pending,
+        denial_reason: None,
     };
 
     let json = serde_json::to_string_pretty(&req)?;
@@ -319,6 +323,40 @@ pub fn escalate(project_dir: &Path, worker_id: &str, description: &str) -> Resul
     eprintln!(
         "Escalated to user: worker '{worker_id}' — {description}\n\
          User: run `clc permissions inbox` to review pending escalations."
+    );
+
+    Ok(())
+}
+
+/// Called by the admin/user: deny a permission escalation.
+///
+/// Removes the escalation file and updates the worker's permission request
+/// to `denied` status with the given reason.
+pub fn deny(project_dir: &Path, worker_id: &str, reason: &str) -> Result<(), Error> {
+    // Remove the escalation file.
+    let escalation_path = project_dir
+        .join(".clc")
+        .join(ESCALATIONS_DIR)
+        .join(format!("{worker_id}.json"));
+    if escalation_path.exists() {
+        fs::remove_file(&escalation_path)?;
+    }
+
+    // Update the worker's permission request to denied status.
+    let worker_dir = worker::worker_dir_for(project_dir, worker_id);
+    let request_path = worker_dir.join(REQUEST_FILE);
+    if request_path.exists() {
+        let content = fs::read_to_string(&request_path)?;
+        let mut req: PermissionRequest = serde_json::from_str(&content)?;
+        req.status = RequestStatus::Denied;
+        req.denial_reason = Some(reason.to_string());
+        let json = serde_json::to_string_pretty(&req)?;
+        fs::write(&request_path, json)?;
+    }
+
+    eprintln!(
+        "Permission denied for worker '{worker_id}': {reason}\n\
+         Resume the worker with: `clc worker {worker_id} resume`"
     );
 
     Ok(())
@@ -634,6 +672,7 @@ mod tests {
         let req = PermissionRequest {
             description: "need npm".into(),
             status: RequestStatus::Pending,
+            denial_reason: None,
         };
         fs::write(
             worker_dir.join(REQUEST_FILE),
@@ -668,6 +707,7 @@ mod tests {
         let req = PermissionRequest {
             description: "need npm".into(),
             status: RequestStatus::Pending,
+            denial_reason: None,
         };
         fs::write(
             worker_dir.join(REQUEST_FILE),
@@ -729,6 +769,7 @@ mod tests {
         let req = PermissionRequest {
             description: "need docker".into(),
             status: RequestStatus::Pending,
+            denial_reason: None,
         };
         fs::write(
             worker_dir.join(REQUEST_FILE),
@@ -755,6 +796,7 @@ mod tests {
         let req = PermissionRequest {
             description: "was granted".into(),
             status: RequestStatus::Granted,
+            denial_reason: None,
         };
         fs::write(
             worker_dir.join(REQUEST_FILE),

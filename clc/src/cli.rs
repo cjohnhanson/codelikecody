@@ -198,6 +198,13 @@ pub enum PermissionsAction {
     },
     /// View pending escalations from the coordinator.
     Inbox,
+    /// Deny a permission escalation (called by admin or user).
+    Deny {
+        /// The worker ID (tisket ID) this denial is about.
+        worker_id: String,
+        /// Reason for denying the permission request.
+        reason: String,
+    },
 }
 
 #[derive(Subcommand)]

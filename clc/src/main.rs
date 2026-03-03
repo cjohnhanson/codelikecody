@@ -324,18 +324,28 @@ fn cmd_land(id: &str) -> Result<(), Error> {
 
 fn cmd_permissions(action: &cli::PermissionsAction) -> Result<(), Error> {
     let cwd = std::env::current_dir()?;
+    // Request uses cwd directly — workers run from their own worktree.
+    if let cli::PermissionsAction::Request { description } = action {
+        return permissions::request(&cwd, description);
+    }
+    // All other commands resolve the project root so they work from any
+    // worktree (admin, worker, or trunk).
+    let project_dir = home::home(&cwd)?;
     match action {
-        cli::PermissionsAction::Request { description } => permissions::request(&cwd, description),
+        cli::PermissionsAction::Request { .. } => unreachable!(),
         cli::PermissionsAction::Grant {
             worker_id,
             permission,
-        } => permissions::grant(&cwd, worker_id, permission),
-        cli::PermissionsAction::List => permissions::list(&cwd),
+        } => permissions::grant(&project_dir, worker_id, permission),
+        cli::PermissionsAction::List => permissions::list(&project_dir),
         cli::PermissionsAction::Escalate {
             worker_id,
             description,
-        } => permissions::escalate(&cwd, worker_id, description),
-        cli::PermissionsAction::Inbox => permissions::inbox(&cwd),
+        } => permissions::escalate(&project_dir, worker_id, description),
+        cli::PermissionsAction::Inbox => permissions::inbox(&project_dir),
+        cli::PermissionsAction::Deny { worker_id, reason } => {
+            permissions::deny(&project_dir, worker_id, reason)
+        }
     }
 }
 
