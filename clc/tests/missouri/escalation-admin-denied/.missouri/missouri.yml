@@ -1,0 +1,21 @@
+assertions:
+  - name: "escalation file is gone from trunk"
+    command: "! test -f .clc/escalations/test-feature.json"
+
+  - name: "inbox from admin worktree shows no pending escalations"
+    command: "(cd .worktrees/clc-admin && clc permissions inbox) 2>&1 | grep -q 'no pending escalations'"
+
+  - name: "inbox from trunk shows no pending escalations"
+    command: "clc permissions inbox 2>&1 | grep -q 'no pending escalations'"
+
+  - name: "worker permission-request.json still exists"
+    command: "test -f .worktrees/test-feature/.clc/worker/permission-request.json"
+
+  - name: "worker request has denied status"
+    command: "jq -r '.status' .worktrees/test-feature/.clc/worker/permission-request.json | grep -q denied"
+
+  - name: "worker request has denial reason"
+    command: "jq -e '.denial_reason' .worktrees/test-feature/.clc/worker/permission-request.json | grep -q 'not allowed'"
+
+  - name: "worker settings does NOT have docker permission"
+    command: "! jq -r '.permissions.allow[]' .worktrees/test-feature/.claude/settings.local.json 2>/dev/null | grep -q 'docker'"

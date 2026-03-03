@@ -1,0 +1,61 @@
+assertions:
+  - name: "admin worktree exists"
+    command: "test -d .worktrees/clc-admin"
+
+  - name: "admin worktree has .clc directory"
+    command: "test -d .worktrees/clc-admin/.clc"
+
+  - name: "escalation file still exists on trunk"
+    command: "test -f .clc/escalations/test-feature.json"
+
+  - name: "inbox from admin worktree shows escalation worker_id"
+    command: "(cd .worktrees/clc-admin && clc permissions inbox) 2>&1 | grep -q 'test-feature'"
+
+  - name: "inbox from admin worktree shows escalation description"
+    command: "(cd .worktrees/clc-admin && clc permissions inbox) 2>&1 | grep -q 'docker'"
+
+  - name: "permissions list from admin worktree shows pending request"
+    command: "(cd .worktrees/clc-admin && clc permissions list) 2>&1 | grep -q 'test-feature'"
+
+  - name: "inbox from trunk still works"
+    command: "clc permissions inbox 2>&1 | grep -q 'test-feature'"
+
+  - name: "permissions list from trunk still works"
+    command: "clc permissions list 2>&1 | grep -q 'test-feature'"
+
+transitions:
+  - name: "admin grants permission from worktree"
+    command: "(cd .worktrees/clc-admin && clc permissions grant test-feature 'Bash(docker *)')"
+    target: "../escalation-admin-granted"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".worktrees/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true
+
+  - name: "admin denies permission from worktree"
+    command: "(cd .worktrees/clc-admin && clc permissions deny test-feature 'docker access not allowed in this environment')"
+    target: "../escalation-admin-denied"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".worktrees/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true
