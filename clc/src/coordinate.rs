@@ -22,6 +22,7 @@ pub struct CoordinateFilters<'a> {
     pub project: Option<&'a str>,
     pub depends_on: Option<&'a str>,
     pub dry_run: bool,
+    pub coordinator_id: Option<&'a str>,
 }
 
 pub fn coordinate(
@@ -81,7 +82,7 @@ pub fn coordinate(
     permissions::seed_baseline(project_dir, extra_allow)?;
 
     // Build the initial prompt with pickable tiskets.
-    let initial_prompt = build_coordinator_prompt(&pickable, filters.tisket);
+    let initial_prompt = build_coordinator_prompt(&pickable, filters.tisket, filters.coordinator_id);
     let system_prompt = build_coordinator_system_prompt();
 
     // Spawn coordinator as a worker on trunk.
@@ -210,7 +211,11 @@ fn build_dependency_chain(repo: &tisket::Repo, root_id: &str) -> Result<Vec<Stri
     Ok(chain)
 }
 
-fn build_coordinator_prompt(pickable: &[String], tisket_filter: Option<&str>) -> String {
+fn build_coordinator_prompt(
+    pickable: &[String],
+    tisket_filter: Option<&str>,
+    coordinator_id: Option<&str>,
+) -> String {
     let tisket_list = pickable
         .iter()
         .map(|id| format!("- {id}"))
@@ -223,13 +228,18 @@ fn build_coordinator_prompt(pickable: &[String], tisket_filter: Option<&str>) ->
         "Dispatch and monitor these tiskets. Work through them sequentially or in parallel as appropriate."
     };
 
+    let dispatch_cmd = coordinator_id.map_or_else(
+        || "clc dispatch <id>".to_string(),
+        |cid| format!("clc dispatch <id> --coordinator-id {cid}"),
+    );
+
     format!(
         "{scope}\n\n\
          Pickable tiskets:\n{tisket_list}\n\n\
          Read each tisket before dispatching to understand the task:\n\
          \x20 tisket issue show <id>\n\n\
          Dispatch a worker for each tisket:\n\
-         \x20 clc dispatch <id>\n\n\
+         \x20 {dispatch_cmd}\n\n\
          Monitor worker progress:\n\
          \x20 clc workers              # list all workers and their status\n\
          \x20 clc worker <id> check    # see recent output from a worker\n\

@@ -62,22 +62,30 @@ fn main() {
             ref project,
             ref depends_on,
             dry_run,
-        } => cmd_coordinate(
-            model,
-            tisket.as_deref(),
-            label.as_deref(),
-            exclude_label.as_deref(),
-            project.as_deref(),
-            depends_on.as_deref(),
-            dry_run,
-        ),
+            ref id,
+        } => {
+            let filters = coordinate::CoordinateFilters {
+                tisket: tisket.as_deref(),
+                label: label.as_deref(),
+                exclude_label: exclude_label.as_deref(),
+                project: project.as_deref(),
+                depends_on: depends_on.as_deref(),
+                dry_run,
+                coordinator_id: id.as_deref(),
+            };
+            cmd_coordinate(model, &filters)
+        }
         cli::Command::Home => cmd_home(),
         cli::Command::Merge { ref id } => cmd_merge(id),
         cli::Command::Pickup { ref id } => cmd_pickup(id),
         cli::Command::Done => cmd_done(),
         cli::Command::Prime => cmd_prime(),
         cli::Command::Config { ref action } => cmd_config(action),
-        cli::Command::Dispatch { ref id, ref model } => cmd_dispatch(id, model),
+        cli::Command::Dispatch {
+            ref id,
+            ref model,
+            ref coordinator_id,
+        } => cmd_dispatch(id, model, coordinator_id.as_deref()),
         cli::Command::Workers {
             all,
             prune,
@@ -174,30 +182,14 @@ fn cmd_status_set(target: &str) -> Result<(), Error> {
     phase::set(&cwd, target, cfg.required_attempts)
 }
 
-fn cmd_coordinate(
-    model: &str,
-    tisket: Option<&str>,
-    label: Option<&str>,
-    exclude_label: Option<&str>,
-    project: Option<&str>,
-    depends_on: Option<&str>,
-    dry_run: bool,
-) -> Result<(), Error> {
+fn cmd_coordinate(model: &str, filters: &coordinate::CoordinateFilters<'_>) -> Result<(), Error> {
     let project_dir = std::env::current_dir()?;
     let cfg = config::load(&project_dir).unwrap_or_default();
-    let filters = coordinate::CoordinateFilters {
-        tisket,
-        label,
-        exclude_label,
-        project,
-        depends_on,
-        dry_run,
-    };
     coordinate::coordinate(
         &project_dir,
         &cfg.main_branch,
         model,
-        &filters,
+        filters,
         &cfg.permissions.allow,
     )
 }
@@ -235,7 +227,7 @@ fn cmd_admin() -> Result<(), Error> {
 fn cmd_pickup(id: &str) -> Result<(), Error> {
     let project_dir = std::env::current_dir()?;
     let cfg = config::load(&project_dir).unwrap_or_default();
-    pickup::pickup(&project_dir, id, &cfg.main_branch)?;
+    pickup::pickup(&project_dir, id, &cfg.main_branch, None)?;
     eprintln!("picked up '{id}' — worktree at .worktrees/{id}");
     Ok(())
 }
@@ -271,7 +263,7 @@ fn cmd_missouri(command: ::missouri::cli::Command) -> Result<(), Error> {
     }
 }
 
-fn cmd_dispatch(id: &str, model: &str) -> Result<(), Error> {
+fn cmd_dispatch(id: &str, model: &str, coordinator_id: Option<&str>) -> Result<(), Error> {
     let project_dir = std::env::current_dir()?;
     let cfg = config::load(&project_dir).unwrap_or_default();
     dispatch::dispatch(
@@ -280,6 +272,7 @@ fn cmd_dispatch(id: &str, model: &str) -> Result<(), Error> {
         &cfg.main_branch,
         model,
         &cfg.permissions.allow,
+        coordinator_id,
     )
 }
 

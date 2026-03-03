@@ -31,6 +31,7 @@ pub fn dispatch(
     main_branch: &str,
     model: &str,
     extra_allow: &[String],
+    coordinator_id: Option<&str>,
 ) -> Result<(), Error> {
     // Must be on main branch.
     let git_state = git::detect(project_dir, main_branch)
@@ -60,7 +61,7 @@ pub fn dispatch(
     }
 
     // Pickup creates worktree, sets tisket status, inits clc.
-    pickup::pickup(project_dir, id, main_branch)?;
+    pickup::pickup(project_dir, id, main_branch, coordinator_id)?;
 
     // Seed baseline permissions so the worker can function without
     // --dangerously-skip-permissions.
@@ -196,7 +197,7 @@ fn cleanup_stale_worktree(project_dir: &Path, worktree_dir: &Path, id: &str) -> 
         && !issue.frontmatter.status.is_pickable()
         && !issue.frontmatter.status.is_terminal()
     {
-        repo.edit_issue(id, Some("todo"))
+        repo.edit_issue(id, Some("todo"), None)
             .map_err(|e| Error::NonBlocking(format!("failed to reset tisket status: {e}")))?;
         // Commit the status reset on trunk so pickup sees it.
         crate::gix_ops::commit_paths(

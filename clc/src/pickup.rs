@@ -5,7 +5,12 @@ use camino::Utf8Path;
 use crate::error::Error;
 use crate::git;
 
-pub fn pickup(project_dir: &Path, id: &str, main_branch: &str) -> Result<(), Error> {
+pub fn pickup(
+    project_dir: &Path,
+    id: &str,
+    main_branch: &str,
+    coordinator_id: Option<&str>,
+) -> Result<(), Error> {
     // Must be on main branch.
     let git_state = git::detect(project_dir, main_branch)
         .ok_or_else(|| Error::NonBlocking("not inside a git repository".into()))?;
@@ -55,11 +60,10 @@ pub fn pickup(project_dir: &Path, id: &str, main_branch: &str) -> Result<(), Err
         }
     }
 
-    // Set tisket status to in_progress and commit on trunk.
-    // This must happen BEFORE creating the worktree so the branch forks from
-    // a HEAD that includes the status change. Otherwise ff-merge would fail
-    // (trunk dirty) or the worktree would have stale tisket state.
-    repo.edit_issue(id, Some("in_progress"))
+    // Set tisket status to in_progress (and assignee if coordinator) and commit
+    // on trunk. This must happen BEFORE creating the worktree so the branch
+    // forks from a HEAD that includes the status change.
+    repo.edit_issue(id, Some("in_progress"), coordinator_id)
         .map_err(|e| Error::NonBlocking(format!("failed to update tisket status: {e}")))?;
 
     repo.ensure_scratch_notes(id)

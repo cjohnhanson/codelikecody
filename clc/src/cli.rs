@@ -79,6 +79,9 @@ pub enum Command {
         /// List pickable tiskets and exit without spawning a coordinator.
         #[arg(long)]
         dry_run: bool,
+        /// Unique identity for this coordinator (e.g., coord-infra, coord-ui).
+        #[arg(long)]
+        id: Option<String>,
     },
     /// Dispatch a worker: pickup tisket + spawn detached claude process.
     Dispatch {
@@ -87,6 +90,9 @@ pub enum Command {
         /// Model to use for the worker.
         #[arg(long, default_value = "sonnet")]
         model: String,
+        /// Coordinator ID claiming this tisket.
+        #[arg(long)]
+        coordinator_id: Option<String>,
     },
     /// List active workers and their status.
     Workers {
