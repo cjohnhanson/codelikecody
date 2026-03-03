@@ -1,8 +1,9 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
 use gix::object::tree::EntryKind;
+use gix::prelude::Write as _;
 use gix::refs::transaction::PreviousValue;
 
 use crate::error::Error;
@@ -119,11 +120,10 @@ pub fn ff_merge(project_dir: &Path, branch_name: &str) -> Result<(), Error> {
         .detach();
 
     // Verify this is actually a fast-forward (target is descendant of HEAD).
-    // Walk ancestors of target to find head_id.
+    // If not, attempt to rebase the branch onto HEAD first.
+    let mut target_id = target_id;
     if target_id != head_id && !is_ancestor(&repo, head_id, target_id)? {
-        return Err(Error::NonBlocking(format!(
-            "cannot fast-forward: '{branch_name}' is not a descendant of HEAD"
-        )));
+        target_id = rebase_onto_head(&repo, head_id, branch_name)?;
     }
 
     // Update HEAD's target ref to point to the new commit.
@@ -513,6 +513,331 @@ fn is_ancestor(
     Ok(false)
 }
 
+// --- Rebase helpers ---
+
+/// A single change between two trees (parent → child).
+enum TreeChange {
+    Upsert {
+        path: String,
+        kind: EntryKind,
+        oid: gix::ObjectId,
+    },
+    Remove {
+        path: String,
+    },
+}
+
+impl TreeChange {
+    fn path(&self) -> &str {
+        match self {
+            Self::Upsert { path, .. } | Self::Remove { path } => path,
+        }
+    }
+}
+
+/// Rebase a branch's commits onto HEAD when the branch has diverged.
+/// Returns the new branch tip commit id after rebasing.
+///
+/// Algorithm:
+/// 1. Find the merge base between HEAD and branch tip
+/// 2. Collect branch commits from merge base to tip (oldest first)
+/// 3. Compute paths modified between merge base and HEAD ("main's changes")
+/// 4. For each branch commit, check for conflicts and replay onto the new base
+/// 5. Update the branch ref to the last rebased commit
+fn rebase_onto_head(
+    repo: &gix::Repository,
+    head_id: gix::ObjectId,
+    branch_name: &str,
+) -> Result<gix::ObjectId, Error> {
+    let ref_name = format!("refs/heads/{branch_name}");
+    let branch_tip = repo
+        .find_reference(&ref_name)
+        .map_err(|_| Error::NonBlocking(format!("branch '{branch_name}' not found")))?
+        .id()
+        .detach();
+
+    // 1. Find the merge base (fork point).
+    let merge_base = find_merge_base(repo, head_id, branch_tip)?;
+
+    // 2. Collect branch commits from merge base to tip (oldest first).
+    let branch_commits = collect_commits_to_base(repo, branch_tip, merge_base)?;
+
+    // 3. Compute the set of paths changed between merge base and HEAD.
+    let merge_base_tree = get_commit_tree_id(repo, merge_base)?;
+    let head_tree = get_commit_tree_id(repo, head_id)?;
+    let main_changed = changed_paths_between_trees(repo, merge_base_tree, head_tree)?;
+
+    // 4. Replay each branch commit onto the new base.
+    let mut new_parent = head_id;
+    let mut current_base_tree = head_tree;
+
+    for &commit_id in &branch_commits {
+        let commit_obj = repo
+            .find_object(commit_id)
+            .map_err(|e| Error::NonBlocking(format!("failed to find commit {commit_id}: {e}")))?
+            .into_commit();
+
+        let parent_id = commit_obj
+            .parent_ids()
+            .next()
+            .ok_or_else(|| Error::NonBlocking("branch commit has no parent".into()))?
+            .detach();
+        let parent_tree = get_commit_tree_id(repo, parent_id)?;
+        let commit_tree = commit_obj
+            .tree_id()
+            .map_err(|e| Error::NonBlocking(format!("failed to get commit tree: {e}")))?
+            .detach();
+
+        // Compute changes made by this commit.
+        let changes = compute_tree_changes(repo, parent_tree, commit_tree)?;
+
+        // Conflict check: abort if any path was modified in both branch and main.
+        for change in &changes {
+            let path = change.path();
+            if main_changed.contains(path) {
+                return Err(Error::NonBlocking(format!(
+                    "conflict: path '{path}' modified in both branch and main — cannot auto-rebase"
+                )));
+            }
+        }
+
+        // Apply changes to the current base tree.
+        let base_tree = repo
+            .find_object(current_base_tree)
+            .map_err(|e| Error::NonBlocking(format!("failed to find base tree: {e}")))?
+            .into_tree();
+        let mut editor = base_tree
+            .edit()
+            .map_err(|e| Error::NonBlocking(format!("failed to create tree editor: {e}")))?;
+
+        for change in &changes {
+            match change {
+                TreeChange::Upsert { path, kind, oid } => {
+                    editor.upsert(path.as_str(), *kind, *oid).map_err(|e| {
+                        Error::NonBlocking(format!("failed to upsert '{path}': {e}"))
+                    })?;
+                }
+                TreeChange::Remove { path } => {
+                    editor.remove(path.as_str()).map_err(|e| {
+                        Error::NonBlocking(format!("failed to remove '{path}': {e}"))
+                    })?;
+                }
+            }
+        }
+
+        let new_tree_id = editor
+            .write()
+            .map_err(|e| Error::NonBlocking(format!("failed to write rebased tree: {e}")))?
+            .detach();
+
+        // Create new commit preserving original author, committer, and message.
+        // Reconstruct from raw bytes: replace tree/parent lines, keep everything else.
+        let raw_data = commit_obj.data.clone();
+        let raw_str = std::str::from_utf8(&raw_data)
+            .map_err(|e| Error::NonBlocking(format!("invalid commit data: {e}")))?;
+
+        // Find where "author " starts — everything from there onward is preserved.
+        let author_pos = raw_str
+            .find("author ")
+            .ok_or_else(|| Error::NonBlocking("malformed commit: no author line".into()))?;
+
+        let mut new_raw = format!("tree {new_tree_id}\nparent {new_parent}\n");
+        new_raw.push_str(&raw_str[author_pos..]);
+
+        new_parent = repo
+            .write_buf(gix::objs::Kind::Commit, new_raw.as_bytes())
+            .map_err(|e| Error::NonBlocking(format!("failed to write rebased commit: {e}")))?;
+        current_base_tree = new_tree_id;
+    }
+
+    // 5. Update branch ref to point to the last rebased commit.
+    repo.reference(
+        ref_name.as_str(),
+        new_parent,
+        PreviousValue::Any,
+        format!("rebase {branch_name} onto HEAD"),
+    )
+    .map_err(|e| Error::NonBlocking(format!("failed to update branch ref: {e}")))?;
+
+    Ok(new_parent)
+}
+
+/// Find the merge base (most recent common ancestor) of two commits.
+fn find_merge_base(
+    repo: &gix::Repository,
+    a: gix::ObjectId,
+    b: gix::ObjectId,
+) -> Result<gix::ObjectId, Error> {
+    // Collect all ancestors of A (including A itself).
+    let mut a_ancestors = HashSet::new();
+    let mut queue = std::collections::VecDeque::new();
+    queue.push_back(a);
+    a_ancestors.insert(a);
+    while let Some(current) = queue.pop_front() {
+        let commit = repo
+            .find_object(current)
+            .map_err(|e| Error::NonBlocking(format!("failed to find commit {current}: {e}")))?
+            .into_commit();
+        for parent_id in commit.parent_ids().map(gix::Id::detach) {
+            if a_ancestors.insert(parent_id) {
+                queue.push_back(parent_id);
+            }
+        }
+    }
+
+    // Walk ancestors of B (BFS) until we find one in A's ancestor set.
+    let mut queue = std::collections::VecDeque::new();
+    let mut seen = HashSet::new();
+    queue.push_back(b);
+    seen.insert(b);
+    while let Some(current) = queue.pop_front() {
+        if a_ancestors.contains(&current) {
+            return Ok(current);
+        }
+        let commit = repo
+            .find_object(current)
+            .map_err(|e| Error::NonBlocking(format!("failed to find commit {current}: {e}")))?
+            .into_commit();
+        for parent_id in commit.parent_ids().map(gix::Id::detach) {
+            if seen.insert(parent_id) {
+                queue.push_back(parent_id);
+            }
+        }
+    }
+
+    Err(Error::NonBlocking("no merge base found".into()))
+}
+
+/// Collect commits from `tip` back to `base` (exclusive), returned oldest-first.
+fn collect_commits_to_base(
+    repo: &gix::Repository,
+    tip: gix::ObjectId,
+    base: gix::ObjectId,
+) -> Result<Vec<gix::ObjectId>, Error> {
+    let mut commits = Vec::new();
+    let mut current = tip;
+    while current != base {
+        commits.push(current);
+        let commit = repo
+            .find_object(current)
+            .map_err(|e| Error::NonBlocking(format!("failed to find commit {current}: {e}")))?
+            .into_commit();
+        current = commit
+            .parent_ids()
+            .next()
+            .ok_or_else(|| Error::NonBlocking("unexpected root commit during rebase walk".into()))?
+            .detach();
+    }
+    commits.reverse();
+    Ok(commits)
+}
+
+/// Get the tree `ObjectId` for a commit.
+fn get_commit_tree_id(
+    repo: &gix::Repository,
+    commit_id: gix::ObjectId,
+) -> Result<gix::ObjectId, Error> {
+    Ok(repo
+        .find_object(commit_id)
+        .map_err(|e| Error::NonBlocking(format!("failed to find commit {commit_id}: {e}")))?
+        .into_commit()
+        .tree_id()
+        .map_err(|e| Error::NonBlocking(format!("failed to get tree for commit {commit_id}: {e}")))?
+        .detach())
+}
+
+/// Collect all blob entries from a tree as path → (oid, kind).
+fn collect_tree_entries(
+    repo: &gix::Repository,
+    tree_id: gix::ObjectId,
+) -> Result<HashMap<String, (gix::ObjectId, EntryKind)>, Error> {
+    let tree = repo
+        .find_object(tree_id)
+        .map_err(|e| Error::NonBlocking(format!("failed to find tree: {e}")))?
+        .into_tree();
+    let entries = tree
+        .traverse()
+        .breadthfirst
+        .files()
+        .map_err(|e| Error::NonBlocking(format!("failed to traverse tree: {e}")))?;
+
+    let mut map = HashMap::new();
+    for entry in entries {
+        if !entry.mode.is_tree() {
+            map.insert(entry.filepath.to_string(), (entry.oid, entry.mode.kind()));
+        }
+    }
+    Ok(map)
+}
+
+/// Compute the set of paths that differ between two trees.
+fn changed_paths_between_trees(
+    repo: &gix::Repository,
+    from_tree: gix::ObjectId,
+    to_tree: gix::ObjectId,
+) -> Result<HashSet<String>, Error> {
+    let from = collect_tree_entries(repo, from_tree)?;
+    let to = collect_tree_entries(repo, to_tree)?;
+    let mut changed = HashSet::new();
+
+    for (path, (oid, kind)) in &to {
+        match from.get(path) {
+            None => {
+                changed.insert(path.clone());
+            }
+            Some((from_oid, from_kind)) if from_oid != oid || from_kind != kind => {
+                changed.insert(path.clone());
+            }
+            _ => {}
+        }
+    }
+
+    for path in from.keys() {
+        if !to.contains_key(path) {
+            changed.insert(path.clone());
+        }
+    }
+
+    Ok(changed)
+}
+
+/// Compute the changes needed to transform `from_tree` into `to_tree`.
+fn compute_tree_changes(
+    repo: &gix::Repository,
+    from_tree: gix::ObjectId,
+    to_tree: gix::ObjectId,
+) -> Result<Vec<TreeChange>, Error> {
+    let from = collect_tree_entries(repo, from_tree)?;
+    let to = collect_tree_entries(repo, to_tree)?;
+    let mut changes = Vec::new();
+
+    for (path, (oid, kind)) in &to {
+        match from.get(path) {
+            None => changes.push(TreeChange::Upsert {
+                path: path.clone(),
+                kind: *kind,
+                oid: *oid,
+            }),
+            Some((from_oid, from_kind)) if from_oid != oid || from_kind != kind => {
+                changes.push(TreeChange::Upsert {
+                    path: path.clone(),
+                    kind: *kind,
+                    oid: *oid,
+                });
+            }
+            _ => {}
+        }
+    }
+
+    for path in from.keys() {
+        if !to.contains_key(path) {
+            changes.push(TreeChange::Remove { path: path.clone() });
+        }
+    }
+
+    Ok(changes)
+}
+
 /// Checkout a tree into a working directory by writing an index and running checkout.
 fn checkout_tree(
     repo: &gix::Repository,
@@ -558,7 +883,6 @@ fn checkout_tree(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gix::prelude::Write as _;
     use std::path::PathBuf;
 
     /// Create a temporary git repository with an initial commit containing the given files.
@@ -756,7 +1080,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "pending rebase_onto_head implementation"]
     fn ff_merge_rebases_when_main_advanced_non_overlapping() {
         let dir = make_test_repo(&[("a.txt", "initial")]);
 
@@ -805,7 +1128,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "pending rebase_onto_head implementation"]
     fn ff_merge_aborts_on_conflicting_paths() {
         let dir = make_test_repo(&[("shared.txt", "initial")]);
 
@@ -847,7 +1169,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "pending rebase_onto_head implementation"]
     fn ff_merge_rebase_preserves_multi_commit_history() {
         let dir = make_test_repo(&[("a.txt", "initial")]);
 
