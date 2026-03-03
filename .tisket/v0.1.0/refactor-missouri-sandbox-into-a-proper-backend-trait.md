@@ -1,12 +1,12 @@
 ---
 title: "Refactor missouri sandbox into a proper backend trait"
-status: in_progress
+status: todo
 priority:
 assignee:
 labels: [missouri]
 depends_on: []
 created: 2026-03-01T13:04:59Z
-updated: "2026-03-02T13:34:15Z"
+updated: "2026-03-02T14:23:49Z"
 ---
 
 Extract the `Sandbox` enum into a trait so new backends (Docker next) don't require touching every match site.
