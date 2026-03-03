@@ -451,3 +451,223 @@ fn read_pid(worker_dir: &Path) -> Option<i32> {
 fn is_pid_alive(pid: i32) -> bool {
     nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None).is_ok()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- resolve_policy tests ---
+
+    fn empty_filters() -> CoordinateFilters<'static> {
+        CoordinateFilters {
+            tisket: None,
+            label: None,
+            exclude_label: None,
+            project: None,
+            depends_on: None,
+            dry_run: false,
+            coordinator_id: None,
+            auto_grant: &[],
+            escalate_all: false,
+            grant_config: None,
+        }
+    }
+
+    #[test]
+    fn resolve_policy_empty_config_and_flags() {
+        let config = CoordinatorConfig::default();
+        let filters = empty_filters();
+        let policy = resolve_policy(&config, &filters).unwrap();
+        assert!(policy.auto_grant.is_empty());
+        assert!(policy.always_escalate.is_empty());
+        assert!(!policy.escalate_all);
+    }
+
+    #[test]
+    fn resolve_policy_from_config_only() {
+        let config = CoordinatorConfig {
+            auto_grant: vec!["Bash(cargo *)".into()],
+            always_escalate: vec!["Bash(rm *)".into()],
+        };
+        let filters = empty_filters();
+        let policy = resolve_policy(&config, &filters).unwrap();
+        assert_eq!(policy.auto_grant, vec!["Bash(cargo *)"]);
+        assert_eq!(policy.always_escalate, vec!["Bash(rm *)"]);
+    }
+
+    #[test]
+    fn resolve_policy_from_cli_flags_only() {
+        let config = CoordinatorConfig::default();
+        let cli_grants = vec!["Bash(npm *)".into(), "Bash(make *)".into()];
+        let mut filters = empty_filters();
+        filters.auto_grant = &cli_grants;
+        let policy = resolve_policy(&config, &filters).unwrap();
+        assert_eq!(policy.auto_grant, vec!["Bash(npm *)", "Bash(make *)"]);
+    }
+
+    #[test]
+    fn resolve_policy_merges_config_and_cli() {
+        let config = CoordinatorConfig {
+            auto_grant: vec!["Bash(cargo *)".into()],
+            always_escalate: vec!["Bash(rm *)".into()],
+        };
+        let cli_grants = vec!["Bash(npm *)".into()];
+        let mut filters = empty_filters();
+        filters.auto_grant = &cli_grants;
+        let policy = resolve_policy(&config, &filters).unwrap();
+        assert_eq!(policy.auto_grant, vec!["Bash(cargo *)", "Bash(npm *)"]);
+        assert_eq!(policy.always_escalate, vec!["Bash(rm *)"]);
+    }
+
+    #[test]
+    fn resolve_policy_escalate_all_flag() {
+        let config = CoordinatorConfig {
+            auto_grant: vec!["Bash(cargo *)".into()],
+            ..CoordinatorConfig::default()
+        };
+        let mut filters = empty_filters();
+        filters.escalate_all = true;
+        let policy = resolve_policy(&config, &filters).unwrap();
+        assert!(policy.escalate_all);
+        // auto_grant is still populated (but escalate_all overrides in prompt)
+        assert_eq!(policy.auto_grant, vec!["Bash(cargo *)"]);
+    }
+
+    #[test]
+    fn resolve_policy_grant_config_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("policy.yml");
+        std::fs::write(
+            &path,
+            "auto_grant:\n  - \"Bash(docker *)\"\nalways_escalate:\n  - \"Bash(sudo *)\"\n",
+        )
+        .unwrap();
+
+        let config = CoordinatorConfig::default();
+        let path_str = path.to_str().unwrap().to_string();
+        let mut filters = empty_filters();
+        filters.grant_config = Some(&path_str);
+        let policy = resolve_policy(&config, &filters).unwrap();
+        assert_eq!(policy.auto_grant, vec!["Bash(docker *)"]);
+        assert_eq!(policy.always_escalate, vec!["Bash(sudo *)"]);
+    }
+
+    #[test]
+    fn resolve_policy_grant_config_merges_with_config_and_cli() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("policy.yml");
+        std::fs::write(&path, "auto_grant:\n  - \"Bash(docker *)\"\n").unwrap();
+
+        let config = CoordinatorConfig {
+            auto_grant: vec!["Bash(cargo *)".into()],
+            ..CoordinatorConfig::default()
+        };
+        let cli_grants = vec!["Bash(npm *)".into()];
+        let path_str = path.to_str().unwrap().to_string();
+        let mut filters = empty_filters();
+        filters.auto_grant = &cli_grants;
+        filters.grant_config = Some(&path_str);
+        let policy = resolve_policy(&config, &filters).unwrap();
+        // Order: config → grant-config → CLI
+        assert_eq!(
+            policy.auto_grant,
+            vec!["Bash(cargo *)", "Bash(docker *)", "Bash(npm *)"]
+        );
+    }
+
+    #[test]
+    fn resolve_policy_grant_config_nonexistent_file_errors() {
+        let config = CoordinatorConfig::default();
+        let path = "/tmp/no-such-policy-file-12345.yml".to_string();
+        let mut filters = empty_filters();
+        filters.grant_config = Some(&path);
+        assert!(resolve_policy(&config, &filters).is_err());
+    }
+
+    #[test]
+    fn resolve_policy_grant_config_invalid_yaml_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bad.yml");
+        std::fs::write(&path, "][not valid yaml{{{").unwrap();
+
+        let config = CoordinatorConfig::default();
+        let path_str = path.to_str().unwrap().to_string();
+        let mut filters = empty_filters();
+        filters.grant_config = Some(&path_str);
+        assert!(resolve_policy(&config, &filters).is_err());
+    }
+
+    // --- format_policy_section tests ---
+
+    #[test]
+    fn policy_section_empty_policy_mentions_judgment() {
+        let policy = PermissionPolicy::default();
+        let section = format_policy_section(&policy);
+        assert!(section.contains("PERMISSION POLICY"));
+        assert!(section.contains("judgment"));
+    }
+
+    #[test]
+    fn policy_section_escalate_all_mentions_escalate() {
+        let policy = PermissionPolicy {
+            escalate_all: true,
+            ..PermissionPolicy::default()
+        };
+        let section = format_policy_section(&policy);
+        assert!(section.contains("PERMISSION POLICY"));
+        assert!(section.contains("escalated to the user"));
+        assert!(!section.contains("Auto-grant"));
+    }
+
+    #[test]
+    fn policy_section_with_auto_grant_lists_patterns() {
+        let policy = PermissionPolicy {
+            auto_grant: vec!["Bash(cargo *)".into(), "Bash(npm *)".into()],
+            ..PermissionPolicy::default()
+        };
+        let section = format_policy_section(&policy);
+        assert!(section.contains("Auto-grant"));
+        assert!(section.contains("Bash(cargo *)"));
+        assert!(section.contains("Bash(npm *)"));
+    }
+
+    #[test]
+    fn policy_section_with_always_escalate_lists_patterns() {
+        let policy = PermissionPolicy {
+            always_escalate: vec!["Bash(rm *)".into(), "Bash(git push *)".into()],
+            ..PermissionPolicy::default()
+        };
+        let section = format_policy_section(&policy);
+        assert!(section.contains("escalate"));
+        assert!(section.contains("Bash(rm *)"));
+        assert!(section.contains("Bash(git push *)"));
+    }
+
+    #[test]
+    fn policy_section_with_both_lists_has_both_sections() {
+        let policy = PermissionPolicy {
+            auto_grant: vec!["Bash(cargo *)".into()],
+            always_escalate: vec!["Bash(rm *)".into()],
+            escalate_all: false,
+        };
+        let section = format_policy_section(&policy);
+        assert!(section.contains("Auto-grant"));
+        assert!(section.contains("Bash(cargo *)"));
+        assert!(section.contains("escalate"));
+        assert!(section.contains("Bash(rm *)"));
+    }
+
+    #[test]
+    fn system_prompt_includes_policy_section() {
+        let policy = PermissionPolicy {
+            auto_grant: vec!["Bash(cargo *)".into()],
+            ..PermissionPolicy::default()
+        };
+        let prompt = build_coordinator_system_prompt(&policy);
+        assert!(prompt.contains("PERMISSION POLICY"));
+        assert!(prompt.contains("Bash(cargo *)"));
+        // Also still contains the base coordinator instructions.
+        assert!(prompt.contains("coordinator agent"));
+        assert!(prompt.contains("LANDING PLAYBOOK"));
+    }
+}
