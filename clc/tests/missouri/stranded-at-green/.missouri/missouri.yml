@@ -1,0 +1,69 @@
+assertions:
+  - name: "on main branch"
+    command: "test $(git rev-parse --abbrev-ref HEAD) = main"
+
+  - name: "worktree exists for stranded worker"
+    command: "test -d .worktrees/test-feature"
+
+  - name: "worker branch exists"
+    command: "git branch --list test-feature | grep -q test-feature"
+
+  - name: "phase is green in worktree"
+    command: "grep -q 'phase: green' .worktrees/test-feature/.clc/state"
+
+  - name: "tisket is in_progress"
+    command: "grep -q 'status: in_progress' .tisket/v0.1.0/test-feature.md"
+
+  - name: "worker has committed work on branch"
+    command: "git log test-feature --oneline | grep -q 'add tests and implementation'"
+
+  - name: "no worker process is alive (no .clc/worker/ dir)"
+    command: "! test -d .worktrees/test-feature/.clc/worker"
+
+  - name: "clc workers default does not show the stranded worker"
+    command: "! clc workers 2>&1 | grep -q test-feature"
+
+  - name: "clc workers --all does not show the stranded worker (no worker state)"
+    command: "! clc workers --all 2>&1 | grep -q test-feature"
+
+  - name: "clc workers --stranded detects the stranded worker"
+    command: "clc workers --stranded 2>&1 | grep -q test-feature"
+
+  - name: "clc workers --stranded shows phase"
+    command: "clc workers --stranded 2>&1 | grep test-feature | grep -q green"
+
+  - name: "clc workers --stranded includes phase in output"
+    command: "clc workers --stranded 2>&1 | grep test-feature | grep -qE 'green|implementing|red|tests-written|tests-unwritten'"
+
+  - name: "recover fails when worker is still alive"
+    command: "mkdir -p .worktrees/test-feature/.clc/worker && echo $$ > .worktrees/test-feature/.clc/worker/pid && clc worker test-feature recover 2>&1; RET=$?; rm -rf .worktrees/test-feature/.clc/worker; test $RET -ne 0"
+
+  - name: "recover fails when phase is not green"
+    command: "echo 'phase: implementing' > .worktrees/test-feature/.clc/state && clc worker test-feature recover 2>&1; RET=$?; echo 'phase: green' > .worktrees/test-feature/.clc/state; test $RET -ne 0"
+
+  - name: "recover error for non-green phase mentions resume"
+    command: "echo 'phase: implementing' > .worktrees/test-feature/.clc/state && OUT=$(clc worker test-feature recover 2>&1); echo 'phase: green' > .worktrees/test-feature/.clc/state; echo \"$OUT\" | grep -qi 'resume'"
+
+  - name: "recover fails for non-existent worker"
+    command: "clc worker no-such-worker recover 2>&1; test $? -ne 0"
+
+transitions:
+  - name: "recover the stranded worker"
+    command: "clc worker test-feature recover"
+    target: "../stranded-recovered"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".worktrees/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true
+        - path: "tests/"
+          ignore: true

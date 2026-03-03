@@ -1,0 +1,48 @@
+assertions:
+  - name: "still on main branch"
+    command: "test $(git rev-parse --abbrev-ref HEAD) = main"
+
+  - name: "worktree still exists"
+    command: "test -d .worktrees/test-feature"
+
+  - name: "phase is done in worktree"
+    command: "grep -q 'phase: done' .worktrees/test-feature/.clc/state"
+
+  - name: "tisket is closed"
+    command: "test -f .worktrees/test-feature/.tisket/v0.1.0/.closed/test-feature.md"
+
+  - name: "finalize commit exists on branch"
+    command: "git log test-feature --oneline | grep -q 'clc: finalize'"
+
+  - name: "branch working tree is clean"
+    command: "cd .worktrees/test-feature && test -z \"$(git status --porcelain -uno)\""
+
+  - name: "clc workers --stranded no longer shows recovered worker"
+    command: "! clc workers --stranded 2>&1 | grep -q test-feature"
+
+  - name: "recover is idempotent (second call succeeds or gives clear message)"
+    command: "clc worker test-feature recover 2>&1; test $? -ne 0"
+
+  - name: "recover idempotent error mentions already done"
+    command: "clc worker test-feature recover 2>&1 | grep -qi 'done'"
+
+transitions:
+  - name: "land the recovered worker"
+    command: "clc land test-feature"
+    target: "../stranded-landed"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".worktrees/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true
+        - path: "tests/"
+          ignore: true

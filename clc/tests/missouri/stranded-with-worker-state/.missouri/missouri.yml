@@ -1,0 +1,30 @@
+assertions:
+  - name: "on main branch"
+    command: "test $(git rev-parse --abbrev-ref HEAD) = main"
+
+  - name: "worktree exists for stranded worker"
+    command: "test -d .worktrees/test-feature"
+
+  - name: "worker state dir exists (not pruned)"
+    command: "test -d .worktrees/test-feature/.clc/worker"
+
+  - name: "stale PID file exists"
+    command: "test -f .worktrees/test-feature/.clc/worker/pid"
+
+  - name: "worker process is dead"
+    command: "! kill -0 $(cat .worktrees/test-feature/.clc/worker/pid) 2>/dev/null"
+
+  - name: "phase is green in worktree"
+    command: "grep -q 'phase: green' .worktrees/test-feature/.clc/state"
+
+  - name: "clc workers --all shows dead worker"
+    command: "clc workers --all 2>&1 | grep test-feature | grep -q dead"
+
+  - name: "clc workers --stranded detects worker with stale state"
+    command: "clc workers --stranded 2>&1 | grep -q test-feature"
+
+  - name: "recover works even with stale worker state"
+    command: "clc worker test-feature recover"
+
+  - name: "after recover, phase is done"
+    command: "grep -q 'phase: done' .worktrees/test-feature/.clc/state"
