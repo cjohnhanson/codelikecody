@@ -1,6 +1,6 @@
 ---
 title: "Coordinator filtering: dispatch by label, dependency chain, or project"
-status: in_progress
+status: todo
 priority:
 assignee:
 labels: []
