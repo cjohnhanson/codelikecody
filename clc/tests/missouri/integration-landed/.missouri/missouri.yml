@@ -1,0 +1,33 @@
+assertions:
+  - name: "back on main branch"
+    command: "test $(git rev-parse --abbrev-ref HEAD) = main"
+
+  - name: "worker-a file exists on main"
+    command: "test -f worker-a.txt"
+
+  - name: "worker-b file exists on main"
+    command: "test -f worker-b.txt"
+
+  - name: "both files in main committed tree"
+    command: "git cat-file -e HEAD:worker-a.txt && git cat-file -e HEAD:worker-b.txt"
+
+  - name: "integration branch was deleted"
+    command: "! git branch --list integrate/test-batch | grep -q integrate/test-batch"
+
+  - name: "worker-a branch was deleted"
+    command: "! git branch --list worker-a | grep -q worker-a"
+
+  - name: "worker-b branch was deleted"
+    command: "! git branch --list worker-b | grep -q worker-b"
+
+  - name: "landing commit is a squash (single parent)"
+    command: "test $(git cat-file -p HEAD | grep -c '^parent') -eq 1"
+
+  - name: "landing commit message mentions workers"
+    command: "git log -1 --format=%B | grep -q 'worker-a' && git log -1 --format=%B | grep -q 'worker-b'"
+
+  - name: "working tree is clean"
+    command: "test -z \"$(git status --porcelain -uno)\""
+
+  - name: "landing on already-clean main fails gracefully"
+    command: "clc integrate land 2>&1; test $? -ne 0"

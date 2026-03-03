@@ -1,0 +1,34 @@
+assertions:
+  - name: "still on integration branch"
+    command: "test $(git rev-parse --abbrev-ref HEAD) = integrate/test-batch"
+
+  - name: "worker-a file exists"
+    command: "test -f worker-a.txt"
+
+  - name: "worker-b file exists"
+    command: "test -f worker-b.txt"
+
+  - name: "both files in committed tree"
+    command: "git cat-file -e HEAD:worker-a.txt && git cat-file -e HEAD:worker-b.txt"
+
+  - name: "integration is ahead of main"
+    command: "test $(git rev-parse integrate/test-batch) != $(git rev-parse main)"
+
+  - name: "main still at original position"
+    command: "! git cat-file -e main:worker-a.txt 2>/dev/null"
+
+  - name: "working tree is clean"
+    command: "test -z \"$(git status --porcelain -uno)\""
+
+transitions:
+  - name: "land integration branch"
+    command: "clc integrate land"
+    target: "../integration-landed"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true

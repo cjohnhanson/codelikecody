@@ -1,0 +1,34 @@
+assertions:
+  - name: "still on integration branch"
+    command: "test $(git rev-parse --abbrev-ref HEAD) = integrate/test-batch"
+
+  - name: "worker-a file exists in working tree"
+    command: "test -f worker-a.txt"
+
+  - name: "worker-a file is in committed tree"
+    command: "git cat-file -e HEAD:worker-a.txt"
+
+  - name: "worker-b file not yet present"
+    command: "! test -f worker-b.txt"
+
+  - name: "integration branch is ahead of main"
+    command: "test $(git rev-parse integrate/test-batch) != $(git rev-parse main)"
+
+  - name: "merging same worker again fails"
+    command: "clc integrate merge worker-a 2>&1; test $? -ne 0"
+
+  - name: "working tree is clean"
+    command: "test -z \"$(git status --porcelain -uno)\""
+
+transitions:
+  - name: "merge second worker"
+    command: "clc integrate merge worker-b"
+    target: "../workers-merged"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true

@@ -1,0 +1,31 @@
+assertions:
+  - name: "on integration branch"
+    command: "test $(git rev-parse --abbrev-ref HEAD) = integrate/test-batch"
+
+  - name: "integration branch points to same commit as main"
+    command: "test $(git rev-parse integrate/test-batch) = $(git rev-parse main)"
+
+  - name: "worker branches still exist"
+    command: "git branch --list worker-a | grep -q worker-a && git branch --list worker-b | grep -q worker-b"
+
+  - name: "integrate create fails when already on integration branch"
+    command: "clc integrate create another-batch 2>&1; test $? -ne 0"
+
+  - name: "integrate merge fails for non-existent branch"
+    command: "clc integrate merge no-such-branch 2>&1; test $? -ne 0"
+
+  - name: "integrate land fails with no workers merged"
+    command: "clc integrate land 2>&1; test $? -ne 0"
+
+transitions:
+  - name: "merge first worker"
+    command: "clc integrate merge worker-a"
+    target: "../first-worker-merged"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true

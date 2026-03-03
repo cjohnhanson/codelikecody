@@ -1,0 +1,40 @@
+assertions:
+  - name: "on main branch"
+    command: "test $(git rev-parse --abbrev-ref HEAD) = main"
+
+  - name: "worker-a branch exists"
+    command: "git branch --list worker-a | grep -q worker-a"
+
+  - name: "worker-b branch exists"
+    command: "git branch --list worker-b | grep -q worker-b"
+
+  - name: "worker-a has its commit"
+    command: "git log worker-a --oneline | grep -q 'worker-a: add feature'"
+
+  - name: "worker-b has its commit"
+    command: "git log worker-b --oneline | grep -q 'worker-b: add feature'"
+
+  - name: "integrate create fails when not on main"
+    command: "git checkout -q worker-a && clc integrate create test-batch 2>&1; RET=$?; git checkout -q main; test $RET -ne 0"
+
+  - name: "integrate create fails with no name"
+    command: "clc integrate create 2>&1; test $? -ne 0"
+
+  - name: "integrate merge fails when not on integration branch"
+    command: "clc integrate merge worker-a 2>&1; test $? -ne 0"
+
+  - name: "integrate land fails when not on integration branch"
+    command: "clc integrate land 2>&1; test $? -ne 0"
+
+transitions:
+  - name: "create integration branch"
+    command: "clc integrate create test-batch"
+    target: "../integration-created"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true

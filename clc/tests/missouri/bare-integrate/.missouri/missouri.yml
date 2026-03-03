@@ -1,0 +1,28 @@
+transitions:
+  - name: "setup git repo with main and two worker branches"
+    command: >
+      git init -q -b main &&
+      git -c user.name=test -c user.email=test@test add -A &&
+      git -c user.name=test -c user.email=test@test commit -q -m "init" &&
+      clc init &&
+      git -c user.name=test -c user.email=test@test add -A &&
+      git -c user.name=test -c user.email=test@test commit -q -m "clc init" &&
+      git checkout -q -b worker-a &&
+      echo "worker a contribution" > worker-a.txt &&
+      git -c user.name=test -c user.email=test@test add worker-a.txt &&
+      git -c user.name=test -c user.email=test@test commit -q -m "worker-a: add feature" &&
+      git checkout -q main &&
+      git checkout -q -b worker-b &&
+      echo "worker b contribution" > worker-b.txt &&
+      git -c user.name=test -c user.email=test@test add worker-b.txt &&
+      git -c user.name=test -c user.email=test@test commit -q -m "worker-b: add feature" &&
+      git checkout -q main
+    target: "../ready-to-integrate"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
