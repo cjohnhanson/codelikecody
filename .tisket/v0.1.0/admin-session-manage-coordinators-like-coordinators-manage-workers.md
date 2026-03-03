@@ -1,12 +1,12 @@
 ---
 title: "Admin session: manage coordinators like coordinators manage workers"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: []
 depends_on: []
 created: 2026-03-03T01:33:41Z
-updated: "2026-03-03T01:35:06Z"
+updated: "2026-03-03T04:15:39Z"
 ---
 
 ## Problem
