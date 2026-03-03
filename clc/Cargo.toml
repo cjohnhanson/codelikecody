@@ -22,6 +22,7 @@ claude-code = { path = "../claude-code" }
 clc-sdk = { path = "../clc-sdk" }
 gix = { version = "0.80.0", default-features = false, features = [
     "index",
+    "merge",
     "tree-editor",
     "status",
     "worktree-mutation",

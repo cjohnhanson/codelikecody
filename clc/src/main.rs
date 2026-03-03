@@ -13,6 +13,7 @@ mod guard;
 mod home;
 mod hook;
 mod init;
+mod integrate;
 mod merge;
 mod missouri;
 mod permissions;
@@ -70,6 +71,7 @@ fn main() {
         cli::Command::Tisket { command } => cmd_tisket(command),
         cli::Command::Missouri { command } => cmd_missouri(command),
         cli::Command::Permissions { ref action } => cmd_permissions(action),
+        cli::Command::Integrate { ref action } => cmd_integrate(action),
         cli::Command::Hook => unreachable!(),
     };
 
@@ -293,6 +295,26 @@ fn cmd_permissions(action: &cli::PermissionsAction) -> Result<(), Error> {
         } => permissions::escalate(&cwd, worker_id, description),
         cli::PermissionsAction::Inbox => permissions::inbox(&cwd),
     }
+}
+
+fn cmd_integrate(action: &cli::IntegrateAction) -> Result<(), Error> {
+    let project_dir = std::env::current_dir()?;
+    let cfg = config::load(&project_dir).unwrap_or_default();
+    match action {
+        cli::IntegrateAction::Create { name } => {
+            integrate::create(&project_dir, name, &cfg.main_branch)?;
+            eprintln!("created integration branch integrate/{name}");
+        }
+        cli::IntegrateAction::Merge { branch } => {
+            integrate::merge(&project_dir, branch)?;
+            eprintln!("merged '{branch}' into integration branch");
+        }
+        cli::IntegrateAction::Land => {
+            integrate::land(&project_dir, &cfg.main_branch)?;
+            eprintln!("landed integration branch onto main");
+        }
+    }
+    Ok(())
 }
 
 fn cmd_init(untracked: bool, force: bool) -> Result<(), Error> {

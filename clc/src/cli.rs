@@ -104,6 +104,27 @@ pub enum Command {
         #[command(subcommand)]
         action: PermissionsAction,
     },
+    /// Manage ephemeral integration branches (create, merge workers, land).
+    Integrate {
+        #[command(subcommand)]
+        action: IntegrateAction,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum IntegrateAction {
+    /// Create a new integration branch at the current main HEAD.
+    Create {
+        /// Name for the integration branch (creates integrate/<name>).
+        name: String,
+    },
+    /// Merge a worker branch into the current integration branch.
+    Merge {
+        /// The branch name to merge.
+        branch: String,
+    },
+    /// Squash-merge the integration branch onto main and clean up.
+    Land,
 }
 
 #[derive(Subcommand)]
