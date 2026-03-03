@@ -70,3 +70,10 @@ The coordinator's system prompt should include its filter so it knows its scope 
 - Filters compose: label ∩ project ∩ depends-on scope, minus exclude-labels
 - --dry-run: print pickable IDs to stdout (one per line) and exit without spawning
 - "no pickable tiskets found" goes to stderr (existing behavior)
+
+**Session 2 learnings:**
+- Tisket `closed` is determined by file location (.closed/ subdir), not status field
+- dep-root fixture must go in .tisket/v0.1.0/.closed/dep-root.md
+- list_issues with nonexistent project errors (doesn't silently return empty)
+- Introduced CoordinateFilters struct to satisfy clippy too-many-arguments lint
+- All 44 assertions pass, full missouri suite green (23+7+2 paths)
