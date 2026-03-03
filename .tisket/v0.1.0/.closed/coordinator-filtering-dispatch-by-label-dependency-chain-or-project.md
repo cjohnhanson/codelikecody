@@ -1,12 +1,12 @@
 ---
 title: "Coordinator filtering: dispatch by label, dependency chain, or project"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: []
 depends_on: []
 created: 2026-03-03T01:33:42Z
-updated: "2026-03-03T03:33:26Z"
+updated: "2026-03-03T04:04:11Z"
 ---
 
 ## Problem
