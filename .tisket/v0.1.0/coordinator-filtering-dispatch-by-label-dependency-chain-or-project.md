@@ -33,29 +33,40 @@ The coordinator's system prompt should include its filter so it knows its scope 
 
 ## Scratch Notes
 
-### Test Design (session 1)
+### Test Design (session 2 — refined)
 
-**Approach:** Missouri state-graph tests. Side-effect-free assertions only (no coordinator spawning).
+**Approach:** Missouri state-graph tests. All assertions use `--dry-run` flag (prints pickable IDs to stdout without spawning coordinator). Side-effect-free.
 
 **Fixture (coordinate-filter-setup state):**
-- v0.1.0/alpha-task: labels=[infrastructure], todo, no deps
-- v0.1.0/beta-task: labels=[feature], todo, no deps
-- v0.1.0/gamma-task: labels=[needs-human], todo, no deps
-- v0.1.0/dep-parent: labels=[infrastructure], todo, no deps
-- v0.1.0/dep-child: labels=[], todo, depends_on=[dep-parent]
-- v0.2.0/delta-task: labels=[feature], todo, no deps
+- v0.1.0/alpha-task: labels=[infrastructure], status=todo, no deps
+- v0.1.0/beta-task: labels=[feature], status=todo, no deps
+- v0.1.0/gamma-task: labels=[needs-human], status=todo, no deps
+- v0.1.0/dep-root: labels=[infrastructure], status=done, no deps
+- v0.1.0/dep-child: labels=[], status=todo, depends_on=[dep-root] (pickable)
+- v0.1.0/dep-grandchild: labels=[], status=todo, depends_on=[dep-child] (NOT pickable)
+- v0.2.0/delta-task: labels=[feature], status=todo, no deps
 
-**Key test strategy:** Compose new filters with existing --tisket flag to verify positive filtering without spawning coordinators. Test negative cases via "no pickable tiskets" stderr message.
+**Pickable (no filter):** alpha-task, beta-task, gamma-task, dep-child, delta-task (5)
+**Not pickable:** dep-root (done), dep-grandchild (unresolved dep)
 
-**Files:**
-- clc/tests/missouri/coordinate-filter-setup/ — new state with 16 assertions
-- clc/tests/missouri/initialized/.missouri/missouri.yml — transition to new state
-- clc/src/coordinate.rs — implementation target (find_pickable_tiskets)
-- clc/src/cli.rs — new CLI flags
+**Key design choice:** dep-root is `done` so the dependency chain `dep-root → dep-child → dep-grandchild` tests both transitive walk AND pickability filtering. `--depends-on dep-root` scope = {dep-root, dep-child, dep-grandchild}, pickable = {dep-child}.
+
+**Files written:**
+- clc/tests/missouri/coordinate-filter-setup/.missouri/missouri.yml — 44 assertions
+- clc/tests/missouri/coordinate-filter-setup/.claude/settings.local.json
+- clc/tests/missouri/coordinate-filter-setup/Cargo.toml
+- clc/tests/missouri/coordinate-filter-setup/src/main.rs
+- clc/tests/missouri/initialized/.missouri/missouri.yml — added transition
+
+**Implementation targets:**
+- clc/src/cli.rs — add --label, --exclude-label, --project, --depends-on, --dry-run flags to Coordinate
 - clc/src/main.rs — wire new flags through cmd_coordinate
+- clc/src/coordinate.rs — extend find_pickable_tiskets with filters, add dry-run path
 
 **Implementation notes:**
-- repo.list_issues(project, None, false) already supports project filter
+- repo.list_issues(project, None, false) already supports project filter for list_issues
 - labels in issue.frontmatter.labels: Vec<String>
-- depends_on chain: walk transitive dependents scanning all issues
+- depends_on chain: walk transitive dependents scanning all issues' depends_on fields
 - Filters compose: label ∩ project ∩ depends-on scope, minus exclude-labels
+- --dry-run: print pickable IDs to stdout (one per line) and exit without spawning
+- "no pickable tiskets found" goes to stderr (existing behavior)

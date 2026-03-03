@@ -504,3 +504,33 @@ transitions:
           ignore: true
         - path: "tests/"
           ignore: true
+
+  - name: "setup coordinate filter fixtures"
+    command: >-
+      git init -q -b main &&
+      git -c user.name=test -c user.email=test@test add -A &&
+      git -c user.name=test -c user.email=test@test commit -q -m init &&
+      printf 'tisket_dir: .tisket\nadditional_instructions: ""\n' > tisket.yml &&
+      mkdir -p .tisket/v0.1.0 .tisket/v0.2.0 &&
+      printf 'name: v0.1.0\n' > .tisket/v0.1.0/project.yml &&
+      printf 'name: v0.2.0\n' > .tisket/v0.2.0/project.yml &&
+      printf -- '---\ntitle: "Alpha task"\nstatus: todo\npriority:\nassignee:\nlabels: [infrastructure]\ndepends_on: []\ncreated: "2025-01-01T00:00:00Z"\nupdated: "2025-01-01T00:00:00Z"\n---\n' > .tisket/v0.1.0/alpha-task.md &&
+      printf -- '---\ntitle: "Beta task"\nstatus: todo\npriority:\nassignee:\nlabels: [feature]\ndepends_on: []\ncreated: "2025-01-01T00:00:00Z"\nupdated: "2025-01-01T00:00:00Z"\n---\n' > .tisket/v0.1.0/beta-task.md &&
+      printf -- '---\ntitle: "Gamma task"\nstatus: todo\npriority:\nassignee:\nlabels: [needs-human]\ndepends_on: []\ncreated: "2025-01-01T00:00:00Z"\nupdated: "2025-01-01T00:00:00Z"\n---\n' > .tisket/v0.1.0/gamma-task.md &&
+      printf -- '---\ntitle: "Dep root"\nstatus: done\npriority:\nassignee:\nlabels: [infrastructure]\ndepends_on: []\ncreated: "2025-01-01T00:00:00Z"\nupdated: "2025-01-01T00:00:00Z"\n---\n' > .tisket/v0.1.0/dep-root.md &&
+      printf -- '---\ntitle: "Dep child"\nstatus: todo\npriority:\nassignee:\nlabels: []\ndepends_on: [dep-root]\ncreated: "2025-01-01T00:00:00Z"\nupdated: "2025-01-01T00:00:00Z"\n---\n' > .tisket/v0.1.0/dep-child.md &&
+      printf -- '---\ntitle: "Dep grandchild"\nstatus: todo\npriority:\nassignee:\nlabels: []\ndepends_on: [dep-child]\ncreated: "2025-01-01T00:00:00Z"\nupdated: "2025-01-01T00:00:00Z"\n---\n' > .tisket/v0.1.0/dep-grandchild.md &&
+      printf -- '---\ntitle: "Delta task"\nstatus: todo\npriority:\nassignee:\nlabels: [feature]\ndepends_on: []\ncreated: "2025-01-01T00:00:00Z"\nupdated: "2025-01-01T00:00:00Z"\n---\n' > .tisket/v0.2.0/delta-task.md
+    target: "../coordinate-filter-setup"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true
