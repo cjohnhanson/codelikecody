@@ -1,12 +1,12 @@
 ---
 title: "Coordinator filtering: dispatch by label, dependency chain, or project"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: []
 depends_on: []
-created: "2026-03-03T01:33:42Z"
-updated: "2026-03-03T01:33:42Z"
+created: 2026-03-03T01:33:42Z
+updated: "2026-03-03T03:02:26Z"
 ---
 
 ## Problem
