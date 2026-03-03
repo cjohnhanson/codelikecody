@@ -1,12 +1,12 @@
 ---
 title: "Coordinator worker lifecycle management: detect, resume, and recover stranded workers"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: []
 depends_on: []
 created: 2026-03-03T00:56:37Z
-updated: "2026-03-03T02:09:06Z"
+updated: "2026-03-03T02:26:46Z"
 ---
 
 ## Problem
