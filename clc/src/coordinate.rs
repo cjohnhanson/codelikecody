@@ -7,7 +7,9 @@
 use std::path::Path;
 
 use camino::Utf8Path;
+use serde::Deserialize;
 
+use crate::config::CoordinatorConfig;
 use crate::dispatch;
 use crate::error::Error;
 use crate::git;
@@ -23,6 +25,26 @@ pub struct CoordinateFilters<'a> {
     pub depends_on: Option<&'a str>,
     pub dry_run: bool,
     pub coordinator_id: Option<&'a str>,
+    pub auto_grant: &'a [String],
+    pub escalate_all: bool,
+    pub grant_config: Option<&'a str>,
+}
+
+/// Resolved permission policy for the coordinator.
+#[derive(Debug, Default)]
+pub struct PermissionPolicy {
+    pub auto_grant: Vec<String>,
+    pub always_escalate: Vec<String>,
+    pub escalate_all: bool,
+}
+
+/// External grant-config file format.
+#[derive(Debug, Deserialize)]
+struct GrantConfigFile {
+    #[serde(default)]
+    auto_grant: Vec<String>,
+    #[serde(default)]
+    always_escalate: Vec<String>,
 }
 
 pub fn coordinate(
@@ -31,6 +53,7 @@ pub fn coordinate(
     model: &str,
     filters: &CoordinateFilters<'_>,
     extra_allow: &[String],
+    coordinator_config: &CoordinatorConfig,
 ) -> Result<(), Error> {
     // Must be on trunk.
     let git_state = git::detect(project_dir, main_branch)
@@ -42,6 +65,9 @@ pub fn coordinate(
             git_state.branch
         )));
     }
+
+    // Resolve the permission policy early so errors surface before side effects.
+    let policy = resolve_policy(coordinator_config, filters)?;
 
     // Find pickable tiskets.
     let pickable = find_pickable_tiskets(
@@ -84,7 +110,7 @@ pub fn coordinate(
     // Build the initial prompt with pickable tiskets.
     let initial_prompt =
         build_coordinator_prompt(&pickable, filters.tisket, filters.coordinator_id);
-    let system_prompt = build_coordinator_system_prompt();
+    let system_prompt = build_coordinator_system_prompt(&policy);
 
     // Spawn coordinator as a worker on trunk.
     let pid = dispatch::spawn_worker_process(
@@ -101,6 +127,42 @@ pub fn coordinate(
     eprintln!("check output: clc worker coordinator check");
 
     Ok(())
+}
+
+/// Resolve the permission policy from config, CLI flags, and optional external file.
+///
+/// Merging order: config → grant-config file → CLI flags. Duplicates are preserved
+/// (the coordinator prompt consumes them as pattern lists, not sets).
+fn resolve_policy(
+    config: &CoordinatorConfig,
+    filters: &CoordinateFilters<'_>,
+) -> Result<PermissionPolicy, Error> {
+    let mut policy = PermissionPolicy {
+        auto_grant: config.auto_grant.clone(),
+        always_escalate: config.always_escalate.clone(),
+        escalate_all: filters.escalate_all,
+    };
+
+    // Merge from external grant-config file if provided.
+    if let Some(path) = filters.grant_config {
+        let grant_config = load_grant_config(path)?;
+        policy.auto_grant.extend(grant_config.auto_grant);
+        policy.always_escalate.extend(grant_config.always_escalate);
+    }
+
+    // Merge CLI --auto-grant flags.
+    policy.auto_grant.extend(filters.auto_grant.iter().cloned());
+
+    Ok(policy)
+}
+
+/// Load and parse an external grant-config YAML file.
+fn load_grant_config(path: &str) -> Result<GrantConfigFile, Error> {
+    let contents = std::fs::read_to_string(path)
+        .map_err(|e| Error::NonBlocking(format!("failed to read grant-config '{path}': {e}")))?;
+
+    serde_yml::from_str(&contents)
+        .map_err(|e| Error::NonBlocking(format!("invalid grant-config '{path}': {e}")))
 }
 
 fn find_pickable_tiskets(
@@ -251,9 +313,9 @@ fn build_coordinator_prompt(
     )
 }
 
-fn build_coordinator_system_prompt() -> String {
-    // NOTE: This is prompt content. Approved in this commit.
-    String::from(
+fn build_coordinator_system_prompt(policy: &PermissionPolicy) -> String {
+    // NOTE: This is prompt content. Approved by tisket spec for this feature.
+    let base = String::from(
         "You are the coordinator agent. You do not write code — you manage worker agents \
          that do. You run on the main branch. Workers run in worktrees.\n\n\
          Two CLI tools are available: `clc` (workflow engine) and `tisket` (issue tracker). \
@@ -277,8 +339,13 @@ fn build_coordinator_system_prompt() -> String {
          Grant with `clc permissions grant <id> \"<permission rule>\"`, then resume the worker. \
          If the request seems inappropriate or dangerous, escalate to the user with \
          `clc permissions escalate <id> \"<description>\"` instead of granting directly. \
-         The user can review pending escalations with `clc permissions inbox`.\n\n\
-         Missouri is the project's state-graph test framework. Tests live in `tests/missouri/` \
+         The user can review pending escalations with `clc permissions inbox`.",
+    );
+
+    let policy_section = format_policy_section(policy);
+
+    let rest = String::from(
+        "Missouri is the project's state-graph test framework. Tests live in `tests/missouri/` \
          as a directed graph of states. Each state is a directory with fixture files and a \
          `.missouri/missouri.yml` that defines assertions (invariants that must hold in that \
          state) and transitions (commands that move to the next state, with file comparators). \
@@ -311,7 +378,68 @@ fn build_coordinator_system_prompt() -> String {
          The user communicates with you via messages on stdin. When you receive a user \
          message, respond to it and act on their instructions. Between user messages, \
          continue monitoring active workers and landing completed ones.",
-    )
+    );
+
+    format!("{base}\n\n{policy_section}\n\n{rest}")
+}
+
+/// Format the permission policy as a prompt section for the coordinator.
+fn format_policy_section(policy: &PermissionPolicy) -> String {
+    use std::fmt::Write;
+
+    // NOTE: This is prompt content. Required by tisket spec:
+    // "The coordinator's system prompt includes its policy."
+    if policy.escalate_all {
+        return String::from(
+            "PERMISSION POLICY\n\n\
+             All permission requests must be escalated to the user. Do not grant any \
+             permission directly — always use `clc permissions escalate <id> \"<description>\"`.",
+        );
+    }
+
+    let has_auto_grant = !policy.auto_grant.is_empty();
+    let has_always_escalate = !policy.always_escalate.is_empty();
+
+    if !has_auto_grant && !has_always_escalate {
+        return String::from(
+            "PERMISSION POLICY\n\n\
+             No specific permission policy is configured. When a worker requests a permission, \
+             use your judgment. Bias toward escalation — grant only when the request is clearly \
+             safe and necessary for the worker's task. When in doubt, escalate.",
+        );
+    }
+
+    let mut section = String::from(
+        "PERMISSION POLICY\n\n\
+         When a worker requests a permission via `clc permissions request`:\n",
+    );
+
+    if has_auto_grant {
+        section.push_str(
+            "\nAuto-grant these patterns immediately \
+             (grant with `clc permissions grant` and resume without asking the user):\n",
+        );
+        for pattern in &policy.auto_grant {
+            let _ = writeln!(section, "- {pattern}");
+        }
+    }
+
+    if has_always_escalate {
+        section.push_str(
+            "\nAlways escalate these patterns to the user \
+             (never grant directly — use `clc permissions escalate`):\n",
+        );
+        for pattern in &policy.always_escalate {
+            let _ = writeln!(section, "- {pattern}");
+        }
+    }
+
+    section.push_str(
+        "\nFor requests that don't match either list, use your judgment with a bias \
+         toward escalation. Grant only when the request is clearly safe and necessary.",
+    );
+
+    section
 }
 
 fn read_pid(worker_dir: &Path) -> Option<i32> {

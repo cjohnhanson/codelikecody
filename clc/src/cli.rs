@@ -82,6 +82,15 @@ pub enum Command {
         /// Unique identity for this coordinator (e.g., coord-infra, coord-ui).
         #[arg(long)]
         id: Option<String>,
+        /// Permission pattern the coordinator can auto-grant to workers (repeatable).
+        #[arg(long)]
+        auto_grant: Vec<String>,
+        /// Escalate all permission requests to the user (conservative mode).
+        #[arg(long)]
+        escalate_all: bool,
+        /// Path to an external permission policy YAML file.
+        #[arg(long)]
+        grant_config: Option<String>,
     },
     /// Dispatch a worker: pickup tisket + spawn detached claude process.
     Dispatch {

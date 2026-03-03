@@ -12,6 +12,15 @@ pub struct PermissionsConfig {
     pub allow: Vec<String>,
 }
 
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct CoordinatorConfig {
+    #[serde(default)]
+    pub auto_grant: Vec<String>,
+
+    #[serde(default)]
+    pub always_escalate: Vec<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default = "default_main_branch")]
@@ -22,6 +31,9 @@ pub struct Config {
 
     #[serde(default)]
     pub permissions: PermissionsConfig,
+
+    #[serde(default)]
+    pub coordinator: CoordinatorConfig,
 }
 
 impl Default for Config {
@@ -30,6 +42,7 @@ impl Default for Config {
             main_branch: default_main_branch(),
             required_attempts: default_required_attempts(),
             permissions: PermissionsConfig::default(),
+            coordinator: CoordinatorConfig::default(),
         }
     }
 }

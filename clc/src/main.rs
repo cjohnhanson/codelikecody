@@ -63,6 +63,9 @@ fn main() {
             ref depends_on,
             dry_run,
             ref id,
+            ref auto_grant,
+            escalate_all,
+            ref grant_config,
         } => {
             let filters = coordinate::CoordinateFilters {
                 tisket: tisket.as_deref(),
@@ -72,6 +75,9 @@ fn main() {
                 depends_on: depends_on.as_deref(),
                 dry_run,
                 coordinator_id: id.as_deref(),
+                auto_grant,
+                escalate_all,
+                grant_config: grant_config.as_deref(),
             };
             cmd_coordinate(model, &filters)
         }
@@ -191,6 +197,7 @@ fn cmd_coordinate(model: &str, filters: &coordinate::CoordinateFilters<'_>) -> R
         model,
         filters,
         &cfg.permissions.allow,
+        &cfg.coordinator,
     )
 }
 
