@@ -138,3 +138,40 @@ assertions:
 
   - name: "tisket + depends-on rejects tisket outside chain"
     command: "clc coordinate --depends-on dep-root --tisket alpha-task --dry-run 2>&1 | grep -q 'not pickable'"
+
+  # --- Coordinator permission policy CLI flags ---
+  - name: "coordinate --help shows --auto-grant flag"
+    command: "clc coordinate --help | grep -q '\\-\\-auto-grant'"
+
+  - name: "coordinate --help shows --escalate-all flag"
+    command: "clc coordinate --help | grep -q '\\-\\-escalate-all'"
+
+  - name: "coordinate --help shows --grant-config flag"
+    command: "clc coordinate --help | grep -q '\\-\\-grant-config'"
+
+  - name: "dry-run with --auto-grant flag succeeds"
+    command: "clc coordinate --dry-run --auto-grant 'Bash(npm *)'"
+
+  - name: "dry-run with multiple --auto-grant flags succeeds"
+    command: "clc coordinate --dry-run --auto-grant 'Bash(npm *)' --auto-grant 'Bash(make *)'"
+
+  - name: "dry-run with --escalate-all flag succeeds"
+    command: "clc coordinate --dry-run --escalate-all"
+
+  - name: "dry-run with --escalate-all and --auto-grant succeeds"
+    command: "clc coordinate --dry-run --escalate-all --auto-grant 'Bash(npm *)'"
+
+  - name: "dry-run with --grant-config flag accepts path"
+    command: "printf 'auto_grant:\\n  - \"Bash(npm *)\"\\n' > /tmp/test-policy.yml && clc coordinate --dry-run --grant-config /tmp/test-policy.yml"
+
+  - name: "dry-run output unchanged by --auto-grant flag"
+    command: "test $(clc coordinate --dry-run --auto-grant 'Bash(npm *)' | wc -l | tr -d ' ') -eq 5"
+
+  - name: "dry-run output unchanged by --escalate-all flag"
+    command: "test $(clc coordinate --dry-run --escalate-all | wc -l | tr -d ' ') -eq 5"
+
+  - name: "grant-config with nonexistent file errors"
+    command: "! clc coordinate --dry-run --grant-config /tmp/no-such-policy.yml 2>&1"
+
+  - name: "grant-config with invalid YAML errors"
+    command: "printf '][not valid yaml{{{\\n' > /tmp/bad-policy.yml && ! clc coordinate --dry-run --grant-config /tmp/bad-policy.yml 2>&1"

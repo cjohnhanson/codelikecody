@@ -535,6 +535,16 @@ transitions:
         - path: "tisket.yml"
           ignore: true
 
+  - name: "add coordinator policy config"
+    command: "printf 'main_branch: main\ncoordinator:\n  auto_grant:\n    - \"Bash(cargo *)\"\n    - \"Bash(npm *)\"\n  always_escalate:\n    - \"Bash(rm *)\"\n    - \"Bash(git push *)\"\n' > .clc/config.yml"
+    target: "../coordinator-policy-config"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc"
+          ignore: true
+
   - name: "setup git repo with claim test fixtures"
     command: >-
       git init -q -b main &&
