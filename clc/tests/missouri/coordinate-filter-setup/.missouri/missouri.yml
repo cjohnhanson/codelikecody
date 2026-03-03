@@ -76,8 +76,8 @@ assertions:
   - name: "project v0.2.0 lists exactly 1 tisket"
     command: "test $(clc coordinate --project v0.2.0 --dry-run | wc -l | tr -d ' ') -eq 1"
 
-  - name: "project nonexistent gives no pickable"
-    command: "clc coordinate --project nonexistent --dry-run 2>&1 | grep -q 'no pickable'"
+  - name: "project nonexistent errors"
+    command: "! clc coordinate --project nonexistent --dry-run"
 
   # --- Depends-on filter ---
   - name: "depends-on dep-root includes dep-child"

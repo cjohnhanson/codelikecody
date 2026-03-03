@@ -64,6 +64,21 @@ pub enum Command {
         /// Only process this specific tisket (instead of all pickable ones).
         #[arg(long)]
         tisket: Option<String>,
+        /// Only tiskets with this label.
+        #[arg(long)]
+        label: Option<String>,
+        /// Skip tiskets with this label.
+        #[arg(long)]
+        exclude_label: Option<String>,
+        /// Only tiskets in this project.
+        #[arg(long)]
+        project: Option<String>,
+        /// Only tiskets in the dependency chain rooted at this id.
+        #[arg(long)]
+        depends_on: Option<String>,
+        /// List pickable tiskets and exit without spawning a coordinator.
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Dispatch a worker: pickup tisket + spawn detached claude process.
     Dispatch {

@@ -57,7 +57,20 @@ fn main() {
         cli::Command::Coordinate {
             ref model,
             ref tisket,
-        } => cmd_coordinate(model, tisket.as_deref()),
+            ref label,
+            ref exclude_label,
+            ref project,
+            ref depends_on,
+            dry_run,
+        } => cmd_coordinate(
+            model,
+            tisket.as_deref(),
+            label.as_deref(),
+            exclude_label.as_deref(),
+            project.as_deref(),
+            depends_on.as_deref(),
+            dry_run,
+        ),
         cli::Command::Home => cmd_home(),
         cli::Command::Merge { ref id } => cmd_merge(id),
         cli::Command::Pickup { ref id } => cmd_pickup(id),
@@ -161,14 +174,30 @@ fn cmd_status_set(target: &str) -> Result<(), Error> {
     phase::set(&cwd, target, cfg.required_attempts)
 }
 
-fn cmd_coordinate(model: &str, tisket: Option<&str>) -> Result<(), Error> {
+fn cmd_coordinate(
+    model: &str,
+    tisket: Option<&str>,
+    label: Option<&str>,
+    exclude_label: Option<&str>,
+    project: Option<&str>,
+    depends_on: Option<&str>,
+    dry_run: bool,
+) -> Result<(), Error> {
     let project_dir = std::env::current_dir()?;
     let cfg = config::load(&project_dir).unwrap_or_default();
+    let filters = coordinate::CoordinateFilters {
+        tisket,
+        label,
+        exclude_label,
+        project,
+        depends_on,
+        dry_run,
+    };
     coordinate::coordinate(
         &project_dir,
         &cfg.main_branch,
         model,
-        tisket,
+        &filters,
         &cfg.permissions.allow,
     )
 }

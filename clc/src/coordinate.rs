@@ -14,11 +14,21 @@ use crate::git;
 use crate::permissions;
 use crate::worker;
 
+/// Filter options for coordinator tisket selection.
+pub struct CoordinateFilters<'a> {
+    pub tisket: Option<&'a str>,
+    pub label: Option<&'a str>,
+    pub exclude_label: Option<&'a str>,
+    pub project: Option<&'a str>,
+    pub depends_on: Option<&'a str>,
+    pub dry_run: bool,
+}
+
 pub fn coordinate(
     project_dir: &Path,
     main_branch: &str,
     model: &str,
-    tisket_filter: Option<&str>,
+    filters: &CoordinateFilters<'_>,
     extra_allow: &[String],
 ) -> Result<(), Error> {
     // Must be on trunk.
@@ -32,6 +42,29 @@ pub fn coordinate(
         )));
     }
 
+    // Find pickable tiskets.
+    let pickable = find_pickable_tiskets(
+        project_dir,
+        filters.tisket,
+        filters.label,
+        filters.exclude_label,
+        filters.project,
+        filters.depends_on,
+    )?;
+
+    if pickable.is_empty() {
+        eprintln!("no pickable tiskets found");
+        return Ok(());
+    }
+
+    // Dry-run: print pickable list and exit.
+    if filters.dry_run {
+        for id in &pickable {
+            println!("{id}");
+        }
+        return Ok(());
+    }
+
     // Check if coordinator is already running.
     let coord_worker_dir = worker::worker_dir_for(project_dir, worker::COORDINATOR_ID);
     if coord_worker_dir.is_dir()
@@ -43,20 +76,12 @@ pub fn coordinate(
         )));
     }
 
-    // Find pickable tiskets.
-    let pickable = find_pickable_tiskets(project_dir, tisket_filter)?;
-
-    if pickable.is_empty() {
-        eprintln!("no pickable tiskets found");
-        return Ok(());
-    }
-
     // Seed baseline permissions so coordinator can function without
     // --dangerously-skip-permissions.
     permissions::seed_baseline(project_dir, extra_allow)?;
 
     // Build the initial prompt with pickable tiskets.
-    let initial_prompt = build_coordinator_prompt(&pickable, tisket_filter);
+    let initial_prompt = build_coordinator_prompt(&pickable, filters.tisket);
     let system_prompt = build_coordinator_system_prompt();
 
     // Spawn coordinator as a worker on trunk.
@@ -79,6 +104,10 @@ pub fn coordinate(
 fn find_pickable_tiskets(
     project_dir: &Path,
     tisket_filter: Option<&str>,
+    label: Option<&str>,
+    exclude_label: Option<&str>,
+    project: Option<&str>,
+    depends_on: Option<&str>,
 ) -> Result<Vec<String>, Error> {
     let utf8_dir = Utf8Path::new(
         project_dir
@@ -89,8 +118,18 @@ fn find_pickable_tiskets(
     let repo =
         tisket::Repo::open(utf8_dir).map_err(|e| Error::NonBlocking(format!("tisket: {e}")))?;
 
+    // Build the dependency chain scope if --depends-on is specified.
+    let chain_scope = if let Some(root_id) = depends_on {
+        // Verify the root tisket exists.
+        repo.find_issue(root_id)
+            .map_err(|_| Error::NonBlocking(format!("tisket '{root_id}' not found")))?;
+        Some(build_dependency_chain(&repo, root_id)?)
+    } else {
+        None
+    };
+
     let issues = repo
-        .list_issues(None, None, false)
+        .list_issues(project, None, false)
         .map_err(|e| Error::NonBlocking(format!("tisket: {e}")))?;
 
     let mut pickable: Vec<String> = issues
@@ -102,6 +141,16 @@ fn find_pickable_tiskets(
                     .map(|dep| dep.closed)
                     .unwrap_or(false)
             })
+        })
+        // Label filter: only tiskets with this label.
+        .filter(|i| label.is_none_or(|l| i.frontmatter.labels.iter().any(|il| il == l)))
+        // Exclude-label filter: skip tiskets with this label.
+        .filter(|i| exclude_label.is_none_or(|l| !i.frontmatter.labels.iter().any(|il| il == l)))
+        // Depends-on filter: only tiskets in the dependency chain scope.
+        .filter(|i| {
+            chain_scope
+                .as_ref()
+                .is_none_or(|scope| scope.contains(&i.id))
         })
         .map(|i| i.id)
         .collect();
@@ -118,6 +167,47 @@ fn find_pickable_tiskets(
     }
 
     Ok(pickable)
+}
+
+/// Build the set of tisket IDs in the dependency chain rooted at `root_id`.
+///
+/// The chain includes the root itself plus all tiskets that transitively
+/// depend on it (i.e., have it in their `depends_on`, directly or indirectly).
+fn build_dependency_chain(repo: &tisket::Repo, root_id: &str) -> Result<Vec<String>, Error> {
+    // Collect all issues across all projects to scan for dependents.
+    let all_issues = repo
+        .list_issues(None, None, false)
+        .map_err(|e| Error::NonBlocking(format!("tisket: {e}")))?;
+
+    // Also include closed issues to find the full chain.
+    let closed_issues = repo
+        .list_issues(None, None, true)
+        .map_err(|e| Error::NonBlocking(format!("tisket: {e}")))?;
+
+    // Build a map of id → depends_on for all issues.
+    let mut deps_map: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    for issue in all_issues.iter().chain(closed_issues.iter()) {
+        deps_map
+            .entry(issue.id.clone())
+            .or_default()
+            .clone_from(&issue.frontmatter.depends_on);
+    }
+
+    // Walk: start with root, find all IDs that transitively depend on it.
+    let mut chain = vec![root_id.to_string()];
+    let mut frontier = vec![root_id.to_string()];
+
+    while let Some(current) = frontier.pop() {
+        for (id, dep_list) in &deps_map {
+            if dep_list.iter().any(|d| d == &current) && !chain.contains(id) {
+                chain.push(id.clone());
+                frontier.push(id.clone());
+            }
+        }
+    }
+
+    Ok(chain)
 }
 
 fn build_coordinator_prompt(pickable: &[String], tisket_filter: Option<&str>) -> String {
