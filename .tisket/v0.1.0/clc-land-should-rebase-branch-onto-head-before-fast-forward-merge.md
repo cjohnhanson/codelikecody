@@ -1,12 +1,12 @@
 ---
 title: "clc land should rebase branch onto HEAD before fast-forward merge"
-status: in_progress
+status: todo
 priority:
 assignee:
 labels: [clc]
 depends_on: []
 created: 2026-03-02T06:00:00Z
-updated: "2026-03-03T02:08:45Z"
+updated: "2026-03-03T02:09:36Z"
 ---
 
 `clc land <id>` currently requires the worker branch to be a direct descendant of HEAD (fast-forward only). When main advances during a coordinator run — from tisket status updates, other workers landing, or manual commits — the branch falls behind and `clc land` fails.
