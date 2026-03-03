@@ -1,12 +1,12 @@
 ---
 title: "Git workflow: ephemeral integration branch with squash-merge landing"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: []
 depends_on: []
 created: 2026-03-03T00:48:45Z
-updated: "2026-03-03T01:35:54Z"
+updated: "2026-03-03T01:55:53Z"
 ---
 
 ## Problem
