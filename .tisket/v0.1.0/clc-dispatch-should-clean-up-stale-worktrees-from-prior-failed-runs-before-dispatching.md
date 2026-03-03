@@ -31,3 +31,29 @@ A worktree is stale if:
 ## Observed in
 
 Coordinator run on 2026-03-02: `clc dispatch refactor-missouri-sandbox-into-a-proper-backend-trait` failed because a stale worktree existed from a prior coordinator run. Required manual intervention (`rm -rf` + `git worktree prune` + `git branch -D`).
+
+## Scratch Notes
+
+### Test Design
+- Two missouri transitions added from `worker-stopped` → `redispatched-after-stale-cleanup`
+  1. "re-dispatch cleans up stale worktree with dead PID" — PID file exists, process dead
+  2. "re-dispatch cleans up stale worktree with no PID file" — PID file removed before dispatch
+- Both save old PID to `/tmp/missouri-stale-old-pid` for comparison
+- Target state `redispatched-after-stale-cleanup` verifies:
+  - Fresh worktree + branch created
+  - New worker alive with different PID
+  - Tisket in `in_progress`
+  - Still on main
+  - Worker infrastructure (pipe, stdout) exists
+
+### Key Implementation Notes
+- `is_pickable()` only matches Todo/Blocked/Paused — NOT InProgress
+- After first dispatch, tisket is `in_progress` → pickup would reject re-dispatch
+- Dispatch cleanup must handle: remove worktree dir, prune git worktree metadata, delete branch
+- Tisket status needs reset to `todo` (or pickup needs to tolerate in_progress for re-dispatch)
+- Relevant code: `dispatch.rs` lines 46-58, `gix_ops.rs` (remove_worktree, delete_branch)
+- `gix_ops::remove_worktree()` and `gix_ops::delete_branch()` already exist
+
+### Files Created/Modified
+- Created: `clc/tests/missouri/redispatched-after-stale-cleanup/` (state directory with assertions)
+- Modified: `clc/tests/missouri/worker-stopped/.missouri/missouri.yml` (added 2 transitions)

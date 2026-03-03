@@ -113,3 +113,39 @@ transitions:
           ignore: true
         - path: "tisket.yml"
           ignore: true
+
+  - name: "re-dispatch cleans up stale worktree with dead PID"
+    command: "cat .worktrees/test-feature/.clc/worker/pid > /tmp/missouri-stale-old-pid && clc dispatch test-feature --model haiku"
+    target: "../redispatched-after-stale-cleanup"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".worktrees/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true
+
+  - name: "re-dispatch cleans up stale worktree with no PID file"
+    command: "cat .worktrees/test-feature/.clc/worker/pid > /tmp/missouri-stale-old-pid && rm -f .worktrees/test-feature/.clc/worker/pid && clc dispatch test-feature --model haiku"
+    target: "../redispatched-after-stale-cleanup"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".worktrees/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true
