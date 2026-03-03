@@ -1,0 +1,21 @@
+assertions:
+  - name: "coordinator process is dead"
+    command: "! kill -0 $(cat .clc/coordinators/test-coord/pid) 2>/dev/null"
+
+  - name: "coordinator state directory still exists"
+    command: "test -d .clc/coordinators/test-coord"
+
+  - name: "clc coordinators does not show dead coordinator by default"
+    command: "! clc coordinators 2>&1 | grep -q test-coord"
+
+  - name: "clc coordinators --all shows dead coordinator"
+    command: "clc coordinators --all 2>&1 | grep -q test-coord"
+
+  - name: "clc coordinators --all shows coordinator as dead"
+    command: "clc coordinators --all 2>&1 | grep test-coord | grep -q dead"
+
+  - name: "clc coordinator test-coord log still works after stop"
+    command: "clc coordinator test-coord log | grep -qE 'system|text|raw'"
+
+  - name: "clc coordinator test-coord send fails after stop"
+    command: "clc coordinator test-coord send 'hello' 2>&1; test $? -ne 0"

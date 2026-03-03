@@ -568,3 +568,50 @@ transitions:
           ignore: true
         - path: "tisket.yml"
           ignore: true
+
+  - name: "setup coordinator registration for admin management"
+    command: >-
+      git init -q -b main &&
+      git -c user.name=test -c user.email=test@test add -A &&
+      git -c user.name=test -c user.email=test@test commit -q -m init &&
+      mkdir -p .clc/coordinators/test-coord &&
+      mkfifo .clc/coordinators/test-coord/stdin.pipe &&
+      (cat < .clc/coordinators/test-coord/stdin.pipe > /dev/null &) &&
+      printf '{"type":"system","subtype":"init","session_id":"test-session-123","tools":[],"model":"opus"}\n' > .clc/coordinators/test-coord/stdout.jsonl &&
+      printf '{"type":"assistant","message":{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"Coordinator starting..."}],"model":"claude-opus-4-6","stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}\n' >> .clc/coordinators/test-coord/stdout.jsonl &&
+      (sleep 3600 & echo $! > .clc/coordinators/test-coord/pid)
+    target: "../coordinator-registered"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+
+  - name: "setup coordinator with integration branch for landing"
+    command: >-
+      git init -q -b main &&
+      git -c user.name=test -c user.email=test@test add -A &&
+      git -c user.name=test -c user.email=test@test commit -q -m init &&
+      git checkout -q -B integrate/test-coord &&
+      echo 'new content' > integration-file.txt &&
+      git -c user.name=test -c user.email=test@test add integration-file.txt &&
+      git -c user.name=test -c user.email=test@test commit -q -m 'integration work' &&
+      git checkout -q main &&
+      mkdir -p .clc/coordinators/test-coord &&
+      echo 99999 > .clc/coordinators/test-coord/pid &&
+      printf '{"type":"system","subtype":"init","session_id":"test-session-123","tools":[],"model":"opus"}\n' > .clc/coordinators/test-coord/stdout.jsonl &&
+      echo 'integrate/test-coord' > .clc/coordinators/test-coord/branch
+    target: "../coordinator-with-integration"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: "integration-file.txt"
+          ignore: true

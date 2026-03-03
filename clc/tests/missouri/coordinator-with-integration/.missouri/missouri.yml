@@ -1,0 +1,39 @@
+assertions:
+  - name: "integration branch exists"
+    command: "git branch --list integrate/test-coord | grep -q integrate/test-coord"
+
+  - name: "integration branch has commits ahead of main"
+    command: "test $(git rev-list main..integrate/test-coord --count) -gt 0"
+
+  - name: "coordinator registration exists"
+    command: "test -d .clc/coordinators/test-coord"
+
+  - name: "coordinator registration stores branch name"
+    command: "grep -q 'integrate/test-coord' .clc/coordinators/test-coord/branch"
+
+  - name: "coordinator is dead (stopped before landing)"
+    command: "! kill -0 $(cat .clc/coordinators/test-coord/pid) 2>/dev/null"
+
+  - name: "main does not have integration file yet"
+    command: "! test -f integration-file.txt"
+
+transitions:
+  - name: "land the coordinator"
+    command: "clc coordinator test-coord land"
+    target: "../coordinator-landed"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".worktrees/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true
+        - path: "integration-file.txt"
+          ignore: true
