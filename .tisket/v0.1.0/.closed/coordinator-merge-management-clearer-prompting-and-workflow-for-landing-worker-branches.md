@@ -1,12 +1,12 @@
 ---
 title: "Coordinator merge management: clearer prompting and workflow for landing worker branches"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: []
 depends_on: []
 created: 2026-03-02T13:54:06Z
-updated: "2026-03-03T03:07:45Z"
+updated: "2026-03-03T03:11:25Z"
 ---
 
 Landing worker branches is a significant part of the coordinator's job but the current prompt barely covers it. The lifecycle says "Land completed work: `clc land <id>`" and that's it. In practice, landing involves:
