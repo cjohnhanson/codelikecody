@@ -1,12 +1,12 @@
 ---
 title: "clc dispatch should clean up stale worktrees from prior failed runs before dispatching"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: []
 depends_on: []
-created: "2026-03-02T04:21:00Z"
-updated: "2026-03-02T04:21:00Z"
+created: 2026-03-02T04:21:00Z
+updated: "2026-03-03T02:09:06Z"
 ---
 
 When `clc dispatch <id>` finds a pre-existing worktree and branch from a prior failed run, it fails. The coordinator can't clean these up because `git branch -D` and worktree removal are blocked on trunk.
