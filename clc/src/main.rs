@@ -65,7 +65,11 @@ fn main() {
         cli::Command::Prime => cmd_prime(),
         cli::Command::Config { ref action } => cmd_config(action),
         cli::Command::Dispatch { ref id, ref model } => cmd_dispatch(id, model),
-        cli::Command::Workers { all, prune } => cmd_workers(all, prune),
+        cli::Command::Workers {
+            all,
+            prune,
+            stranded,
+        } => cmd_workers(all, prune, stranded),
         cli::Command::Worker { ref id, ref action } => cmd_worker(id, action),
         cli::Command::Land { ref id } => cmd_land(id),
         cli::Command::Tisket { command } => cmd_tisket(command),
@@ -250,10 +254,12 @@ fn cmd_dispatch(id: &str, model: &str) -> Result<(), Error> {
     )
 }
 
-fn cmd_workers(all: bool, prune: bool) -> Result<(), Error> {
+fn cmd_workers(all: bool, prune: bool, stranded: bool) -> Result<(), Error> {
     let project_dir = std::env::current_dir()?;
     if prune {
         worker::prune_workers(&project_dir)
+    } else if stranded {
+        worker::list_stranded(&project_dir)
     } else {
         worker::list_workers(&project_dir, all)
     }
@@ -271,6 +277,10 @@ fn cmd_worker(id: &str, action: &cli::WorkerAction) -> Result<(), Error> {
             worker::supervise(&project_dir, id, *max_resumes)
         }
         cli::WorkerAction::Raw { lines } => worker::raw(&project_dir, id, *lines),
+        cli::WorkerAction::Recover => {
+            let cfg = config::load(&project_dir).unwrap_or_default();
+            worker::recover(&project_dir, id, &cfg.main_branch)
+        }
     }
 }
 

@@ -470,6 +470,125 @@ pub fn land(project_dir: &Path, id: &str, main_branch: &str) -> Result<(), Error
     Ok(())
 }
 
+/// List stranded workers: worktrees with no alive process and a phase set.
+/// These are workers that did work but died before completing the phase ceremony.
+pub fn list_stranded(project_dir: &Path) -> Result<(), Error> {
+    let stranded = collect_stranded(project_dir)?;
+
+    if stranded.is_empty() {
+        eprintln!("no stranded workers");
+        return Ok(());
+    }
+
+    for s in &stranded {
+        println!("{}\t{}\t{}", s.id, s.phase, s.status);
+    }
+
+    Ok(())
+}
+
+struct StrandedInfo {
+    id: String,
+    phase: String,
+    status: String,
+}
+
+/// Scan worktrees for stranded workers: worktree exists, no alive process, phase is set.
+fn collect_stranded(project_dir: &Path) -> Result<Vec<StrandedInfo>, Error> {
+    let worktrees_dir = project_dir.join(".worktrees");
+    if !worktrees_dir.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    let mut stranded = Vec::new();
+
+    for entry in fs::read_dir(&worktrees_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+
+        let id = entry.file_name().to_str().unwrap_or("unknown").to_string();
+
+        // Check if a worker process is alive for this worktree.
+        let wdir = path.join(".clc").join(WORKER_DIR);
+        if let Some(pid) = read_pid(&wdir)
+            && is_process_alive(pid)
+        {
+            continue; // Worker is alive, not stranded.
+        }
+
+        // Load phase from the worktree.
+        let Ok(Some(phase)) = crate::phase::load(&path) else {
+            continue; // No phase set — not a managed worktree.
+        };
+
+        // Skip workers already at done — they just need landing, not recovery.
+        if phase == crate::phase::Phase::Done {
+            continue;
+        }
+
+        let status = if wdir.is_dir() {
+            "dead (worker state exists)".to_string()
+        } else {
+            "dead (no worker state)".to_string()
+        };
+
+        stranded.push(StrandedInfo {
+            id,
+            phase: phase.to_string(),
+            status,
+        });
+    }
+
+    Ok(stranded)
+}
+
+/// Recover a stranded worker: run the done ceremony on its worktree without re-dispatching.
+/// The worker must be dead and at the `green` phase.
+pub fn recover(project_dir: &Path, id: &str, main_branch: &str) -> Result<(), Error> {
+    let work_dir = working_dir_for(project_dir, id);
+    if !work_dir.is_dir() {
+        return Err(Error::NonBlocking(format!(
+            "no working directory for '{id}'"
+        )));
+    }
+
+    // Must not be alive.
+    let wdir = worker_dir_for(project_dir, id);
+    if let Some(pid) = read_pid(&wdir)
+        && is_process_alive(pid)
+    {
+        return Err(Error::NonBlocking(format!(
+            "worker '{id}' is still alive (pid {pid}) — stop it first"
+        )));
+    }
+
+    // Check phase.
+    let phase = crate::phase::load(&work_dir)?
+        .ok_or_else(|| Error::NonBlocking(format!("no phase set for worker '{id}'")))?;
+
+    if phase == crate::phase::Phase::Done {
+        return Err(Error::NonBlocking(format!(
+            "worker '{id}' is already done — use `clc land {id}` to merge"
+        )));
+    }
+
+    if phase != crate::phase::Phase::Green {
+        return Err(Error::NonBlocking(format!(
+            "worker '{id}' is at phase '{phase}', not 'green' — use `clc worker {id} resume` to continue the work"
+        )));
+    }
+
+    // Run the done ceremony on the worktree.
+    crate::done::done(&work_dir, main_branch)?;
+
+    eprintln!("recovered worker '{id}' — phase advanced to done");
+
+    Ok(())
+}
+
 // --- Helpers ---
 
 fn worker_stdout_path(project_dir: &Path, id: &str) -> std::path::PathBuf {

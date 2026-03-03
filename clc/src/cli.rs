@@ -81,6 +81,9 @@ pub enum Command {
         /// Remove worker state files for dead workers.
         #[arg(long)]
         prune: bool,
+        /// Show stranded workers: worktrees with no alive process and a phase set.
+        #[arg(long)]
+        stranded: bool,
     },
     /// Interact with a specific worker.
     Worker {
@@ -185,6 +188,8 @@ pub enum WorkerAction {
         #[arg(long, default_value = "10")]
         lines: usize,
     },
+    /// Recover a stranded worker: finalize work without re-dispatching.
+    Recover,
 }
 
 #[derive(Subcommand)]
