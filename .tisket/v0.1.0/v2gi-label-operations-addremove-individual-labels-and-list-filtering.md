@@ -1,12 +1,12 @@
 ---
 title: "Label operations: add/remove individual labels and list filtering"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [tisket, ergonomics]
 depends_on: []
-created: "2026-03-05T04:31:01Z"
-updated: "2026-03-05T04:31:01Z"
+created: 2026-03-05T04:31:01Z
+updated: "2026-03-05T04:33:04Z"
 ---
 
 ## Problem
@@ -33,3 +33,5 @@ Listing by label requires grepping output.
 - `--add-label` on issue that already has it: no duplicate
 - `--remove-label` on issue that doesn't have it: no error
 - `tisket issue list --label foo` shows only issues with that label
+
+## Scratch Notes
