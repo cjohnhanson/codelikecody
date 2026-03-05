@@ -45,3 +45,12 @@ Auto-creates `## Scratch Notes` heading on first write if the section doesn't ex
 - Existing body content outside scratch section is preserved
 
 ## Scratch Notes
+
+### Session 1
+- Missouri tests written in tisket/tests/missouri/scratch-*
+- State graph: scratch-no-section → scratch-appended → scratch-appended-twice
+                                   → scratch-written → scratch-write-then-append
+                                   → scratch-cleared
+- Tests cover: read empty, append creates section, append adds, write replaces, clear wipes, body preserved
+- No helper scripts needed — all commands are direct tisket CLI calls
+- Next: advance phase, implement scratch subcommand in cli.rs + repo.rs
