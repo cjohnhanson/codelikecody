@@ -323,7 +323,7 @@ fn maybe_bootstrap_phase(
         if let Some(s) = cwd.to_str()
             && let Ok(repo) = ::tisket::Repo::open(Utf8Path::new(s))
         {
-            let _ = repo.edit_issue(&issue_id, Some("in_progress"), None);
+            let _ = repo.edit_issue(&issue_id, Some("in_progress"), None, None);
         }
         Some(phase::Phase::TestsUnwritten)
     } else {

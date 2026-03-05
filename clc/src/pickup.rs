@@ -63,7 +63,7 @@ pub fn pickup(
     // Set tisket status to in_progress (and assignee if coordinator) and commit
     // on trunk. This must happen BEFORE creating the worktree so the branch
     // forks from a HEAD that includes the status change.
-    repo.edit_issue(id, Some("in_progress"), coordinator_id)
+    repo.edit_issue(id, Some("in_progress"), coordinator_id, None)
         .map_err(|e| Error::NonBlocking(format!("failed to update tisket status: {e}")))?;
 
     repo.ensure_scratch_notes(id)
