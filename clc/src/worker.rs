@@ -581,6 +581,12 @@ pub fn recover(project_dir: &Path, id: &str, main_branch: &str) -> Result<(), Er
         )));
     }
 
+    // Advance through review phases to done (manual recovery bypasses coordinator review).
+    crate::phase::set(&work_dir, "review-requested", 1)?;
+    crate::phase::set(&work_dir, "in-review", 1)?;
+    crate::phase::set(&work_dir, "reviewed", 1)?;
+    crate::phase::set(&work_dir, "done", 1)?;
+
     // Run the done ceremony on the worktree.
     crate::done::done(&work_dir, main_branch)?;
 

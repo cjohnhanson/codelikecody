@@ -17,17 +17,13 @@ pub fn done(project_dir: &Path, main_branch: &str) -> Result<(), Error> {
         ));
     }
 
-    // Phase must be green.
+    // Phase must be done (coordinator advances to done before calling `clc done`).
     let current_phase = phase::load(project_dir)?
         .ok_or_else(|| Error::NonBlocking("no phase set — nothing to finalize".into()))?;
 
-    if current_phase == Phase::Done {
-        return Err(Error::NonBlocking("already done".into()));
-    }
-
-    if current_phase != Phase::Green {
+    if current_phase != Phase::Done {
         return Err(Error::NonBlocking(format!(
-            "phase must be 'green' to finalize, currently '{current_phase}'"
+            "phase must be 'done' to finalize, currently '{current_phase}'"
         )));
     }
 
@@ -39,9 +35,6 @@ pub fn done(project_dir: &Path, main_branch: &str) -> Result<(), Error> {
                 .into(),
         ));
     }
-
-    // Advance phase to done (filesystem only — .clc/state is never tracked by git).
-    phase::set(project_dir, "done", 1)?;
 
     // Close the tisket issue (branch name = issue ID) and commit the change.
     let utf8_dir = Utf8Path::new(
@@ -57,7 +50,12 @@ pub fn done(project_dir: &Path, main_branch: &str) -> Result<(), Error> {
                 let msg = format!("clc: finalize {}", git_state.branch);
                 crate::gix_ops::commit_paths(project_dir, &msg, &[".tisket/"])?;
             }
-            Err(tisket::Error::IssueNotFound(_) | tisket::Error::IssueAlreadyClosed(_)) => {}
+            Err(tisket::Error::IssueNotFound(_)) => {}
+            Err(tisket::Error::IssueAlreadyClosed(_)) => {
+                return Err(Error::NonBlocking(format!(
+                    "already done — tisket '{issue_id}' is already closed"
+                )));
+            }
             Err(e) => {
                 return Err(Error::NonBlocking(format!(
                     "failed to close tisket '{issue_id}': {e}"

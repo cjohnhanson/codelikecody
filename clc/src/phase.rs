@@ -14,6 +14,9 @@ pub enum Phase {
     Red,
     Implementing,
     Green,
+    ReviewRequested,
+    InReview,
+    Reviewed,
     Done,
 }
 
@@ -24,6 +27,9 @@ impl Phase {
         Self::Red,
         Self::Implementing,
         Self::Green,
+        Self::ReviewRequested,
+        Self::InReview,
+        Self::Reviewed,
         Self::Done,
     ];
 
@@ -46,6 +52,9 @@ impl fmt::Display for Phase {
             Self::Red => "red",
             Self::Implementing => "implementing",
             Self::Green => "green",
+            Self::ReviewRequested => "review-requested",
+            Self::InReview => "in-review",
+            Self::Reviewed => "reviewed",
             Self::Done => "done",
         };
         f.write_str(s)
@@ -62,6 +71,9 @@ impl FromStr for Phase {
             "red" => Ok(Self::Red),
             "implementing" => Ok(Self::Implementing),
             "green" => Ok(Self::Green),
+            "review-requested" => Ok(Self::ReviewRequested),
+            "in-review" => Ok(Self::InReview),
+            "reviewed" => Ok(Self::Reviewed),
             "done" => Ok(Self::Done),
             _ => Err(Error::NonBlocking(format!("unknown phase: {s}"))),
         }
@@ -177,6 +189,43 @@ pub fn set(project_dir: &Path, target: &str, required_attempts: u32) -> Result<(
 
     // Transition succeeds — write new phase with attempts reset.
     write_state(project_dir, target_phase, 0)
+}
+
+fn write_state(project_dir: &Path, phase: Phase, attempts: u32) -> Result<(), Error> {
+    use std::fmt::Write;
+
+    let clc_dir = project_dir.join(".clc");
+    std::fs::create_dir_all(&clc_dir)
+        .map_err(|e| Error::NonBlocking(format!("failed to create .clc dir: {e}")))?;
+    let state_path = clc_dir.join(STATE_FILENAME);
+
+    // Preserve non-phase/non-attempts lines (e.g., "untracked: true").
+    let existing = if state_path.exists() {
+        std::fs::read_to_string(&state_path).unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    let mut content = String::new();
+    let _ = writeln!(content, "phase: {phase}");
+    if attempts > 0 {
+        let _ = writeln!(content, "attempts: {attempts}");
+    }
+
+    // Carry forward lines that aren't phase or attempts.
+    for line in existing.lines() {
+        if !line.starts_with("phase:") && !line.starts_with("attempts:") && !line.is_empty() {
+            content.push_str(line);
+            content.push('\n');
+        }
+    }
+
+    std::fs::write(&state_path, content).map_err(|e| {
+        Error::NonBlocking(format!(
+            "failed to write state {}: {e}",
+            state_path.display()
+        ))
+    })
 }
 
 #[cfg(test)]
@@ -349,41 +398,4 @@ mod tests {
             assert_eq!(parsed, phase, "roundtrip failed for {s}");
         }
     }
-}
-
-fn write_state(project_dir: &Path, phase: Phase, attempts: u32) -> Result<(), Error> {
-    use std::fmt::Write;
-
-    let clc_dir = project_dir.join(".clc");
-    std::fs::create_dir_all(&clc_dir)
-        .map_err(|e| Error::NonBlocking(format!("failed to create .clc dir: {e}")))?;
-    let state_path = clc_dir.join(STATE_FILENAME);
-
-    // Preserve non-phase/non-attempts lines (e.g., "untracked: true").
-    let existing = if state_path.exists() {
-        std::fs::read_to_string(&state_path).unwrap_or_default()
-    } else {
-        String::new()
-    };
-
-    let mut content = String::new();
-    let _ = writeln!(content, "phase: {phase}");
-    if attempts > 0 {
-        let _ = writeln!(content, "attempts: {attempts}");
-    }
-
-    // Carry forward lines that aren't phase or attempts.
-    for line in existing.lines() {
-        if !line.starts_with("phase:") && !line.starts_with("attempts:") && !line.is_empty() {
-            content.push_str(line);
-            content.push('\n');
-        }
-    }
-
-    std::fs::write(&state_path, content).map_err(|e| {
-        Error::NonBlocking(format!(
-            "failed to write state {}: {e}",
-            state_path.display()
-        ))
-    })
 }

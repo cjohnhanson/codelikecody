@@ -69,7 +69,9 @@ fn check_stop(git: Option<&GitState>, phase: Option<Phase>) -> Response {
         None => "No phase set — work has not started. \
                  Set a phase with `clc status set tests-unwritten` or run `clc pickup`."
             .to_string(),
-        Some(Phase::Done) => return Response::Passthrough,
+        Some(Phase::Done | Phase::ReviewRequested | Phase::Reviewed) => {
+            return Response::Passthrough;
+        }
         Some(current_phase) => format!(
             "Work is not complete. Current phase: {current_phase}. \
              Run `clc done` to finalize."
@@ -120,10 +122,14 @@ fn check_tool_use(
     let current_phase = phase.unwrap_or(Phase::TestsUnwritten);
 
     match current_phase {
-        Phase::Implementing => Response::Passthrough,
-        Phase::TestsUnwritten | Phase::TestsWritten | Phase::Red | Phase::Green | Phase::Done => {
-            check_phase_restricted(tool_name, tool_input, current_phase)
-        }
+        Phase::Implementing | Phase::InReview => Response::Passthrough,
+        Phase::TestsUnwritten
+        | Phase::TestsWritten
+        | Phase::Red
+        | Phase::Green
+        | Phase::ReviewRequested
+        | Phase::Reviewed
+        | Phase::Done => check_phase_restricted(tool_name, tool_input, current_phase),
     }
 }
 
@@ -243,7 +249,7 @@ mod tests {
     #[test]
     fn stop_blocked_at_in_review() {
         let git = feature_branch();
-        let resp = evaluate(&stop_event(), Some(&git), Some(Phase::InReview));
+        let resp = check_stop(Some(&git), Some(Phase::InReview));
         assert!(matches!(resp, Response::Block { .. }));
     }
 
@@ -261,7 +267,7 @@ mod tests {
     #[test]
     fn stop_blocked_at_green() {
         let git = feature_branch();
-        let resp = evaluate(&stop_event(), Some(&git), Some(Phase::Green));
+        let resp = check_stop(Some(&git), Some(Phase::Green));
         assert!(matches!(resp, Response::Block { .. }));
     }
 
@@ -279,7 +285,12 @@ mod tests {
     #[test]
     fn edit_src_blocked_in_review_requested() {
         let git = feature_branch();
-        let resp = evaluate(&edit_src_event(), Some(&git), Some(Phase::ReviewRequested));
+        let resp = check_tool_use(
+            "Edit",
+            &json!({"file_path": "src/main.rs"}),
+            Some(&git),
+            Some(Phase::ReviewRequested),
+        );
         assert!(matches!(resp, Response::Block { .. }));
     }
 
@@ -295,7 +306,12 @@ mod tests {
     #[test]
     fn edit_src_blocked_in_reviewed() {
         let git = feature_branch();
-        let resp = evaluate(&edit_src_event(), Some(&git), Some(Phase::Reviewed));
+        let resp = check_tool_use(
+            "Edit",
+            &json!({"file_path": "src/main.rs"}),
+            Some(&git),
+            Some(Phase::Reviewed),
+        );
         assert!(matches!(resp, Response::Block { .. }));
     }
 
