@@ -1,12 +1,12 @@
 ---
 title: "Short ID prefix for tisket filenames to enable human-friendly references"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: [tisket]
 depends_on: []
 created: 2026-03-02T13:54:05Z
-updated: "2026-03-05T03:23:56Z"
+updated: "2026-03-05T04:05:35Z"
 ---
 
 Tisket IDs are slug-ified titles, which means they're accurate but brutal to type and reference in conversation. Something like `clc-dispatch-should-clean-up-stale-worktrees-from-prior-failed-runs-before-dispatching` is fine for machines but unusable for humans.
