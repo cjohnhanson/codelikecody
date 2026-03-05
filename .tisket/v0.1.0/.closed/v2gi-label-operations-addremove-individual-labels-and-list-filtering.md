@@ -1,12 +1,12 @@
 ---
 title: "Label operations: add/remove individual labels and list filtering"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: [tisket, ergonomics]
 depends_on: []
 created: 2026-03-05T04:31:01Z
-updated: "2026-03-05T04:33:04Z"
+updated: "2026-03-05T05:04:07Z"
 ---
 
 ## Problem
