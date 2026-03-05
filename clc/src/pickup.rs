@@ -65,13 +65,11 @@ pub fn pickup(
     // forks from a HEAD that includes the status change.
     repo.edit_issue(
         id,
-        Some("in_progress"),
-        coordinator_id,
-        None,
-        None,
-        None,
-        None,
-        None,
+        tisket::EditIssueOptions {
+            status: Some("in_progress"),
+            assignee: coordinator_id,
+            ..Default::default()
+        },
     )
     .map_err(|e| Error::NonBlocking(format!("failed to update tisket status: {e}")))?;
 

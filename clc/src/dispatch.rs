@@ -197,8 +197,14 @@ fn cleanup_stale_worktree(project_dir: &Path, worktree_dir: &Path, id: &str) -> 
         && !issue.frontmatter.status.is_pickable()
         && !issue.frontmatter.status.is_terminal()
     {
-        repo.edit_issue(id, Some("todo"), None, None, None, None, None, None)
-            .map_err(|e| Error::NonBlocking(format!("failed to reset tisket status: {e}")))?;
+        repo.edit_issue(
+            id,
+            tisket::EditIssueOptions {
+                status: Some("todo"),
+                ..Default::default()
+            },
+        )
+        .map_err(|e| Error::NonBlocking(format!("failed to reset tisket status: {e}")))?;
         // Commit the status reset on trunk so pickup sees it.
         crate::gix_ops::commit_paths(
             project_dir,

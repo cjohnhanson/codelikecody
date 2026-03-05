@@ -32,3 +32,29 @@ Agents try `-b "body text"` every time. Title is positional-only, body requires 
 - Close with `-p v0.1.0 <id>` works
 
 ## Scratch Notes
+
+### Tests written (phase: tests-written)
+
+**Bug analysis:**
+- Label edit: cli.rs:321 calls `repo.edit_issue()` but never passes labels/title/priority/assignee. The `edit_issue` method in repo.rs:509 doesn't accept those params either. Two fixes needed: pass args through cli.rs, expand edit_issue signature.
+- Slug: slug.rs:49 only treats ` `, `-`, `_` as separators. All other punctuation (`.`, `,`, `!`, etc.) is silently dropped. Fix: treat any non-alphanumeric char as a separator.
+- Body: IssueCreateArgs has no body/body_file fields. Need to add them and wire through to create_issue + serialize_issue.
+- Close -p: IssueCloseArgs has no project field. Need to add it and use it in resolve_id lookup.
+
+**Missouri test states created:**
+- `issue-labels-edited` — target for `tisket issue edit -l foo,bar`
+- `issue-closed-via-project` — target for `tisket issue close -p bugs`
+- `has-issue-with-body-flag` — target for `--body` create
+- `has-issue-with-body-file` — target for `--body-file` create
+
+**Helper scripts created:**
+- `verify-slug-punctuation` — creates issue, checks slug matches expected
+- `create-issue-with-body-file` — writes temp file, creates issue with --body-file
+
+**Unit tests added:**
+- `slug.rs::punctuation_replaced_with_hyphens` — 5 assertions for punctuation → hyphen behavior
+
+**Key files for implementation:**
+- tisket/src/cli.rs — IssueCreateArgs, IssueCloseArgs, IssueEditArgs, run_command
+- tisket/src/slug.rs — slugify function
+- tisket/src/repo.rs — edit_issue, close_issue, create_issue, CreateIssueOptions
