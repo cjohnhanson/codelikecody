@@ -3,7 +3,7 @@ title: "Short ID prefix for tisket filenames to enable human-friendly references
 status: todo
 priority:
 assignee:
-labels: []
+labels: [tisket]
 depends_on: []
 created: 2026-03-02T13:54:05Z
 updated: "2026-03-05T03:22:00Z"
