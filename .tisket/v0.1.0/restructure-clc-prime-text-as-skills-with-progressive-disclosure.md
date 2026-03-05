@@ -96,3 +96,14 @@ root (ambient, ~30 lines)
 The mechanism for traversal is `clc prime --section <path>` at the CLI level, and phase-triggered injection at the hook level. But the tree is always complete — nothing is hidden, just deferred until the agent reaches for it or the context makes it relevant.
 
 This is the same pattern as Anthropic's skill system: description → full content → supporting files. Applied recursively.
+
+## Untracked mode: stealth constraint
+
+When a project is initialized with `clc init --untracked`, the `.clc/` directory is excluded from git via `.git/info/exclude`. The agent's workflow tooling is invisible to the project's version control.
+
+The prime must communicate this constraint:
+- Do not mention clc, tisket, missouri, phases, or any workflow tooling in commit messages, PR descriptions, documentation, or any content that enters the project's git history
+- Commit messages should read as if a human wrote them without tooling assistance
+- The `is_untracked` flag is already available via `.clc/state` — prime assembly should check it and inject the stealth constraint when true
+
+This is not about the tree restructure per se, but it's a prime content gap that should be addressed in the same pass.
