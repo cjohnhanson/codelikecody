@@ -1,12 +1,12 @@
 ---
 title: "tisket scratch subcommand for agent working memory"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: [tisket, ergonomics]
 depends_on: []
 created: 2026-03-05T04:30:56Z
-updated: "2026-03-05T04:33:02Z"
+updated: "2026-03-05T04:42:14Z"
 ---
 
 ## Problem
