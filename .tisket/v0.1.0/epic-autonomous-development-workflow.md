@@ -1,12 +1,12 @@
 ---
 title: "Epic: autonomous development workflow"
-status: todo
+status: done
 priority:
 assignee:
 labels: []
 depends_on: []
 created: 2026-03-03T01:33:49Z
-updated: "2026-03-03T01:35:02Z"
+updated: "2026-03-05T04:17:54Z"
 ---
 
 ## Vision

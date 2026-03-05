@@ -1,12 +1,12 @@
 ---
 title: "Expressive tisket CLI: all operations without file reads or writes"
-status: todo
+status: done
 priority: 3
 assignee:
 labels: [tisket, ergonomics]
 depends_on: []
-created: "2026-03-05T04:15:00Z"
-updated: "2026-03-05T04:15:00Z"
+created: 2026-03-05T04:15:00Z
+updated: "2026-03-05T04:31:53Z"
 ---
 
 ## Problem

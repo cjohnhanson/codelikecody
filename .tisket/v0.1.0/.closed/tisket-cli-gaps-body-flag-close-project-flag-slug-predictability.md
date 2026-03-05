@@ -1,12 +1,12 @@
 ---
 title: "tisket CLI gaps: body flag, close project flag, slug predictability"
-status: todo
+status: done
 priority: 3
 assignee:
 labels: [tisket, ergonomics]
 depends_on: []
-created: "2026-03-05T04:15:00Z"
-updated: "2026-03-05T04:15:00Z"
+created: 2026-03-05T04:15:00Z
+updated: "2026-03-05T04:31:53Z"
 ---
 
 Spun out from agent-ergonomics tracking tisket. These are specific tisket CLI gaps that agents hit repeatedly.
