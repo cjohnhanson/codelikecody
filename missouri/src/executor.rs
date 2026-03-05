@@ -30,6 +30,13 @@ pub trait Backend: std::fmt::Debug + Send + Sync {
         env: &BTreeMap<String, String>,
         path_env: &str,
     ) -> Command;
+
+    /// Pre-warm the backend so parallel invocations don't race on shared state.
+    /// Default is a no-op; NixBackend uses this to populate the nix store cache
+    /// before paths execute concurrently.
+    fn warm(&self) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 /// No sandbox — env_clear + manual PATH construction.
@@ -72,12 +79,19 @@ impl Backend for BareBackend {
 }
 
 /// Nix shell sandbox: commands run inside `nix shell nixpkgs#pkg1 ... --command`.
+///
+/// During warm-up, resolves `nixpkgs` to a pinned flake URL (with commit hash)
+/// and uses `--no-registries` for all subsequent commands. This prevents parallel
+/// paths from racing on the flake registry file.
 #[derive(Debug)]
 pub struct NixBackend {
     /// Absolute path to the `nix` binary.
     pub nix_bin: Utf8PathBuf,
     /// Package names to provide via nixpkgs.
     pub packages: Vec<String>,
+    /// Pinned nixpkgs flake URL (resolved during warm-up).
+    /// When set, used instead of bare `nixpkgs` to avoid registry lookups.
+    pinned_nixpkgs: Option<String>,
 }
 
 impl NixBackend {
@@ -85,15 +99,65 @@ impl NixBackend {
         let mut args: Vec<String> = vec!["shell".into()];
         args.push("--extra-experimental-features".into());
         args.push("nix-command flakes".into());
+        if self.pinned_nixpkgs.is_some() {
+            args.push("--no-registries".into());
+        }
+        let flake_ref = self.pinned_nixpkgs.as_deref().unwrap_or("nixpkgs");
         for pkg in &self.packages {
-            args.push(format!("nixpkgs#{pkg}"));
+            args.push(format!("{flake_ref}#{pkg}"));
         }
         args.push("--command".into());
         args
     }
+
+    /// Resolve nixpkgs to a pinned flake URL, then run a no-op command to
+    /// populate the nix store. After this, parallel invocations use the
+    /// pinned URL with `--no-registries` to avoid the flake registry entirely.
+    fn warm_cache(&mut self) -> Result<(), String> {
+        // Resolve nixpkgs → pinned URL with commit hash
+        let output = std::process::Command::new(self.nix_bin.as_str())
+            .args([
+                "flake",
+                "metadata",
+                "nixpkgs",
+                "--json",
+                "--extra-experimental-features",
+                "nix-command flakes",
+            ])
+            .output()
+            .map_err(|e| format!("failed to resolve nixpkgs: {e}"))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("failed to resolve nixpkgs: {stderr}"));
+        }
+        let metadata: serde_json::Value = serde_json::from_slice(&output.stdout)
+            .map_err(|e| format!("failed to parse nixpkgs metadata: {e}"))?;
+        let url = metadata["url"]
+            .as_str()
+            .ok_or_else(|| "nixpkgs metadata missing 'url' field".to_string())?;
+        self.pinned_nixpkgs = Some(url.to_string());
+
+        // Run a no-op to ensure packages are cached
+        let mut args = self.nix_prefix_args();
+        args.push("true".into());
+        let output = std::process::Command::new(self.nix_bin.as_str())
+            .args(&args)
+            .output()
+            .map_err(|e| format!("failed to warm nix cache: {e}"))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("nix cache warm failed: {stderr}"));
+        }
+        Ok(())
+    }
 }
 
 impl Backend for NixBackend {
+    fn warm(&self) -> Result<(), String> {
+        // warm_cache requires &mut self, so it's called from detect_sandbox instead
+        Ok(())
+    }
+
     fn build_shell_command(
         &self,
         command: &str,
@@ -152,10 +216,15 @@ pub fn detect_sandbox(graph: &StateGraph) -> error::Result<Box<dyn Backend>> {
             let nix_bin = which_nix().ok_or_else(|| error::Error::NixNotFound {
                 root: graph.root.clone(),
             })?;
-            Ok(Box::new(NixBackend {
+            let mut backend = NixBackend {
                 nix_bin,
                 packages: packages.clone(),
-            }))
+                pinned_nixpkgs: None,
+            };
+            backend
+                .warm_cache()
+                .map_err(|msg| error::Error::SandboxWarm { message: msg })?;
+            Ok(Box::new(backend))
         }
     }
 }

@@ -66,6 +66,13 @@ pub enum Error {
     )]
     NixNotFound { root: Utf8PathBuf },
 
+    #[error("nix sandbox cache warm failed: {message}")]
+    #[diagnostic(
+        code(missouri::sandbox::warm_failed),
+        help("check nix installation and network connectivity")
+    )]
+    SandboxWarm { message: String },
+
     #[error("project already initialized at {path}")]
     #[diagnostic(
         code(missouri::init::already_initialized),
