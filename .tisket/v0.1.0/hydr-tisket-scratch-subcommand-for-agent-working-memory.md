@@ -1,12 +1,12 @@
 ---
 title: "tisket scratch subcommand for agent working memory"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [tisket, ergonomics]
 depends_on: []
-created: "2026-03-05T04:30:56Z"
-updated: "2026-03-05T04:30:56Z"
+created: 2026-03-05T04:30:56Z
+updated: "2026-03-05T04:33:02Z"
 ---
 
 ## Problem
@@ -43,3 +43,5 @@ Auto-creates `## Scratch Notes` heading on first write if the section doesn't ex
 - Scratch clear wipes, scratch read returns empty
 - Operations work on issues that don't yet have a scratch section
 - Existing body content outside scratch section is preserved
+
+## Scratch Notes
