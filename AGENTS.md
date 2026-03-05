@@ -6,6 +6,13 @@ Prompt content in this project includes:
 - Hook context injection (SessionStart, reinforcement, Stop messages)
 - Documentation that agents consume (docs bundled in the binary)
 
+## Test failures
+
+A test failure is a test failure. Never dismiss a failing test as
+"pre-existing" or "unrelated to this change." Every failure must be
+investigated and either fixed or captured as a tisket. Work is not
+complete while tests are failing.
+
 ## Stale binary
 
 After landing worker changes, the system binary on PATH may be stale.
