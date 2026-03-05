@@ -1,12 +1,12 @@
 ---
 title: "Machine-readable output and remaining CLI expressiveness"
-status: todo
+status: in_progress
 priority: 4
 assignee:
 labels: [tisket]
 depends_on: []
-created: "2026-03-05T04:31:04Z"
-updated: "2026-03-05T04:31:04Z"
+created: 2026-03-05T04:31:04Z
+updated: "2026-03-05T04:33:05Z"
 ---
 
 ## Items
@@ -26,3 +26,5 @@ updated: "2026-03-05T04:31:04Z"
 ## Notes
 
 These are lower-priority conveniences. Agents can work around all of them with existing commands. The scratch subcommand and bug fixes tiskets cover the high-friction gaps.
+
+## Scratch Notes
