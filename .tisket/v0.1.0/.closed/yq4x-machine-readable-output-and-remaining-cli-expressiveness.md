@@ -1,12 +1,12 @@
 ---
 title: "Machine-readable output and remaining CLI expressiveness"
-status: in_progress
+status: done
 priority: 4
 assignee:
 labels: [tisket]
 depends_on: []
 created: 2026-03-05T04:31:04Z
-updated: "2026-03-05T04:33:05Z"
+updated: "2026-03-05T05:03:17Z"
 ---
 
 ## Items
