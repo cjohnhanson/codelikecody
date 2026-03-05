@@ -62,3 +62,37 @@ Not converting clc into Claude Code skills (`.claude/skills/`). The hook-based i
 - Phase transitions inject relevant methodology
 - Agents still follow TDD, commit discipline, etc. (behavioral regression test)
 - `clc prime` still shows the full assembled text for debugging
+
+## Key principle: navigable tree, not selective omission
+
+The goal is NOT "show less." Every detail about how to use clc, tisket, missouri, phases, etc. should be accessible — just organized as a tree of progressive disclosures rather than a flat dump.
+
+The ambient context is the root node. It names every concept and provides a path to its full detail. Each concept branches into its operational specifics. Those specifics can reference deeper implementation details.
+
+```
+root (ambient, ~30 lines)
+├── workflow engine
+│   ├── hook system (what fires when)
+│   ├── trunk rules (read-only, allowlist)
+│   └── worktree rules (phase-gated writes)
+├── phase system
+│   ├── TDD methodology (write test → red → green → refactor)
+│   ├── phase transitions (what advances when)
+│   └── guard behavior (what's blocked per phase)
+├── working memory
+│   ├── scratch notes format
+│   └── compaction survival strategy
+├── commit discipline
+│   ├── pre-commit hooks
+│   └── staging patterns
+├── tisket (issue tracker)
+│   ├── CLI reference
+│   └── issue lifecycle
+└── missouri (test runner)
+    ├── state graph model
+    └── running tests
+```
+
+The mechanism for traversal is `clc prime --section <path>` at the CLI level, and phase-triggered injection at the hook level. But the tree is always complete — nothing is hidden, just deferred until the agent reaches for it or the context makes it relevant.
+
+This is the same pattern as Anthropic's skill system: description → full content → supporting files. Applied recursively.
