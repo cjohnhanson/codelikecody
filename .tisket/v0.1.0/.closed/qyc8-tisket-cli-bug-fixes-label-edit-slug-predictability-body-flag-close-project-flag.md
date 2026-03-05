@@ -1,12 +1,12 @@
 ---
 title: "tisket CLI bug fixes: label edit, slug predictability, body flag, close project flag"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: [tisket, ergonomics]
 depends_on: []
 created: 2026-03-05T04:30:59Z
-updated: "2026-03-05T04:33:04Z"
+updated: "2026-03-05T05:40:51Z"
 ---
 
 ## Items
