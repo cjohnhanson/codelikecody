@@ -35,3 +35,8 @@ Listing by label requires grepping output.
 - `tisket issue list --label foo` shows only issues with that label
 
 ## Scratch Notes
+
+- Added `--add-label`/`--remove-label` to IssueEditArgs, `--label` to IssueListArgs
+- Updated edit_issue/list_issues in repo.rs, all callers in clc
+- 6 missouri test states, 4 paths all green
+- Preexisting due-date test failures unrelated
