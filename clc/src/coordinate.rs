@@ -193,7 +193,7 @@ fn find_pickable_tiskets(
     };
 
     let issues = repo
-        .list_issues(project, None, false)
+        .list_issues(project, None, None, false)
         .map_err(|e| Error::NonBlocking(format!("tisket: {e}")))?;
 
     let mut pickable: Vec<String> = issues
@@ -240,12 +240,12 @@ fn find_pickable_tiskets(
 fn build_dependency_chain(repo: &tisket::Repo, root_id: &str) -> Result<Vec<String>, Error> {
     // Collect all issues across all projects to scan for dependents.
     let all_issues = repo
-        .list_issues(None, None, false)
+        .list_issues(None, None, None, false)
         .map_err(|e| Error::NonBlocking(format!("tisket: {e}")))?;
 
     // Also include closed issues to find the full chain.
     let closed_issues = repo
-        .list_issues(None, None, true)
+        .list_issues(None, None, None, true)
         .map_err(|e| Error::NonBlocking(format!("tisket: {e}")))?;
 
     // Build a map of id → depends_on for all issues.

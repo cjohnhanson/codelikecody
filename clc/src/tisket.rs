@@ -48,7 +48,7 @@ pub fn detect(project_dir: &Path, branch: Option<&str>) -> Result<TisketState, E
     };
 
     let open_count = repo
-        .list_issues(None, None, false)
+        .list_issues(None, None, None, false)
         .map(|issues| issues.len())
         .unwrap_or(0);
 
