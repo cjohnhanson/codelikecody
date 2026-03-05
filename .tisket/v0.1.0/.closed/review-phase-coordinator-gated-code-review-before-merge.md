@@ -1,12 +1,12 @@
 ---
 title: "Review phase: coordinator-gated code review before merge"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: [clc]
 depends_on: []
 created: 2026-03-01T13:04:59Z
-updated: "2026-03-03T04:44:35Z"
+updated: "2026-03-05T03:10:28Z"
 ---
 
 Add a review phase to the worker lifecycle so the coordinator gates what lands.
