@@ -1,12 +1,12 @@
 ---
 title: "tisket CLI bug fixes: label edit, slug predictability, body flag, close project flag"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [tisket, ergonomics]
 depends_on: []
-created: "2026-03-05T04:30:59Z"
-updated: "2026-03-05T04:30:59Z"
+created: 2026-03-05T04:30:59Z
+updated: "2026-03-05T04:33:04Z"
 ---
 
 ## Items
@@ -30,3 +30,5 @@ Agents try `-b "body text"` every time. Title is positional-only, body requires 
 - Create with `--body "text"` includes body in the file
 - Create with `--body-file <path>` reads body from file
 - Close with `-p v0.1.0 <id>` works
+
+## Scratch Notes
