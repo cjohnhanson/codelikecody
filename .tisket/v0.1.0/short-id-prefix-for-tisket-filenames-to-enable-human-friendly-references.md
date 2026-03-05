@@ -5,8 +5,8 @@ priority:
 assignee:
 labels: []
 depends_on: []
-created: "2026-03-02T13:54:05Z"
-updated: "2026-03-02T13:54:05Z"
+created: 2026-03-02T13:54:05Z
+updated: "2026-03-05T03:22:00Z"
 ---
 
 Tisket IDs are slug-ified titles, which means they're accurate but brutal to type and reference in conversation. Something like `clc-dispatch-should-clean-up-stale-worktrees-from-prior-failed-runs-before-dispatching` is fine for machines but unusable for humans.
