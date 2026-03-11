@@ -1,37 +1,49 @@
 //! `WorktreeWorkspace`: v1 implementation of the Workspace trait.
 //!
-//! Delegates process management to `claude_code::Session` and adds
-//! clc-specific bookkeeping (status tracking, permission denial extraction).
+//! Uses the pipe-based dispatch infrastructure (named FIFOs, stdout.jsonl, pid file)
+//! so that the coordinator process is detached and observable via
+//! `clc coordinator check/log/send` after `clc coordinate` exits.
 
+use std::io::{Read, Seek};
 use std::path::{Path, PathBuf};
 
 use claude_code::protocol::{OutputMessage, PermissionDenialMsg};
-use claude_code::session::{Session, SessionConfig};
 use clc_sdk::workspace::{
     PermissionDenial, Workspace, WorkspaceConfig, WorkspaceError, WorkspaceStatus,
 };
+use nix::sys::signal;
+use nix::unistd::Pid;
+
+use crate::dispatch;
+use crate::worker;
 
 pub struct WorktreeWorkspace {
     config: WorkspaceConfig,
-    session: Option<Session>,
+    working_dir: PathBuf,
+    worker_dir: PathBuf,
     status: WorkspaceStatus,
     denials: Vec<PermissionDenial>,
-    worktree_dir: PathBuf,
+    /// Read cursor position in stdout.jsonl for incremental polling.
+    stdout_cursor: u64,
+    pid: Option<u32>,
 }
 
 impl WorktreeWorkspace {
     #[must_use]
     pub fn new(config: WorkspaceConfig) -> Self {
-        let worktree_dir = config
-            .project_dir
-            .join(".worktrees")
-            .join(&config.tisket_id);
+        // Use the same path logic as worker::working_dir_for / worker_dir_for so
+        // the coordinator (COORDINATOR_ID) resolves to trunk and regular workers
+        // resolve to their worktree.
+        let working_dir = worker::working_dir_for(&config.project_dir, &config.tisket_id);
+        let worker_dir = worker::worker_dir_for(&config.project_dir, &config.tisket_id);
         Self {
             config,
-            session: None,
+            working_dir,
+            worker_dir,
             status: WorkspaceStatus::NotStarted,
             denials: Vec::new(),
-            worktree_dir,
+            stdout_cursor: 0,
+            pid: None,
         }
     }
 
@@ -44,6 +56,11 @@ impl WorktreeWorkspace {
             })
             .collect()
     }
+
+    fn pid_alive(&self) -> bool {
+        self.pid
+            .is_some_and(|pid| signal::kill(Pid::from_raw(pid.cast_signed()), None).is_ok())
+    }
 }
 
 impl Workspace for WorktreeWorkspace {
@@ -52,54 +69,73 @@ impl Workspace for WorktreeWorkspace {
             return Err(WorkspaceError::Process("workspace already started".into()));
         }
 
-        let session_config = SessionConfig {
-            working_dir: self.worktree_dir.clone(),
-            initial_prompt: self.config.initial_prompt.clone(),
-            model: self.config.model.clone(),
-            max_budget_usd: self.config.max_budget_usd,
-            system_prompt: self.config.system_prompt.clone(),
-            dangerously_skip_permissions: true,
-        };
+        let model = self.config.model.as_deref().unwrap_or("claude-sonnet-4-6");
+        let system_prompt = self.config.system_prompt.as_deref().unwrap_or("");
 
-        let session =
-            Session::start(&session_config).map_err(|e| WorkspaceError::Process(format!("{e}")))?;
+        let pid = dispatch::spawn_worker_process(
+            &self.working_dir,
+            &self.worker_dir,
+            model,
+            system_prompt,
+            &self.config.initial_prompt,
+            &[],
+        )
+        .map_err(|e| WorkspaceError::Process(format!("{e}")))?;
 
-        self.session = Some(session);
+        self.pid = Some(pid);
         self.status = WorkspaceStatus::Running;
         Ok(())
     }
 
     fn send_message(&mut self, msg: &str) -> Result<(), WorkspaceError> {
-        let session = self
-            .session
-            .as_mut()
-            .ok_or_else(|| WorkspaceError::Communication("not started".into()))?;
-        session
-            .send(msg)
+        let pipe_path = self.worker_dir.join("stdin.pipe");
+        dispatch::send_prompt(&pipe_path, msg)
             .map_err(|e| WorkspaceError::Communication(format!("{e}")))
     }
 
     fn recv_output(&mut self) -> Result<Vec<OutputMessage>, WorkspaceError> {
-        let session = self
-            .session
-            .as_mut()
-            .ok_or_else(|| WorkspaceError::Communication("not started".into()))?;
+        if self.status == WorkspaceStatus::NotStarted {
+            return Err(WorkspaceError::Communication("not started".into()));
+        }
 
-        let messages = session.recv();
+        let stdout_path = self.worker_dir.join("stdout.jsonl");
+        let mut messages = Vec::new();
 
-        for msg in &messages {
-            if let OutputMessage::Result(result) = msg {
-                self.denials = Self::denials_from_msg(&result.permission_denials);
-                self.status = if result.is_error {
-                    WorkspaceStatus::Failed
-                } else {
-                    WorkspaceStatus::Completed
-                };
+        if stdout_path.exists() {
+            let mut file = std::fs::File::open(&stdout_path)
+                .map_err(|e| WorkspaceError::Communication(format!("open stdout.jsonl: {e}")))?;
+            file.seek(std::io::SeekFrom::Start(self.stdout_cursor))
+                .map_err(|e| WorkspaceError::Communication(format!("seek stdout.jsonl: {e}")))?;
+
+            let mut content = String::new();
+            file.read_to_string(&mut content)
+                .map_err(|e| WorkspaceError::Communication(format!("read stdout.jsonl: {e}")))?;
+
+            #[allow(clippy::cast_possible_truncation)]
+            {
+                self.stdout_cursor += content.len() as u64;
+            }
+
+            for line in content.lines() {
+                if line.trim().is_empty() {
+                    continue;
+                }
+                if let Ok(msg) = serde_json::from_str::<OutputMessage>(line) {
+                    if let OutputMessage::Result(ref result) = msg {
+                        self.denials = Self::denials_from_msg(&result.permission_denials);
+                        self.status = if result.is_error {
+                            WorkspaceStatus::Failed
+                        } else {
+                            WorkspaceStatus::Completed
+                        };
+                    }
+                    messages.push(msg);
+                }
             }
         }
 
-        // Check if child has exited unexpectedly (no result message).
-        if self.status == WorkspaceStatus::Running && !session.is_running() {
+        // Check if the process exited without sending a result message.
+        if self.status == WorkspaceStatus::Running && !self.pid_alive() {
             self.status = WorkspaceStatus::Failed;
         }
 
@@ -115,7 +151,7 @@ impl Workspace for WorktreeWorkspace {
     }
 
     fn working_dir(&self) -> &Path {
-        &self.worktree_dir
+        &self.working_dir
     }
 
     fn tisket_id(&self) -> &str {
@@ -123,8 +159,8 @@ impl Workspace for WorktreeWorkspace {
     }
 
     fn stop(&mut self) -> Result<(), WorkspaceError> {
-        if let Some(ref mut session) = self.session {
-            session.stop();
+        if let Some(pid) = self.pid {
+            let _ = signal::kill(Pid::from_raw(pid.cast_signed()), signal::Signal::SIGTERM);
         }
         Ok(())
     }

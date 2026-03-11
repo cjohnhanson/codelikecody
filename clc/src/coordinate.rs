@@ -7,10 +7,10 @@
 use std::path::Path;
 
 use camino::Utf8Path;
+use clc_sdk::workspace::{Workspace, WorkspaceConfig};
 use serde::Deserialize;
 
 use crate::config::CoordinatorConfig;
-use crate::dispatch;
 use crate::error::Error;
 use crate::git;
 use crate::permissions;
@@ -47,6 +47,9 @@ struct GrantConfigFile {
     always_escalate: Vec<String>,
 }
 
+/// Run the coordinator: pick up tiskets, seed permissions, and launch the coordinator agent.
+///
+/// Delegates to `coordinate_with` using `WorktreeWorkspace` as the workspace implementation.
 pub fn coordinate(
     project_dir: &Path,
     main_branch: &str,
@@ -54,6 +57,32 @@ pub fn coordinate(
     filters: &CoordinateFilters<'_>,
     extra_allow: &[String],
     coordinator_config: &CoordinatorConfig,
+) -> Result<(), Error> {
+    use crate::workspace::WorktreeWorkspace;
+    coordinate_with(
+        project_dir,
+        main_branch,
+        model,
+        filters,
+        extra_allow,
+        coordinator_config,
+        WorktreeWorkspace::new,
+    )
+}
+
+/// Internal form of `coordinate` that accepts a workspace factory for testability.
+///
+/// `workspace_factory` receives a `WorkspaceConfig` and returns an impl `Workspace`
+/// that will be started to run the coordinator agent. This allows tests to inject
+/// a mock workspace instead of spawning a real Claude process.
+pub fn coordinate_with<W: Workspace>(
+    project_dir: &Path,
+    main_branch: &str,
+    model: &str,
+    filters: &CoordinateFilters<'_>,
+    extra_allow: &[String],
+    coordinator_config: &CoordinatorConfig,
+    workspace_factory: impl FnOnce(WorkspaceConfig) -> W,
 ) -> Result<(), Error> {
     // Must be on trunk.
     let git_state = git::detect(project_dir, main_branch)
@@ -84,7 +113,7 @@ pub fn coordinate(
         return Ok(());
     }
 
-    // Dry-run: print pickable list and exit.
+    // Dry-run: print pickable list and exit (workspace is never created).
     if filters.dry_run {
         for id in &pickable {
             println!("{id}");
@@ -112,17 +141,24 @@ pub fn coordinate(
         build_coordinator_prompt(&pickable, filters.tisket, filters.coordinator_id);
     let system_prompt = build_coordinator_system_prompt(&policy);
 
-    // Spawn coordinator as a worker on trunk.
-    let pid = dispatch::spawn_worker_process(
-        project_dir,
-        &coord_worker_dir,
-        model,
-        &system_prompt,
-        &initial_prompt,
-        &[],
-    )?;
+    // Create and start the coordinator workspace via the injected factory.
+    // WorktreeWorkspace resolves working_dir/worker_dir from the tisket_id,
+    // so using COORDINATOR_ID causes it to run on trunk with .clc/worker/ state.
+    let config = WorkspaceConfig {
+        tisket_id: worker::COORDINATOR_ID.to_string(),
+        project_dir: project_dir.to_path_buf(),
+        main_branch: main_branch.to_string(),
+        initial_prompt,
+        system_prompt: Some(system_prompt),
+        max_budget_usd: None,
+        model: Some(model.to_string()),
+    };
+    let mut workspace = workspace_factory(config);
+    workspace
+        .start()
+        .map_err(|e| Error::NonBlocking(format!("failed to start coordinator workspace: {e}")))?;
 
-    eprintln!("coordinator launched (pid {pid})");
+    eprintln!("coordinator launched");
     eprintln!("talk to it: clc worker coordinator send \"<message>\"");
     eprintln!("check output: clc worker coordinator check");
 
@@ -669,5 +705,323 @@ mod tests {
         // Also still contains the base coordinator instructions.
         assert!(prompt.contains("coordinator agent"));
         assert!(prompt.contains("LANDING PLAYBOOK"));
+    }
+}
+
+#[cfg(test)]
+mod workspace_tests {
+    use super::*;
+    use claude_code::protocol::OutputMessage;
+    use clc_sdk::workspace::{
+        PermissionDenial, Workspace, WorkspaceConfig, WorkspaceError, WorkspaceStatus,
+    };
+    use gix::prelude::Write as _;
+    use std::cell::RefCell;
+    use std::path::{Path, PathBuf};
+    use std::rc::Rc;
+
+    // --- MockWorkspace: records calls for assertion in tests ---
+
+    struct MockWorkspace {
+        id: String,
+        working_dir: PathBuf,
+        started: Rc<RefCell<bool>>,
+    }
+
+    impl MockWorkspace {
+        fn capturing(
+            config: &WorkspaceConfig,
+            started: Rc<RefCell<bool>>,
+            model_out: &Rc<RefCell<Option<String>>>,
+            prompt_out: &Rc<RefCell<String>>,
+            system_out: &Rc<RefCell<Option<String>>>,
+        ) -> Self {
+            *model_out.borrow_mut() = config.model.clone();
+            *prompt_out.borrow_mut() = config.initial_prompt.clone();
+            *system_out.borrow_mut() = config.system_prompt.clone();
+            Self {
+                id: config.tisket_id.clone(),
+                working_dir: config.project_dir.clone(),
+                started,
+            }
+        }
+    }
+
+    impl Workspace for MockWorkspace {
+        fn start(&mut self) -> Result<(), WorkspaceError> {
+            *self.started.borrow_mut() = true;
+            Ok(())
+        }
+
+        fn send_message(&mut self, _msg: &str) -> Result<(), WorkspaceError> {
+            Ok(())
+        }
+
+        fn recv_output(&mut self) -> Result<Vec<OutputMessage>, WorkspaceError> {
+            Ok(vec![])
+        }
+
+        fn status(&self) -> WorkspaceStatus {
+            WorkspaceStatus::Running
+        }
+
+        fn permission_denials(&self) -> &[PermissionDenial] {
+            &[]
+        }
+
+        fn working_dir(&self) -> &Path {
+            &self.working_dir
+        }
+
+        fn tisket_id(&self) -> &str {
+            &self.id
+        }
+
+        fn stop(&mut self) -> Result<(), WorkspaceError> {
+            Ok(())
+        }
+    }
+
+    // --- Test project setup ---
+
+    const TISKET_YML: &str = "tisket_dir: .tisket\nadditional_instructions: \"\"\n";
+    const TISKET_PROJECT_YML: &str = "name: v0.1.0\n";
+    const TISKET_ISSUE: &str = "---\ntitle: \"Test task\"\nstatus: todo\npriority:\nassignee:\nlabels: []\ndepends_on: []\ncreated: 2026-01-01T00:00:00Z\n---\nDo something.\n";
+
+    /// Creates a minimal git project with one pickable tisket using gix (no subprocess).
+    ///
+    /// Returns a temp dir that must be kept alive for the test duration.
+    fn setup_test_project() -> tempfile::TempDir {
+        use gix::object::tree::EntryKind;
+
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path();
+
+        // Initialize git repo using gix (no subprocess).
+        gix::init(p).unwrap();
+
+        // Set git identity for test environment (no global git config in nix sandbox).
+        let config_path = p.join(".git").join("config");
+        let mut config = std::fs::read_to_string(&config_path).unwrap_or_default();
+        config.push_str("[user]\n\tname = test\n\temail = test@test\n");
+        std::fs::write(&config_path, config).unwrap();
+
+        // Write project files to filesystem.
+        // tisket requires a project.yml inside each project directory.
+        std::fs::write(p.join("tisket.yml"), TISKET_YML).unwrap();
+        std::fs::create_dir_all(p.join(".tisket").join("v0.1.0")).unwrap();
+        std::fs::write(
+            p.join(".tisket").join("v0.1.0").join("project.yml"),
+            TISKET_PROJECT_YML,
+        )
+        .unwrap();
+        std::fs::write(
+            p.join(".tisket").join("v0.1.0").join("test-task-abc.md"),
+            TISKET_ISSUE,
+        )
+        .unwrap();
+
+        // Build initial commit using gix tree API.
+        let repo = gix::open(p).unwrap();
+        let empty_tree_id = repo.write(&gix::objs::Tree::empty()).unwrap();
+        let empty_tree = repo.find_object(empty_tree_id).unwrap().into_tree();
+        let mut editor = empty_tree.edit().unwrap();
+        for (path, content) in [
+            ("tisket.yml", TISKET_YML),
+            (".tisket/v0.1.0/project.yml", TISKET_PROJECT_YML),
+            (".tisket/v0.1.0/test-task-abc.md", TISKET_ISSUE),
+        ] {
+            let blob = repo.write_blob(content.as_bytes()).unwrap();
+            editor.upsert(path, EntryKind::Blob, blob).unwrap();
+        }
+        let tree_id = editor.write().unwrap();
+        repo.commit("HEAD", "initial", tree_id, gix::commit::NO_PARENT_IDS)
+            .unwrap();
+
+        dir
+    }
+
+    fn base_filters() -> CoordinateFilters<'static> {
+        CoordinateFilters {
+            tisket: None,
+            label: None,
+            exclude_label: None,
+            project: None,
+            depends_on: None,
+            dry_run: false,
+            coordinator_id: None,
+            auto_grant: &[],
+            escalate_all: false,
+            grant_config: None,
+        }
+    }
+
+    // --- Tests: coordinate_with calls workspace factory and start() ---
+
+    /// `coordinate_with()` must call `workspace.start()` instead of dispatch directly.
+    #[test]
+    fn coordinate_with_calls_workspace_start() {
+        let dir = setup_test_project();
+        let started = Rc::new(RefCell::new(false));
+        let started_clone = Rc::clone(&started);
+
+        let result = coordinate_with(
+            dir.path(),
+            "main",
+            "claude-sonnet-4-6",
+            &base_filters(),
+            &[],
+            &CoordinatorConfig::default(),
+            move |config| {
+                MockWorkspace::capturing(
+                    &config,
+                    started_clone,
+                    &Rc::new(RefCell::new(None)),
+                    &Rc::new(RefCell::new(String::new())),
+                    &Rc::new(RefCell::new(None)),
+                )
+            },
+        );
+
+        // coordinate_with should succeed and workspace.start() should be called.
+        assert!(result.is_ok(), "coordinate_with failed: {result:?}");
+        assert!(
+            *started.borrow(),
+            "workspace.start() was not called — coordinate_with bypassed the Workspace trait"
+        );
+    }
+
+    /// `coordinate_with()` must pass the correct model to the workspace config.
+    #[test]
+    fn coordinate_with_passes_model_in_workspace_config() {
+        let dir = setup_test_project();
+        let received_model: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+        let model_clone = Rc::clone(&received_model);
+
+        let _ = coordinate_with(
+            dir.path(),
+            "main",
+            "claude-opus-4-6",
+            &base_filters(),
+            &[],
+            &CoordinatorConfig::default(),
+            move |config| {
+                MockWorkspace::capturing(
+                    &config,
+                    Rc::new(RefCell::new(false)),
+                    &model_clone,
+                    &Rc::new(RefCell::new(String::new())),
+                    &Rc::new(RefCell::new(None)),
+                )
+            },
+        );
+
+        assert_eq!(
+            received_model.borrow().as_deref(),
+            Some("claude-opus-4-6"),
+            "model not passed through to workspace config"
+        );
+    }
+
+    /// `coordinate_with()` must pass a non-empty `initial_prompt` to the workspace.
+    #[test]
+    fn coordinate_with_passes_non_empty_initial_prompt() {
+        let dir = setup_test_project();
+        let received_prompt: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
+        let prompt_clone = Rc::clone(&received_prompt);
+
+        let _ = coordinate_with(
+            dir.path(),
+            "main",
+            "claude-sonnet-4-6",
+            &base_filters(),
+            &[],
+            &CoordinatorConfig::default(),
+            move |config| {
+                MockWorkspace::capturing(
+                    &config,
+                    Rc::new(RefCell::new(false)),
+                    &Rc::new(RefCell::new(None)),
+                    &prompt_clone,
+                    &Rc::new(RefCell::new(None)),
+                )
+            },
+        );
+
+        assert!(
+            !received_prompt.borrow().is_empty(),
+            "initial_prompt passed to workspace config was empty"
+        );
+    }
+
+    /// `coordinate_with()` must pass a `system_prompt` to the workspace.
+    #[test]
+    fn coordinate_with_passes_system_prompt() {
+        let dir = setup_test_project();
+        let received_sys: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+        let sys_clone = Rc::clone(&received_sys);
+
+        let _ = coordinate_with(
+            dir.path(),
+            "main",
+            "claude-sonnet-4-6",
+            &base_filters(),
+            &[],
+            &CoordinatorConfig::default(),
+            move |config| {
+                MockWorkspace::capturing(
+                    &config,
+                    Rc::new(RefCell::new(false)),
+                    &Rc::new(RefCell::new(None)),
+                    &Rc::new(RefCell::new(String::new())),
+                    &sys_clone,
+                )
+            },
+        );
+
+        assert!(
+            received_sys.borrow().is_some(),
+            "system_prompt was not passed to workspace config"
+        );
+        assert!(
+            !received_sys.borrow().as_deref().unwrap_or("").is_empty(),
+            "system_prompt passed to workspace config was empty"
+        );
+    }
+
+    /// `coordinate_with()` dry-run does not call the workspace factory at all.
+    #[test]
+    fn coordinate_with_dry_run_skips_workspace_factory() {
+        let dir = setup_test_project();
+        let factory_called = Rc::new(RefCell::new(false));
+        let called_clone = Rc::clone(&factory_called);
+
+        let mut dry_run_filters = base_filters();
+        dry_run_filters.dry_run = true;
+
+        let result = coordinate_with(
+            dir.path(),
+            "main",
+            "claude-sonnet-4-6",
+            &dry_run_filters,
+            &[],
+            &CoordinatorConfig::default(),
+            move |config| {
+                *called_clone.borrow_mut() = true;
+                MockWorkspace::capturing(
+                    &config,
+                    Rc::new(RefCell::new(false)),
+                    &Rc::new(RefCell::new(None)),
+                    &Rc::new(RefCell::new(String::new())),
+                    &Rc::new(RefCell::new(None)),
+                )
+            },
+        );
+
+        assert!(result.is_ok());
+        assert!(
+            !*factory_called.borrow(),
+            "workspace factory should not be called in dry-run mode"
+        );
     }
 }

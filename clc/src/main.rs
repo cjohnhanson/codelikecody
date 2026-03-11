@@ -23,6 +23,7 @@ mod pickup;
 mod tisket;
 mod topology;
 mod worker;
+mod workspace;
 
 use std::path::Path;
 
