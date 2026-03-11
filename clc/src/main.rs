@@ -104,6 +104,7 @@ fn main() {
         cli::Command::Tisket { command } => cmd_tisket(command),
         cli::Command::Missouri { command } => cmd_missouri(command),
         cli::Command::Permissions { ref action } => cmd_permissions(action),
+        cli::Command::Outbox { ref action } => cmd_outbox(action),
         cli::Command::Integrate { ref action } => cmd_integrate(action),
         cli::Command::Coordinators { all } => cmd_coordinators(all),
         cli::Command::Coordinator { ref id, ref action } => cmd_coordinator(id, action),
@@ -362,6 +363,29 @@ fn cmd_permissions(action: &cli::PermissionsAction) -> Result<(), Error> {
             permissions::deny(&project_dir, worker_id, reason)
         }
     }
+}
+
+fn cmd_outbox(action: &cli::OutboxAction) -> Result<(), Error> {
+    let cwd = std::env::current_dir()?;
+    match action {
+        cli::OutboxAction::Write { name } => {
+            use clc_sdk::outbox::Outbox as _;
+            use std::io::Read as _;
+            let mut content = String::new();
+            std::io::stdin()
+                .read_to_string(&mut content)
+                .map_err(|e| Error::NonBlocking(format!("failed to read stdin: {e}")))?;
+            let outbox_dir = cwd.join(".clc").join("outbox");
+            let outbox = clc_sdk::outbox::FolderOutbox::new(outbox_dir);
+            outbox
+                .send(clc_sdk::outbox::OutboxItem {
+                    name: name.clone(),
+                    content,
+                })
+                .map_err(|e| Error::NonBlocking(format!("outbox: {e}")))?;
+        }
+    }
+    Ok(())
 }
 
 fn cmd_integrate(action: &cli::IntegrateAction) -> Result<(), Error> {

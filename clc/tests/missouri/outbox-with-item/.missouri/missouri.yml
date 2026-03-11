@@ -1,0 +1,20 @@
+assertions:
+  - name: "outbox file exists"
+    command: "test -f .clc/outbox/item.md"
+
+  - name: "outbox file has correct content"
+    command: "grep -q 'hello outbox' .clc/outbox/item.md"
+
+  - name: "outbox contains exactly one item"
+    command: "test $(ls .clc/outbox/ | wc -l | tr -d ' ') -eq 1"
+
+transitions:
+  - name: "write second item to outbox"
+    command: "printf '{\"key\": \"value\"}\n' | clc outbox write data.json"
+    target: "../outbox-with-two-items"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true

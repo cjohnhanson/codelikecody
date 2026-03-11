@@ -137,6 +137,11 @@ pub enum Command {
         #[command(subcommand)]
         action: PermissionsAction,
     },
+    /// Write items to the outbox (one file per item in .clc/outbox/).
+    Outbox {
+        #[command(subcommand)]
+        action: OutboxAction,
+    },
     /// Manage ephemeral integration branches (create, merge workers, land).
     Integrate {
         #[command(subcommand)]
@@ -154,6 +159,15 @@ pub enum Command {
         id: String,
         #[command(subcommand)]
         action: CoordinatorAction,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum OutboxAction {
+    /// Write an item to the outbox, reading content from stdin.
+    Write {
+        /// Filename for the item (e.g. "summary.md", "result.json").
+        name: String,
     },
 }
 

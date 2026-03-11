@@ -1,0 +1,15 @@
+assertions:
+  - name: "first outbox item still exists"
+    command: "test -f .clc/outbox/item.md"
+
+  - name: "second outbox item exists"
+    command: "test -f .clc/outbox/data.json"
+
+  - name: "outbox has exactly two items"
+    command: "test $(ls .clc/outbox/ | wc -l | tr -d ' ') -eq 2"
+
+  - name: "first item content preserved"
+    command: "grep -q 'hello outbox' .clc/outbox/item.md"
+
+  - name: "second item has correct content"
+    command: "grep -q 'value' .clc/outbox/data.json"
