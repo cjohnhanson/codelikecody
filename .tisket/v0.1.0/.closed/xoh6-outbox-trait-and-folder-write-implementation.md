@@ -1,12 +1,12 @@
 ---
 title: "Outbox trait and folder-write implementation"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: [agents]
 depends_on: []
 created: 2026-03-11T02:20:07Z
-updated: "2026-03-11T02:22:27Z"
+updated: "2026-03-11T02:50:07Z"
 ---
 
 Define Outbox trait in clc-sdk: accept structured items, write them somewhere. First implementation is folder-write — writes files to a configured directory. Each outbox item becomes a file (markdown, JSON, whatever the admin produces).
