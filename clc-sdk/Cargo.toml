@@ -17,3 +17,6 @@ missing_panics_doc = "allow"
 
 [dependencies]
 claude-code = { path = "../claude-code" }
+
+[dev-dependencies]
+tempfile = "3.26.0"
