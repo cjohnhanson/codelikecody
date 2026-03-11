@@ -1,12 +1,12 @@
 ---
 title: "Inbox trait and folder-watch implementation"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: [agents]
 depends_on: []
 created: 2026-03-11T02:20:00Z
-updated: "2026-03-11T02:22:27Z"
+updated: "2026-03-11T02:34:40Z"
 ---
 
 Define Inbox trait in clc-sdk: poll for items, return structured messages. First implementation is folder-watch — monitors a directory, picks up new files, yields them as inbox items. Files are moved or marked after processing to avoid re-reads.
