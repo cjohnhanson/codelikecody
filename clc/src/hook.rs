@@ -198,8 +198,21 @@ fn assemble_prime(cwd: &Path, git: Option<&git::GitState>, phase: Option<phase::
         "## Capturing discovered work\n\n\
          If you discover work that needs doing — a bug, a missing feature, a refactor —\n\
          don't go off on a tangent. Create a tisket for it:\n\n\
-         \x20   tisket issue create -t \"title\" -b \"description\"\n\n\
+         \x20   tisket issue create -p v0.1.0 \"title\"\n\n\
          Tisket is scratch paper for future work. Capture it and move on.\n\n",
+    );
+
+    // --- tisket status lifecycle ---
+    out.push_str(
+        "## Tisket status lifecycle\n\n\
+         Issues start in `discovery` — an idea captured, not yet scoped. Do not\n\
+         create issues directly in `todo`. The progression is:\n\n\
+         \x20   discovery → todo → in_progress → done\n\n\
+         Moving from discovery to todo is a deliberate scoping decision: the issue\n\
+         has a clear title, a body that defines what done looks like, and enough\n\
+         detail for a worker to pick it up without guessing. When creating tiskets\n\
+         to capture discovered work, always use the default status (discovery).\n\
+         Only the admin session or a human promotes issues to todo after scoping.\n\n",
     );
 
     // --- tisket section ---
