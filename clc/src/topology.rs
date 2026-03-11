@@ -37,21 +37,23 @@ pub struct CoordinatorSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InboxSpec {
-    pub path: String,
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum InboxSpec {
+    FolderWatch { path: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OutboxSpec {
-    pub path: String,
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum OutboxSpec {
+    FolderWrite { path: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdminConfig {
     pub prompt: String,
-    pub inbox: String,
-    pub outbox: String,
-    pub coordinator: String,
+    pub inboxes: Vec<String>,
+    pub outboxes: Vec<String>,
+    pub coordinators: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -80,23 +82,26 @@ impl TopologyConfig {
         }
 
         if let Some(ref admin) = self.admin {
-            if !self.inboxes.contains_key(&admin.inbox) {
-                return Err(Error::NonBlocking(format!(
-                    "admin references unknown inbox '{}'",
-                    admin.inbox
-                )));
+            for inbox in &admin.inboxes {
+                if !self.inboxes.contains_key(inbox) {
+                    return Err(Error::NonBlocking(format!(
+                        "admin references unknown inbox '{inbox}'"
+                    )));
+                }
             }
-            if !self.outboxes.contains_key(&admin.outbox) {
-                return Err(Error::NonBlocking(format!(
-                    "admin references unknown outbox '{}'",
-                    admin.outbox
-                )));
+            for outbox in &admin.outboxes {
+                if !self.outboxes.contains_key(outbox) {
+                    return Err(Error::NonBlocking(format!(
+                        "admin references unknown outbox '{outbox}'"
+                    )));
+                }
             }
-            if !self.coordinators.contains_key(&admin.coordinator) {
-                return Err(Error::NonBlocking(format!(
-                    "admin references unknown coordinator '{}'",
-                    admin.coordinator
-                )));
+            for coordinator in &admin.coordinators {
+                if !self.coordinators.contains_key(coordinator) {
+                    return Err(Error::NonBlocking(format!(
+                        "admin references unknown coordinator '{coordinator}'"
+                    )));
+                }
             }
         }
 
@@ -218,20 +223,20 @@ coordinators:
         let yaml = "
 inboxes:
   user-inbox:
+    type: folder_watch
     path: .clc/inbox/user
 outboxes:
   worker-outbox:
+    type: folder_write
     path: .clc/outbox/worker
 ";
         let config = parse(yaml);
-        assert_eq!(
-            config.inboxes.get("user-inbox").unwrap().path,
-            ".clc/inbox/user"
-        );
-        assert_eq!(
-            config.outboxes.get("worker-outbox").unwrap().path,
-            ".clc/outbox/worker"
-        );
+        match config.inboxes.get("user-inbox").unwrap() {
+            InboxSpec::FolderWatch { path } => assert_eq!(path, ".clc/inbox/user"),
+        }
+        match config.outboxes.get("worker-outbox").unwrap() {
+            OutboxSpec::FolderWrite { path } => assert_eq!(path, ".clc/outbox/worker"),
+        }
     }
 
     #[test]
@@ -246,22 +251,24 @@ coordinators:
     workspace: worker
 inboxes:
   user-inbox:
+    type: folder_watch
     path: .clc/inbox/user
 outboxes:
   worker-outbox:
+    type: folder_write
     path: .clc/outbox/worker
 admin:
   prompt: You are the admin agent.
-  inbox: user-inbox
-  outbox: worker-outbox
-  coordinator: main
+  inboxes: [user-inbox]
+  outboxes: [worker-outbox]
+  coordinators: [main]
 ";
         let config = parse(yaml);
         let admin = config.admin.as_ref().unwrap();
         assert_eq!(admin.prompt, "You are the admin agent.");
-        assert_eq!(admin.inbox, "user-inbox");
-        assert_eq!(admin.outbox, "worker-outbox");
-        assert_eq!(admin.coordinator, "main");
+        assert_eq!(admin.inboxes, vec!["user-inbox"]);
+        assert_eq!(admin.outboxes, vec!["worker-outbox"]);
+        assert_eq!(admin.coordinators, vec!["main"]);
     }
 
     #[test]
@@ -323,15 +330,17 @@ coordinators:
     workspace: worker
 inboxes:
   user-inbox:
+    type: folder_watch
     path: .clc/inbox/user
 outboxes:
   worker-outbox:
+    type: folder_write
     path: .clc/outbox/worker
 admin:
   prompt: You are the admin.
-  inbox: user-inbox
-  outbox: worker-outbox
-  coordinator: main
+  inboxes: [user-inbox]
+  outboxes: [worker-outbox]
+  coordinators: [main]
 ";
         let config = parse(yaml);
         assert!(config.validate().is_ok());
@@ -377,12 +386,13 @@ coordinators:
 inboxes: {}
 outboxes:
   worker-outbox:
+    type: folder_write
     path: .clc/outbox/worker
 admin:
   prompt: Admin
-  inbox: missing-inbox
-  outbox: worker-outbox
-  coordinator: main
+  inboxes: [missing-inbox]
+  outboxes: [worker-outbox]
+  coordinators: [main]
 ";
         let config = parse(yaml);
         let err = config.validate().unwrap_err();
@@ -405,13 +415,14 @@ coordinators:
     workspace: worker
 inboxes:
   user-inbox:
+    type: folder_watch
     path: .clc/inbox/user
 outboxes: {}
 admin:
   prompt: Admin
-  inbox: user-inbox
-  outbox: missing-outbox
-  coordinator: main
+  inboxes: [user-inbox]
+  outboxes: [missing-outbox]
+  coordinators: [main]
 ";
         let config = parse(yaml);
         let err = config.validate().unwrap_err();
@@ -432,15 +443,17 @@ workspaces:
 coordinators: {}
 inboxes:
   user-inbox:
+    type: folder_watch
     path: .clc/inbox/user
 outboxes:
   worker-outbox:
+    type: folder_write
     path: .clc/outbox/worker
 admin:
   prompt: Admin
-  inbox: user-inbox
-  outbox: worker-outbox
-  coordinator: missing-coordinator
+  inboxes: [user-inbox]
+  outboxes: [worker-outbox]
+  coordinators: [missing-coordinator]
 ";
         let config = parse(yaml);
         let err = config.validate().unwrap_err();
@@ -513,15 +526,17 @@ coordinators:
       label: backend
 inboxes:
   user-inbox:
+    type: folder_watch
     path: .clc/inbox/user
 outboxes:
   worker-outbox:
+    type: folder_write
     path: .clc/outbox/worker
 admin:
   prompt: You are the admin agent.
-  inbox: user-inbox
-  outbox: worker-outbox
-  coordinator: main
+  inboxes: [user-inbox]
+  outboxes: [worker-outbox]
+  coordinators: [main]
 ";
         std::fs::write(dir.path().join("clc.yaml"), yaml).unwrap();
 
