@@ -1,6 +1,6 @@
 ---
 title: "Stop hook enforcement for coordinator and admin sessions"
-status: todo
+status: discovery
 labels:
   - clc
 ---
