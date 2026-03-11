@@ -21,6 +21,7 @@ mod permissions;
 mod phase;
 mod pickup;
 mod tisket;
+mod topology;
 mod worker;
 
 use std::path::Path;
@@ -159,6 +160,20 @@ fn cmd_status() -> Result<(), Error> {
         }
         Err(e) => {
             println!("tisket: error ({e})");
+        }
+    }
+
+    match topology::load(&cwd) {
+        Ok(Some(topo)) => {
+            println!(
+                "topology: {} workspace(s), {} coordinator(s)",
+                topo.workspaces.len(),
+                topo.coordinators.len()
+            );
+        }
+        Ok(None) => {}
+        Err(e) => {
+            println!("topology: error ({e})");
         }
     }
 
