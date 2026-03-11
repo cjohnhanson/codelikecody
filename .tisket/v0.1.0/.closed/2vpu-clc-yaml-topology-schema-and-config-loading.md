@@ -1,12 +1,12 @@
 ---
 title: "clc.yaml topology schema and config loading"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: [agents]
 depends_on: []
 created: 2026-03-11T02:19:43Z
-updated: "2026-03-11T02:22:28Z"
+updated: "2026-03-11T02:32:34Z"
 ---
 
 Define the clc.yaml schema for declaring system topology: workspaces (type + agent), coordinators (workspace + selector), inboxes, outboxes, and admin config (prompt, inbox/outbox/coordinator references). Parse and validate at startup. No runtime behavior — just config loading and validation.
