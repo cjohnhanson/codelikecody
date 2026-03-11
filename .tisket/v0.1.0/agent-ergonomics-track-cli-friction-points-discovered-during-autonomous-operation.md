@@ -57,6 +57,3 @@ This is an ongoing collection, not a single fix. Individual items can be spun ou
 
 - **`clc done` from green phase fails**: Error "phase must be 'done' to finalize, currently 'green'." But `clc done` is supposed to *advance* to done. The error message is contradictory — if you need to already be at 'done' to run `clc done`, how do you get to done? Workaround: manually write `phase: done` to `.clc/state`, then `clc done` succeeds.
 
-- **Merge conflict on Cargo.lock between parallel workers**: Two workers (2vpu topology, xoh6 outbox) both added dev-dependencies to clc-sdk. Both merges touched Cargo.lock. Second merge required manual rebase to resolve the trivial conflict. Coordinators can't do this automatically (see 2026-03-02 note).
-
-- **Admin session on trunk can't edit worktree files**: When manually finalizing xoh6 (committing from the xoh6 worktree), had to `cd` into the worktree. The admin session's working directory is trunk, so all file operations target the wrong tree. The admin-as-coordinator workflow requires constant directory switching.
