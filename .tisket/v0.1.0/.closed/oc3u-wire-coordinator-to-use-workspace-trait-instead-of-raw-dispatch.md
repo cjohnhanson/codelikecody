@@ -1,12 +1,12 @@
 ---
 title: "Wire coordinator to use Workspace trait instead of raw dispatch"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: [agents]
 depends_on: []
 created: 2026-03-11T02:09:47Z
-updated: "2026-03-11T02:22:26Z"
+updated: "2026-03-11T02:48:31Z"
 ---
 
 The Workspace trait exists in clc-sdk (start, send_message, recv_output, status, stop) and WorktreeWorkspace implements it in clc/src/workspace.rs. But coordinate.rs bypasses it entirely - calls dispatch::spawn_worker_process directly and manages workers through the old pipe/pid infrastructure.
@@ -58,4 +58,3 @@ What done looks like:
 ### Current status
 - Phase: tests-unwritten (about to write tests)
 - Next: Write tests in coordinate.rs for the coordinate_with() API
-
