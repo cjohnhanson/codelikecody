@@ -105,6 +105,7 @@ fn main() {
         cli::Command::Tisket { command } => cmd_tisket(command),
         cli::Command::Missouri { command } => cmd_missouri(command),
         cli::Command::Permissions { ref action } => cmd_permissions(action),
+        cli::Command::Inbox { ref action } => cmd_inbox(action),
         cli::Command::Outbox { ref action } => cmd_outbox(action),
         cli::Command::Integrate { ref action } => cmd_integrate(action),
         cli::Command::Coordinators { all } => cmd_coordinators(all),
@@ -364,6 +365,27 @@ fn cmd_permissions(action: &cli::PermissionsAction) -> Result<(), Error> {
             permissions::deny(&project_dir, worker_id, reason)
         }
     }
+}
+
+fn cmd_inbox(action: &cli::InboxAction) -> Result<(), Error> {
+    let cwd = std::env::current_dir()?;
+    match action {
+        cli::InboxAction::Poll => {
+            use clc_sdk::inbox::Inbox as _;
+            let inbox_dir = cwd.join(".clc").join("inbox");
+            if !inbox_dir.exists() {
+                return Ok(());
+            }
+            let mut inbox = clc_sdk::inbox::FolderInbox::new(&inbox_dir);
+            let items = inbox
+                .poll()
+                .map_err(|e| Error::NonBlocking(format!("inbox: {e}")))?;
+            for item in &items {
+                println!("{}\t{}", item.source(), item.content());
+            }
+        }
+    }
+    Ok(())
 }
 
 fn cmd_outbox(action: &cli::OutboxAction) -> Result<(), Error> {

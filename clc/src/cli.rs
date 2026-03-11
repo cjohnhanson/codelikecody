@@ -137,6 +137,11 @@ pub enum Command {
         #[command(subcommand)]
         action: PermissionsAction,
     },
+    /// Poll the inbox for new items (.clc/inbox/).
+    Inbox {
+        #[command(subcommand)]
+        action: InboxAction,
+    },
     /// Write items to the outbox (one file per item in .clc/outbox/).
     Outbox {
         #[command(subcommand)]
@@ -160,6 +165,12 @@ pub enum Command {
         #[command(subcommand)]
         action: CoordinatorAction,
     },
+}
+
+#[derive(Subcommand)]
+pub enum InboxAction {
+    /// Poll the inbox directory, printing items as JSON and moving them to .processed/.
+    Poll,
 }
 
 #[derive(Subcommand)]

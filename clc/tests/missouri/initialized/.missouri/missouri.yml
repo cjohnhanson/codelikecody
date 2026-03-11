@@ -294,6 +294,16 @@ assertions:
     command: "OUTPUT=$(echo '{\"hook_event_name\":\"PostToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Read\",\"tool_input\":{},\"tool_response\":{}}' | clc hook); test -z \"$OUTPUT\""
 
 transitions:
+  - name: "drop files in inbox and poll"
+    command: "mkdir -p .clc/inbox && printf 'voice note content\n' > .clc/inbox/note.md && printf 'task description\n' > .clc/inbox/task.txt && clc inbox poll"
+    target: "../inbox-polled"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true
+
   - name: "write item to outbox"
     command: "printf 'hello outbox\n' | clc outbox write item.md"
     target: "../outbox-with-item"

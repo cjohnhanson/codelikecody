@@ -1,0 +1,29 @@
+assertions:
+  - name: "inbox directory is empty after poll"
+    command: "test $(ls .clc/inbox/ | grep -v '^\\.processed$' | wc -l | tr -d ' ') -eq 0"
+
+  - name: "processed directory exists"
+    command: "test -d .clc/inbox/.processed"
+
+  - name: "note.md was moved to processed"
+    command: "test -f .clc/inbox/.processed/note.md"
+
+  - name: "task.txt was moved to processed"
+    command: "test -f .clc/inbox/.processed/task.txt"
+
+  - name: "processed note has correct content"
+    command: "grep -q 'voice note content' .clc/inbox/.processed/note.md"
+
+  - name: "processed task has correct content"
+    command: "grep -q 'task description' .clc/inbox/.processed/task.txt"
+
+transitions:
+  - name: "second poll returns nothing"
+    command: "test -z \"$(clc inbox poll)\""
+    target: "../inbox-polled-empty"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          command: "validate-settings"
+        - path: ".clc/"
+          ignore: true

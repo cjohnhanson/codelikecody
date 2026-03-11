@@ -1,0 +1,6 @@
+assertions:
+  - name: "inbox still empty after second poll"
+    command: "test $(ls .clc/inbox/ | grep -v '^\\.processed$' | wc -l | tr -d ' ') -eq 0"
+
+  - name: "processed items still present"
+    command: "test -f .clc/inbox/.processed/note.md && test -f .clc/inbox/.processed/task.txt"
