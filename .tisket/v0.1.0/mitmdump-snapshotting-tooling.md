@@ -1,6 +1,6 @@
 ---
 title: "mitmdump snapshotting tooling"
-status: wontfix
+status: cancelled
 assignee:
 labels: [missouri, feature]
 depends_on: []
