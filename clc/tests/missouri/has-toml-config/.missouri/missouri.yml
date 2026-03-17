@@ -1,0 +1,21 @@
+assertions:
+  - name: "clc.toml config file exists at project root"
+    command: "test -f clc.toml"
+
+  - name: "no .clc/config.yml exists"
+    command: "! test -f .clc/config.yml"
+
+  - name: "config show reflects custom main_branch from clc.toml"
+    command: "clc config show 2>&1 | grep 'main_branch.*trunk'"
+
+  - name: "config show does not show default main_branch"
+    command: "! clc config show 2>&1 | grep 'main_branch.*main'"
+
+  - name: "status reports configured main_branch"
+    command: "clc status 2>&1 | grep 'main_branch: trunk'"
+
+  - name: "status reports is_main true on configured trunk branch"
+    command: "git init -q -b trunk && (git checkout -B trunk 2>/dev/null || true) && clc status 2>&1 | grep 'is_main: true'"
+
+  - name: "status reports is_main false on default main when trunk is configured"
+    command: "git init -q -b main && (git checkout -B main 2>/dev/null || true) && clc status 2>&1 | grep 'is_main: false'"

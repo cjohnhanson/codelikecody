@@ -1,0 +1,25 @@
+[project]
+main_branch = "main"
+
+[worker.permissions]
+default = [
+  "Read",
+  "Grep",
+  "Glob",
+  "Write({worktree}/**)",
+  "Edit({worktree}/**)",
+  "Bash(clc *)",
+  "Bash(tisket *)",
+  "Bash(missouri *)",
+  "Bash(cargo *)",
+  "Bash(git add *)",
+  "Bash(git commit *)",
+  "Bash(git status *)",
+  "Bash(git diff *)",
+  "Bash(git log *)",
+]
+
+deny = [
+  "Write({worktree}/.clc/**)",
+  "Edit({worktree}/.clc/**)",
+]

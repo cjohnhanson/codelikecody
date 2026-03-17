@@ -94,3 +94,53 @@ in-review → reviewed → done, going straight from green to done).
 With scoped permissions and deny rules, that write would be blocked.
 
 ## Scratch Notes
+
+### 2026-03-17: Tests written (phase: tests-unwritten → tests-written)
+
+**Missouri tests created (4 new test states):**
+- `has-toml-config` — clc.toml at root with `[project] main_branch = "trunk"`, verifies config show and status
+- `has-bad-toml-config` — invalid TOML, verifies error handling
+- `toml-config-with-coordinator` — clc.toml with `[coordinator]` section
+- `toml-config-with-worker-permissions` — clc.toml with `[worker.permissions]` default + deny
+
+**Unit tests added to config.rs (9 new tests):**
+- `load_toml_config_from_project_root` — loads from clc.toml
+- `load_toml_config_defaults_when_no_file` — falls back to defaults
+- `load_toml_config_error_on_invalid_toml` — errors on bad TOML
+- `load_toml_config_with_coordinator_section` — parses coordinator
+- `load_toml_config_with_worker_permissions_default` — parses worker.permissions.default
+- `load_toml_config_with_worker_permissions_deny` — parses worker.permissions.deny
+- `load_toml_config_worker_permissions_empty_by_default` — empty when absent
+- `load_toml_config_prefers_clc_toml_over_yaml` — clc.toml wins over .clc/config.yml
+- `load_toml_config_full_shape` — full config with all sections
+
+**Unit tests added to permissions.rs (7 new tests):**
+- `seed_defaults_uses_config_permissions_when_provided` — uses config, not hardcoded
+- `seed_defaults_writes_deny_rules` — writes permissions.deny array
+- `seed_defaults_expands_worktree_placeholder` — {worktree} → actual path
+- `seed_defaults_falls_back_to_baseline_when_config_empty` — empty config → hardcoded baseline
+- `seed_defaults_is_idempotent` — won't overwrite after grants
+- `seed_defaults_sets_dont_ask_mode` — defaultMode: dontAsk
+- `seed_defaults_merges_into_existing_settings` — preserves hooks
+
+**Key design decisions from tests:**
+- New struct fields: `config.worker.permissions.default`, `config.worker.permissions.deny`
+- New function: `seed_defaults(working_dir, config_defaults, config_deny)` replaces `seed_baseline`
+- {worktree} expansion happens in seed_defaults, not in config loading
+- Empty config.worker.permissions.default → falls back to BASELINE_PERMISSIONS
+- clc.toml at project root takes precedence over .clc/config.yml
+
+**Files consulted:**
+- `clc/src/config.rs` — current YAML config loading
+- `clc/src/permissions.rs` — BASELINE_PERMISSIONS, seed_baseline
+- `clc/src/dispatch.rs` — calls seed_baseline
+- `clc/src/main.rs` — wiring, cmd handlers
+- `clc/tests/missouri/has-config/` — existing config test pattern
+- `clc/tests/missouri/dispatched-with-config-permissions/` — existing permissions test
+- `clc/tests/missouri/.missouri/` — test infrastructure (bin wrappers, setup)
+
+**Next steps:**
+- Advance phase to tests-written
+- Implement: add config-rs + toml deps, rewrite config.rs, add seed_defaults to permissions.rs
+- Update dispatch.rs and main.rs to wire new config + seed_defaults
+- Update/retire old YAML missouri tests (has-config, has-bad-config, coordinator-policy-config)

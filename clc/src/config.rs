@@ -188,4 +188,165 @@ mod tests {
         assert!(yaml.contains("Bash(cargo *)"));
         assert!(yaml.contains("Bash(rm *)"));
     }
+
+    // --- TOML config tests (new behavior after migration) ---
+
+    #[test]
+    fn load_toml_config_from_project_root() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("clc.toml"),
+            "[project]\nmain_branch = \"trunk\"\n",
+        )
+        .unwrap();
+
+        let config = load(dir.path()).unwrap();
+        assert_eq!(config.main_branch, "trunk");
+    }
+
+    #[test]
+    fn load_toml_config_defaults_when_no_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = load(dir.path()).unwrap();
+        assert_eq!(config.main_branch, "main");
+        assert!(config.coordinator.auto_grant.is_empty());
+        assert!(config.coordinator.always_escalate.is_empty());
+    }
+
+    #[test]
+    fn load_toml_config_error_on_invalid_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("clc.toml"), "][not valid toml{{{\n").unwrap();
+
+        let result = load(dir.path());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn load_toml_config_with_coordinator_section() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("clc.toml"),
+            "[project]\nmain_branch = \"main\"\n\n\
+             [coordinator]\nauto_grant = [\"Bash(cargo *)\"]\nalways_escalate = [\"Bash(rm *)\"]\n",
+        )
+        .unwrap();
+
+        let config = load(dir.path()).unwrap();
+        assert_eq!(config.coordinator.auto_grant, vec!["Bash(cargo *)"]);
+        assert_eq!(config.coordinator.always_escalate, vec!["Bash(rm *)"]);
+    }
+
+    #[test]
+    fn load_toml_config_with_worker_permissions_default() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("clc.toml"),
+            "[project]\nmain_branch = \"main\"\n\n\
+             [worker.permissions]\n\
+             default = [\"Read\", \"Grep\", \"Write({worktree}/**)\", \"Edit({worktree}/**)\"]\n",
+        )
+        .unwrap();
+
+        let config = load(dir.path()).unwrap();
+        assert_eq!(config.worker.permissions.default.len(), 4);
+        assert!(config.worker.permissions.default.contains(&"Read".to_string()));
+        assert!(config
+            .worker
+            .permissions
+            .default
+            .contains(&"Write({worktree}/**)".to_string()));
+    }
+
+    #[test]
+    fn load_toml_config_with_worker_permissions_deny() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("clc.toml"),
+            "[project]\nmain_branch = \"main\"\n\n\
+             [worker.permissions]\n\
+             default = [\"Read\"]\n\
+             deny = [\"Write({worktree}/.clc/**)\", \"Edit({worktree}/.clc/**)\"]\n",
+        )
+        .unwrap();
+
+        let config = load(dir.path()).unwrap();
+        assert_eq!(config.worker.permissions.deny.len(), 2);
+        assert!(config
+            .worker
+            .permissions
+            .deny
+            .contains(&"Write({worktree}/.clc/**)".to_string()));
+        assert!(config
+            .worker
+            .permissions
+            .deny
+            .contains(&"Edit({worktree}/.clc/**)".to_string()));
+    }
+
+    #[test]
+    fn load_toml_config_worker_permissions_empty_by_default() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("clc.toml"),
+            "[project]\nmain_branch = \"main\"\n",
+        )
+        .unwrap();
+
+        let config = load(dir.path()).unwrap();
+        assert!(config.worker.permissions.default.is_empty());
+        assert!(config.worker.permissions.deny.is_empty());
+    }
+
+    #[test]
+    fn load_toml_config_prefers_clc_toml_over_yaml() {
+        // When both clc.toml and .clc/config.yml exist, clc.toml wins.
+        let dir = tempfile::tempdir().unwrap();
+        let clc_dir = dir.path().join(".clc");
+        std::fs::create_dir_all(&clc_dir).unwrap();
+        std::fs::write(clc_dir.join("config.yml"), "main_branch: yaml-branch\n").unwrap();
+        std::fs::write(
+            dir.path().join("clc.toml"),
+            "[project]\nmain_branch = \"toml-branch\"\n",
+        )
+        .unwrap();
+
+        let config = load(dir.path()).unwrap();
+        assert_eq!(config.main_branch, "toml-branch");
+    }
+
+    #[test]
+    fn load_toml_config_full_shape() {
+        let toml = r#"
+[project]
+main_branch = "develop"
+
+[worker.permissions]
+default = [
+    "Read",
+    "Grep",
+    "Glob",
+    "Write({worktree}/**)",
+    "Edit({worktree}/**)",
+    "Bash(clc *)",
+]
+deny = [
+    "Write({worktree}/.clc/**)",
+    "Edit({worktree}/.clc/**)",
+]
+
+[coordinator]
+auto_grant = ["Bash(cargo *)"]
+always_escalate = ["Bash(rm *)"]
+"#;
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("clc.toml"), toml).unwrap();
+
+        let config = load(dir.path()).unwrap();
+        assert_eq!(config.main_branch, "develop");
+        assert_eq!(config.worker.permissions.default.len(), 6);
+        assert_eq!(config.worker.permissions.deny.len(), 2);
+        assert_eq!(config.coordinator.auto_grant, vec!["Bash(cargo *)"]);
+        assert_eq!(config.coordinator.always_escalate, vec!["Bash(rm *)"]);
+    }
 }

@@ -1,0 +1,6 @@
+assertions:
+  - name: "config show fails on invalid toml config"
+    command: "! clc config show"
+
+  - name: "config show error mentions config file"
+    command: "clc config show 2>&1 | grep -i config"

@@ -1,0 +1,12 @@
+[project]
+main_branch = "main"
+
+[coordinator]
+auto_grant = [
+  "Bash(cargo *)",
+  "Bash(npm *)",
+]
+always_escalate = [
+  "Bash(rm *)",
+  "Bash(git push *)",
+]

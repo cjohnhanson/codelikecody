@@ -867,4 +867,211 @@ mod tests {
         grant(&project, "test-worker", "Bash(docker *)").unwrap();
         assert!(!esc_path.exists(), "escalation not resolved after grant");
     }
+
+    // --- seed_defaults tests (replaces seed_baseline with config-driven permissions) ---
+
+    #[test]
+    fn seed_defaults_uses_config_permissions_when_provided() {
+        let dir = make_test_dir();
+        let config_defaults = vec![
+            "Read".to_string(),
+            "Grep".to_string(),
+            "Write({worktree}/**)".to_string(),
+        ];
+        let config_deny = vec!["Write({worktree}/.clc/**)".to_string()];
+
+        seed_defaults(&dir, &config_defaults, &config_deny).unwrap();
+
+        let content = fs::read_to_string(dir.join(".claude").join("settings.local.json")).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let allow: Vec<&str> = settings["permissions"]["allow"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
+
+        // Should use config defaults, not hardcoded BASELINE_PERMISSIONS.
+        assert!(allow.contains(&"Read"));
+        assert!(allow.contains(&"Grep"));
+        assert!(allow.contains(&"Write({worktree}/**)"));
+        // Should NOT contain hardcoded permissions not in config.
+        assert!(!allow.contains(&"WebFetch"), "hardcoded WebFetch should not appear when config provides defaults");
+        assert!(!allow.contains(&"MultiEdit"), "hardcoded MultiEdit should not appear when config provides defaults");
+    }
+
+    #[test]
+    fn seed_defaults_writes_deny_rules() {
+        let dir = make_test_dir();
+        let config_defaults = vec!["Read".to_string()];
+        let config_deny = vec![
+            "Write({worktree}/.clc/**)".to_string(),
+            "Edit({worktree}/.clc/**)".to_string(),
+        ];
+
+        seed_defaults(&dir, &config_defaults, &config_deny).unwrap();
+
+        let content = fs::read_to_string(dir.join(".claude").join("settings.local.json")).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let deny = settings["permissions"]["deny"]
+            .as_array()
+            .expect("permissions.deny should be an array");
+
+        assert_eq!(deny.len(), 2);
+        assert!(deny.iter().any(|v| v == "Write({worktree}/.clc/**)"));
+        assert!(deny.iter().any(|v| v == "Edit({worktree}/.clc/**)"));
+    }
+
+    #[test]
+    fn seed_defaults_expands_worktree_placeholder() {
+        let dir = make_test_dir();
+        let config_defaults = vec![
+            "Write({worktree}/**)".to_string(),
+            "Edit({worktree}/**)".to_string(),
+        ];
+        let config_deny = vec![
+            "Write({worktree}/.clc/**)".to_string(),
+        ];
+
+        seed_defaults(&dir, &config_defaults, &config_deny).unwrap();
+
+        let content = fs::read_to_string(dir.join(".claude").join("settings.local.json")).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let allow: Vec<&str> = settings["permissions"]["allow"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
+        let deny: Vec<&str> = settings["permissions"]["deny"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
+
+        let dir_str = dir.to_string_lossy();
+
+        // {worktree} should be expanded to the actual working directory path.
+        assert!(
+            allow.iter().any(|p| p.contains(&*dir_str) && p.contains("/**")),
+            "allow rules should have {worktree} expanded to actual path, got: {:?}",
+            allow
+        );
+        assert!(
+            deny.iter().any(|p| p.contains(&*dir_str) && p.contains("/.clc/**")),
+            "deny rules should have {worktree} expanded to actual path, got: {:?}",
+            deny
+        );
+        // Should NOT contain the literal {worktree} placeholder.
+        assert!(
+            !allow.iter().any(|p| p.contains("{worktree}")),
+            "allow should not contain literal {worktree}"
+        );
+        assert!(
+            !deny.iter().any(|p| p.contains("{worktree}")),
+            "deny should not contain literal {worktree}"
+        );
+    }
+
+    #[test]
+    fn seed_defaults_falls_back_to_baseline_when_config_empty() {
+        let dir = make_test_dir();
+        // Empty config defaults = use hardcoded BASELINE_PERMISSIONS.
+        let config_defaults: Vec<String> = vec![];
+        let config_deny: Vec<String> = vec![];
+
+        seed_defaults(&dir, &config_defaults, &config_deny).unwrap();
+
+        let content = fs::read_to_string(dir.join(".claude").join("settings.local.json")).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let allow: Vec<&str> = settings["permissions"]["allow"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
+
+        // Should fall back to baseline permissions.
+        assert!(allow.contains(&"Read"), "missing baseline Read");
+        assert!(allow.contains(&"Write"), "missing baseline Write");
+        assert!(allow.contains(&"Bash(clc *)"), "missing baseline Bash(clc *)");
+    }
+
+    #[test]
+    fn seed_defaults_is_idempotent() {
+        let dir = make_test_dir();
+        let config_defaults = vec!["Read".to_string(), "Grep".to_string()];
+        let config_deny = vec!["Write({worktree}/.clc/**)".to_string()];
+
+        seed_defaults(&dir, &config_defaults, &config_deny).unwrap();
+
+        let path = dir.join(".claude").join("settings.local.json");
+
+        // Add an extra permission to simulate a prior grant.
+        add_permission_rule(&path, "Bash(npm *)").unwrap();
+        let before = fs::read_to_string(&path).unwrap();
+        let before_count =
+            serde_json::from_str::<serde_json::Value>(&before).unwrap()["permissions"]["allow"]
+                .as_array()
+                .unwrap()
+                .len();
+
+        // Second seed should not overwrite since permissions.allow exists.
+        seed_defaults(&dir, &config_defaults, &config_deny).unwrap();
+
+        let after = fs::read_to_string(&path).unwrap();
+        let after_count = serde_json::from_str::<serde_json::Value>(&after).unwrap()["permissions"]
+            ["allow"]
+            .as_array()
+            .unwrap()
+            .len();
+
+        assert_eq!(
+            before_count, after_count,
+            "seed_defaults overwrote existing permissions"
+        );
+    }
+
+    #[test]
+    fn seed_defaults_sets_dont_ask_mode() {
+        let dir = make_test_dir();
+        let config_defaults = vec!["Read".to_string()];
+        let config_deny = vec![];
+
+        seed_defaults(&dir, &config_defaults, &config_deny).unwrap();
+
+        let content = fs::read_to_string(dir.join(".claude").join("settings.local.json")).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+        assert_eq!(settings["permissions"]["defaultMode"], "dontAsk");
+    }
+
+    #[test]
+    fn seed_defaults_merges_into_existing_settings() {
+        let dir = make_test_dir();
+        let path = dir.join(".claude").join("settings.local.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+
+        // Write a settings file with hooks but no permissions.
+        fs::write(
+            &path,
+            r#"{"hooks": {"PreToolUse": [{"hooks": [{"command": "clc hook", "type": "command"}]}]}}"#,
+        )
+        .unwrap();
+
+        let config_defaults = vec!["Read".to_string()];
+        let config_deny = vec!["Write({worktree}/.clc/**)".to_string()];
+
+        seed_defaults(&dir, &config_defaults, &config_deny).unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+        // Hooks preserved.
+        assert!(settings.get("hooks").is_some(), "hooks lost during seed");
+        // Permissions added.
+        let allow = settings["permissions"]["allow"].as_array().unwrap();
+        assert!(!allow.is_empty(), "permissions not seeded");
+    }
 }

@@ -1,0 +1,30 @@
+assertions:
+  - name: "clc.toml with worker permissions exists"
+    command: "test -f clc.toml"
+
+  - name: "config show includes worker permissions section"
+    command: "clc config show | grep -q 'worker'"
+
+  - name: "config show includes default permissions"
+    command: "clc config show | grep -q 'default'"
+
+  - name: "config show includes deny rules"
+    command: "clc config show | grep -q 'deny'"
+
+  - name: "config show includes scoped Write permission"
+    command: "clc config show | grep -q 'Write({worktree}/\\*\\*)'"
+
+  - name: "config show includes scoped Edit permission"
+    command: "clc config show | grep -q 'Edit({worktree}/\\*\\*)'"
+
+  - name: "config show includes .clc deny rule for Write"
+    command: "clc config show | grep -q 'Write({worktree}/.clc/\\*\\*)'"
+
+  - name: "config show includes .clc deny rule for Edit"
+    command: "clc config show | grep -q 'Edit({worktree}/.clc/\\*\\*)'"
+
+  - name: "config show includes Read in default permissions"
+    command: "clc config show | grep -q 'Read'"
+
+  - name: "config show includes Bash(clc *) in default permissions"
+    command: "clc config show | grep -q 'Bash(clc \\*)'"
