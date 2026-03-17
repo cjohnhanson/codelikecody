@@ -205,3 +205,21 @@ No tests/missouri/ directory exists yet — all tests are unit tests inline in s
 **Deferred (not in this scope):**
 - NetworkDiff in compare.rs (HAR comparison) — complex, design doc says "same pattern as filesystem", but HAR parsing not needed to make these tests pass
 - NixBackend auto-adding mitmproxy — lower priority, need tests first
+
+### Session 2026-03-17
+
+**Executor integration (tests-unwritten → green):**
+
+Tests added to executor.rs:
+- `execute_transition_network_replay_fails_without_mitmdump` — verifies step fails with mitmdump error when binary not on PATH
+- `execute_transition_network_replay_injects_proxy_env` — verifies HTTPS_PROXY injected via fake mitmdump (python3 TCP listener script)
+
+Implementation in executor.rs:
+- `start_mitmdump_replay` now pipes stderr and parses port from "listening at http://*:PORT" line via `parse_mitmdump_port()`
+- `MitmdumpHandle` now has `pub port: u16` field
+- `execute_transition` checks `transition.network`:
+  - `Replay { replay }`: resolves flow path relative to source state's config dir, starts mitmdump, merges network env (HTTPS_PROXY/HTTP_PROXY/NODE_EXTRA_CA_CERTS) into command env via `Cow<BTreeMap>`, early-returns failed StepResult if mitmdump errors
+  - `Record`: TODO stub (no-op)
+  - `None`: unchanged behavior
+
+All 76 unit tests pass. 53 CLI tests pass. 17 illinois tests pass (except pre-existing meltano failure).
