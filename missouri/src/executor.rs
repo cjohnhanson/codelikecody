@@ -241,6 +241,71 @@ fn which_nix() -> Option<Utf8PathBuf> {
     std::option::Option::None
 }
 
+/// Build the extra environment variables needed for mitmproxy interception.
+///
+/// Sets:
+/// - `HTTPS_PROXY` / `HTTP_PROXY` → `http://127.0.0.1:{port}`
+/// - `NODE_EXTRA_CA_CERTS` → path to the mitmproxy CA certificate
+pub fn build_network_env(port: u16) -> BTreeMap<String, String> {
+    let proxy = format!("http://127.0.0.1:{port}");
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".into());
+    let ca_cert = format!("{home}/.mitmproxy/mitmproxy-ca-cert.pem");
+    let mut env = BTreeMap::new();
+    env.insert("HTTPS_PROXY".into(), proxy.clone());
+    env.insert("HTTP_PROXY".into(), proxy);
+    env.insert("NODE_EXTRA_CA_CERTS".into(), ca_cert);
+    env
+}
+
+/// Start mitmdump in server-replay mode using the given flow file.
+///
+/// `path_env` is the PATH to search for the `mitmdump` binary.
+/// Returns a `MitmdumpHandle` that kills the process on drop, or an error
+/// string if mitmdump cannot be found or fails to start.
+pub fn start_mitmdump_replay(
+    flow: &camino::Utf8Path,
+    path_env: &str,
+) -> Result<MitmdumpHandle, String> {
+    // Find mitmdump on the given PATH
+    let mitmdump_bin = path_env
+        .split(':')
+        .map(|dir| camino::Utf8PathBuf::from(dir).join("mitmdump"))
+        .find(|p| p.exists())
+        .ok_or_else(|| {
+            format!(
+                "mitmdump not found on PATH — add mitmproxy to packages or install it manually"
+            )
+        })?;
+
+    let child = std::process::Command::new(mitmdump_bin.as_str())
+        .args([
+            "--server-replay",
+            flow.as_str(),
+            "--listen-port",
+            "0",
+            "--quiet",
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| format!("failed to start mitmdump: {e}"))?;
+
+    Ok(MitmdumpHandle { child })
+}
+
+/// RAII handle for a running mitmdump process. Kills the process on drop.
+#[derive(Debug)]
+pub struct MitmdumpHandle {
+    child: std::process::Child,
+}
+
+impl Drop for MitmdumpHandle {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
 /// Build the PATH env var: state bin/ → project bin/ → base path.
 fn build_path_env(
     state_bin: Option<&Utf8Path>,
@@ -1344,5 +1409,53 @@ transitions:
             .unwrap();
         assert!(output.status.success());
         assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "myvalue");
+    }
+
+    #[test]
+    fn build_network_env_sets_https_proxy() {
+        let port = 8080u16;
+        let env = build_network_env(port);
+        assert_eq!(
+            env.get("HTTPS_PROXY").map(|s| s.as_str()),
+            Some("http://127.0.0.1:8080")
+        );
+        assert_eq!(
+            env.get("HTTP_PROXY").map(|s| s.as_str()),
+            Some("http://127.0.0.1:8080")
+        );
+    }
+
+    #[test]
+    fn build_network_env_sets_ca_cert() {
+        let port = 9999u16;
+        let env = build_network_env(port);
+        // NODE_EXTRA_CA_CERTS must point at the mitmproxy CA cert
+        let ca = env.get("NODE_EXTRA_CA_CERTS").expect("NODE_EXTRA_CA_CERTS not set");
+        assert!(
+            ca.contains("mitmproxy"),
+            "NODE_EXTRA_CA_CERTS should point at mitmproxy cert, got: {ca}"
+        );
+    }
+
+    #[test]
+    fn start_mitmdump_replay_errors_when_not_on_path() {
+        // On a PATH with no mitmdump binary, start_mitmdump should return an error.
+        let tmp = tempfile::tempdir().unwrap();
+        let flow_path = tmp.path().join("test.flow");
+        std::fs::write(&flow_path, b"").unwrap();
+        let flow = camino::Utf8PathBuf::try_from(flow_path).unwrap();
+
+        // Override PATH to an empty directory so mitmdump is not found
+        let empty_dir = tmp.path().join("empty_bin");
+        std::fs::create_dir_all(&empty_dir).unwrap();
+        let empty_path = empty_dir.to_str().unwrap();
+
+        let result = start_mitmdump_replay(&flow, empty_path);
+        assert!(result.is_err(), "expected error when mitmdump not on PATH");
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("mitmdump"),
+            "error message should mention mitmdump: {msg}"
+        );
     }
 }

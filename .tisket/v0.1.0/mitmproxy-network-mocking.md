@@ -154,3 +154,43 @@ This tisket replaces:
 - The original thin `mitmproxy-network-mocking` stub
 
 ## Scratch Notes
+
+### Session 2026-03-16
+
+**Tests written (tests-unwritten → tests-written):**
+
+Files consulted:
+- `missouri/src/config.rs` — TransitionConfig, ComparatorsConfig, parse_config()
+- `missouri/src/graph.rs` — Transition, FileComparator/EnvComparator pattern
+- `missouri/src/executor.rs` — Backend trait, BareBackend, NixBackend, detect_sandbox
+- `missouri/src/compare.rs` — FileDiff, EnvDiff patterns
+
+No tests/missouri/ directory exists yet — all tests are unit tests inline in source files.
+
+**Tests added:**
+- `config.rs`: parse_network_config_replay, parse_network_config_record, parse_network_config_absent, parse_network_comparators, parse_network_comparators_absent
+- `graph.rs`: discover_transition_network_replay, discover_transition_network_record, discover_transition_network_absent, discover_network_comparators_resolved
+- `executor.rs`: build_network_env_sets_https_proxy, build_network_env_sets_ca_cert, start_mitmdump_replay_errors_when_not_on_path
+
+**Types needed (don't exist yet):**
+- `config::NetworkConfig` enum — `Replay { replay: Utf8PathBuf }` and `Record` variants
+  - Use `#[serde(untagged)]` so `{replay: path}` and `{record: true}` both deserialize
+- `config::NetworkComparatorConfig` — `{ path: String, command: Option<String>, ignore: bool }`
+- `TransitionConfig.network: Option<NetworkConfig>`
+- `ComparatorsConfig.network: Vec<NetworkComparatorConfig>` (default empty)
+- `graph::NetworkComparator` enum — `Ignore` and `Custom { command }` (mirrors FileComparator)
+- `Transition.network: Option<config::NetworkConfig>`
+- `Transition.network_comparators: Vec<(String, NetworkComparator)>`
+- `executor::build_network_env(port: u16) -> BTreeMap<String, String>`
+  - Sets HTTPS_PROXY=http://127.0.0.1:{port}, HTTP_PROXY same, NODE_EXTRA_CA_CERTS=~/.mitmproxy/mitmproxy-ca-cert.pem
+- `executor::start_mitmdump_replay(flow: &Utf8Path, path: &str) -> Result<MitmdumpHandle, String>`
+  - Errors if mitmdump not found on given PATH
+
+**Implementation plan (next phase):**
+1. config.rs: Add NetworkConfig enum + NetworkComparatorConfig + wire into TransitionConfig/ComparatorsConfig
+2. graph.rs: Add NetworkComparator + wire network/network_comparators into Transition resolve
+3. executor.rs: Add build_network_env + start_mitmdump_replay + MitmdumpHandle (RAII for process teardown) + wire into run_transition
+
+**Deferred (not in this scope):**
+- NetworkDiff in compare.rs (HAR comparison) — complex, design doc says "same pattern as filesystem", but HAR parsing not needed to make these tests pass
+- NixBackend auto-adding mitmproxy — lower priority, need tests first

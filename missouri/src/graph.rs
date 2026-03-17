@@ -36,6 +36,13 @@ pub enum EnvComparator {
     Custom { command: String },
 }
 
+/// A resolved network request comparator override.
+#[derive(Debug, Clone)]
+pub enum NetworkComparator {
+    Ignore,
+    Custom { command: String },
+}
+
 /// A resolved transition (edge) in the graph.
 #[derive(Debug)]
 pub struct Transition {
@@ -48,6 +55,10 @@ pub struct Transition {
     pub file_comparators: Vec<(Utf8PathBuf, FileComparator)>,
     /// Env var comparison overrides: var name → comparator.
     pub env_comparators: Vec<(String, EnvComparator)>,
+    /// Network request comparison overrides: path pattern → comparator.
+    pub network_comparators: Vec<(String, NetworkComparator)>,
+    /// Network interception config for this transition.
+    pub network: Option<crate::config::NetworkConfig>,
     /// Expected stdout (exact match) when assertions are enabled.
     pub expected_stdout: Option<String>,
     /// Expected stderr (exact match) when assertions are enabled.
@@ -234,6 +245,7 @@ impl StateGraph {
 
                 let file_comparators = resolve_file_comparators(t);
                 let env_comparators = resolve_env_comparators(t);
+                let network_comparators = resolve_network_comparators(t);
 
                 let transition_idx = transitions.len();
                 transitions.push(Transition {
@@ -244,6 +256,8 @@ impl StateGraph {
                     target: *target_id,
                     file_comparators,
                     env_comparators,
+                    network_comparators,
+                    network: t.network.clone(),
                     expected_stdout: t.stdout.clone(),
                     expected_stderr: t.stderr.clone(),
                 });
@@ -531,6 +545,33 @@ fn resolve_env_comparators(t: &TransitionConfig) -> Vec<(String, EnvComparator)>
                 );
             };
             (ec.name.clone(), comparator)
+        })
+        .collect()
+}
+
+fn resolve_network_comparators(t: &TransitionConfig) -> Vec<(String, NetworkComparator)> {
+    let Some(comps) = &t.comparators else {
+        return vec![];
+    };
+    comps
+        .network
+        .iter()
+        .map(|nc| {
+            let comparator = if nc.ignore {
+                NetworkComparator::Ignore
+            } else if let Some(cmd) = &nc.command {
+                NetworkComparator::Custom {
+                    command: cmd.clone(),
+                }
+            } else {
+                return (
+                    nc.path.clone(),
+                    NetworkComparator::Custom {
+                        command: String::new(),
+                    },
+                );
+            };
+            (nc.path.clone(), comparator)
         })
         .collect()
 }
@@ -1105,6 +1146,121 @@ transitions:
             "bin should be in test_dir: {:?}",
             graph.project_bin
         );
+    }
+
+    #[test]
+    fn discover_transition_network_replay() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        let flow_path = root.join("a").join(".missouri").join("recordings");
+        fs::create_dir_all(&flow_path).unwrap();
+        fs::write(flow_path.join("worker.flow"), b"").unwrap();
+
+        make_state(
+            root,
+            "a",
+            r#"
+transitions:
+  - command: "clc dispatch test"
+    target: "../b"
+    network:
+      replay: .missouri/recordings/worker.flow
+"#,
+        );
+        make_state(root, "b", "{}");
+
+        let graph = StateGraph::discover(root, ".missouri").unwrap();
+        assert_eq!(graph.transitions.len(), 1);
+        let t = &graph.transitions[0];
+        match t.network.as_ref().unwrap() {
+            crate::config::NetworkConfig::Replay { replay } => {
+                assert_eq!(replay.as_str(), ".missouri/recordings/worker.flow");
+            }
+            other => panic!("expected Replay, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn discover_transition_network_record() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        make_state(
+            root,
+            "a",
+            r#"
+transitions:
+  - command: "clc dispatch test"
+    target: "../b"
+    network:
+      record: true
+"#,
+        );
+        make_state(root, "b", "{}");
+
+        let graph = StateGraph::discover(root, ".missouri").unwrap();
+        let t = &graph.transitions[0];
+        assert!(
+            matches!(t.network.as_ref().unwrap(), crate::config::NetworkConfig::Record { .. }),
+            "expected Record variant"
+        );
+    }
+
+    #[test]
+    fn discover_transition_network_absent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        make_state(
+            root,
+            "a",
+            r#"
+transitions:
+  - command: "echo hi"
+    target: "../b"
+"#,
+        );
+        make_state(root, "b", "{}");
+
+        let graph = StateGraph::discover(root, ".missouri").unwrap();
+        let t = &graph.transitions[0];
+        assert!(t.network.is_none());
+    }
+
+    #[test]
+    fn discover_network_comparators_resolved() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        make_state(
+            root,
+            "a",
+            r#"
+transitions:
+  - command: "clc dispatch test"
+    target: "../b"
+    comparators:
+      network:
+        - path: "api.anthropic.com/v1/messages"
+          command: "compare-api-calls"
+        - path: "*.googleapis.com/**"
+          ignore: true
+"#,
+        );
+        make_state(root, "b", "{}");
+
+        let graph = StateGraph::discover(root, ".missouri").unwrap();
+        let t = &graph.transitions[0];
+        assert_eq!(t.network_comparators.len(), 2);
+
+        let (path0, comp0) = &t.network_comparators[0];
+        assert_eq!(path0, "api.anthropic.com/v1/messages");
+        assert!(matches!(comp0, NetworkComparator::Custom { command } if command == "compare-api-calls"));
+
+        let (path1, comp1) = &t.network_comparators[1];
+        assert_eq!(path1, "*.googleapis.com/**");
+        assert!(matches!(comp1, NetworkComparator::Ignore));
     }
 
     #[test]

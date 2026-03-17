@@ -19,6 +19,34 @@ pub struct StateConfig {
     pub assertions: Vec<AssertionConfig>,
 }
 
+/// Network interception config for a transition.
+///
+/// Exactly one variant applies per transition:
+/// - `Replay { replay }` — start mitmdump in replay mode with the given flow file
+/// - `Record` — start mitmdump in record mode and stash the captured flow
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum NetworkConfig {
+    /// Replay from a previously recorded flow file.
+    Replay { replay: Utf8PathBuf },
+    /// Record traffic during this transition.
+    Record { record: bool },
+}
+
+/// Override comparison for a specific network request path pattern.
+#[derive(Debug, Deserialize)]
+pub struct NetworkComparatorConfig {
+    /// URL path pattern (e.g. `"api.anthropic.com/v1/messages"` or `"*.googleapis.com/**"`).
+    pub path: String,
+
+    /// Custom comparator command.
+    pub command: Option<String>,
+
+    /// If true, exclude requests matching this path from comparison.
+    #[serde(default)]
+    pub ignore: bool,
+}
+
 /// A transition from one state to another.
 #[derive(Debug, Deserialize)]
 pub struct TransitionConfig {
@@ -39,6 +67,9 @@ pub struct TransitionConfig {
     #[serde(default)]
     pub comparators: Option<ComparatorsConfig>,
 
+    /// Optional network interception config.
+    pub network: Option<NetworkConfig>,
+
     /// Expected stdout (exact match) when assertions are enabled.
     pub stdout: Option<String>,
 
@@ -56,6 +87,10 @@ pub struct ComparatorsConfig {
     /// Environment variable comparison overrides.
     #[serde(default)]
     pub env: Vec<EnvComparatorConfig>,
+
+    /// Network request comparison overrides.
+    #[serde(default)]
+    pub network: Vec<NetworkComparatorConfig>,
 }
 
 /// Override comparison for a specific file or directory.
@@ -434,6 +469,93 @@ members:
                 Utf8PathBuf::from("tisket/tests/missouri"),
             ]
         );
+    }
+
+    #[test]
+    fn parse_network_config_replay() {
+        let yaml = r#"
+transitions:
+  - command: "clc dispatch test"
+    target: "../next"
+    network:
+      replay: recordings/worker.flow
+"#;
+        let config = parse_config(yaml).unwrap();
+        let t = &config.transitions[0];
+        match t.network.as_ref().unwrap() {
+            NetworkConfig::Replay { replay } => {
+                assert_eq!(replay.as_str(), "recordings/worker.flow");
+            }
+            other => panic!("expected Replay, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_network_config_record() {
+        let yaml = r#"
+transitions:
+  - command: "clc dispatch test"
+    target: "../next"
+    network:
+      record: true
+"#;
+        let config = parse_config(yaml).unwrap();
+        let t = &config.transitions[0];
+        assert!(
+            matches!(t.network.as_ref().unwrap(), NetworkConfig::Record { .. }),
+            "expected Record variant"
+        );
+    }
+
+    #[test]
+    fn parse_network_config_absent() {
+        let yaml = r#"
+transitions:
+  - command: "echo hi"
+    target: "../next"
+"#;
+        let config = parse_config(yaml).unwrap();
+        assert!(config.transitions[0].network.is_none());
+    }
+
+    #[test]
+    fn parse_network_comparators() {
+        let yaml = r#"
+transitions:
+  - command: "clc dispatch test"
+    target: "../next"
+    comparators:
+      network:
+        - path: "api.anthropic.com/v1/messages"
+          command: "compare-api-calls"
+        - path: "*.googleapis.com/**"
+          ignore: true
+"#;
+        let config = parse_config(yaml).unwrap();
+        let comps = config.transitions[0].comparators.as_ref().unwrap();
+        assert_eq!(comps.network.len(), 2);
+        assert_eq!(comps.network[0].path, "api.anthropic.com/v1/messages");
+        assert_eq!(comps.network[0].command.as_deref(), Some("compare-api-calls"));
+        assert!(!comps.network[0].ignore);
+        assert_eq!(comps.network[1].path, "*.googleapis.com/**");
+        assert!(comps.network[1].ignore);
+        assert!(comps.network[1].command.is_none());
+    }
+
+    #[test]
+    fn parse_network_comparators_absent() {
+        let yaml = r#"
+transitions:
+  - command: "echo"
+    target: "../next"
+    comparators:
+      files:
+        - path: "out.txt"
+          ignore: true
+"#;
+        let config = parse_config(yaml).unwrap();
+        let comps = config.transitions[0].comparators.as_ref().unwrap();
+        assert!(comps.network.is_empty());
     }
 
     #[test]
