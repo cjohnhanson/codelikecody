@@ -57,3 +57,9 @@ This is an ongoing collection, not a single fix. Individual items can be spun ou
 
 - **`clc done` from green phase fails**: Error "phase must be 'done' to finalize, currently 'green'." But `clc done` is supposed to *advance* to done. The error message is contradictory — if you need to already be at 'done' to run `clc done`, how do you get to done? Workaround: manually write `phase: done` to `.clc/state`, then `clc done` succeeds.
 
+## Session: mitmproxy-network-mocking coordinator run (2026-03-16)
+
+- **Permission grant doesn't unblock worker automatically**: Worker requested permission to run `nix develop`. Coordinator granted it via `clc permissions grant`. Worker stayed idle — "no new activity." Had to manually `clc worker send` a nudge message telling the worker the permission was granted before it resumed. The grant should either automatically resume the worker or inject a message into its stdin pipe so it knows the permission was granted without human intervention.
+
+- **Permission mismatch on command form**: Worker first requested `nix develop /full/path/to/flake#dev --command cargo test`. Permission was granted for "nix develop". Worker then tried the shorter form `nix develop --command cargo test -p missouri` which was denied because the permission string didn't match. Had to grant a second, more specific permission. Permission matching should be more flexible — granting "nix develop" should cover all `nix develop` invocations, not require exact command string matches.
+
