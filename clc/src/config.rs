@@ -4,7 +4,48 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
 
-const CONFIG_FILENAME: &str = "config.yml";
+const TOML_CONFIG_FILENAME: &str = "clc.toml";
+const YAML_CONFIG_FILENAME: &str = "config.yml";
+
+// --- TOML deserialization types (match the clc.toml file structure) ---
+
+#[derive(Debug, Default, Deserialize)]
+struct ProjectSection {
+    #[serde(default = "default_main_branch")]
+    main_branch: String,
+
+    #[serde(default = "default_required_attempts")]
+    required_attempts: u32,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct TomlFile {
+    #[serde(default)]
+    project: ProjectSection,
+
+    #[serde(default)]
+    worker: WorkerConfig,
+
+    #[serde(default)]
+    coordinator: CoordinatorConfig,
+}
+
+// --- Public config types ---
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct WorkerPermissionsConfig {
+    #[serde(default)]
+    pub default: Vec<String>,
+
+    #[serde(default)]
+    pub deny: Vec<String>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct WorkerConfig {
+    #[serde(default)]
+    pub permissions: WorkerPermissionsConfig,
+}
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct PermissionsConfig {
@@ -33,6 +74,9 @@ pub struct Config {
     pub permissions: PermissionsConfig,
 
     #[serde(default)]
+    pub worker: WorkerConfig,
+
+    #[serde(default)]
     pub coordinator: CoordinatorConfig,
 }
 
@@ -42,7 +86,20 @@ impl Default for Config {
             main_branch: default_main_branch(),
             required_attempts: default_required_attempts(),
             permissions: PermissionsConfig::default(),
+            worker: WorkerConfig::default(),
             coordinator: CoordinatorConfig::default(),
+        }
+    }
+}
+
+impl From<TomlFile> for Config {
+    fn from(toml: TomlFile) -> Self {
+        Self {
+            main_branch: toml.project.main_branch,
+            required_attempts: toml.project.required_attempts,
+            permissions: PermissionsConfig::default(),
+            worker: toml.worker,
+            coordinator: toml.coordinator,
         }
     }
 }
@@ -55,33 +112,50 @@ fn default_main_branch() -> String {
     "main".to_string()
 }
 
-/// Load config from `.clc/config.yml` in the given project directory.
-/// Returns defaults if the file doesn't exist. Returns an error if
-/// the file exists but is invalid.
+/// Load config from `clc.toml` at the project root, falling back to
+/// `.clc/config.yml` for backward compatibility. Returns defaults if
+/// neither file exists. Returns an error if a file exists but is invalid.
 pub fn load(project_dir: &Path) -> Result<Config, Error> {
-    let config_path = project_dir.join(".clc").join(CONFIG_FILENAME);
+    let toml_path = project_dir.join(TOML_CONFIG_FILENAME);
 
-    if !config_path.exists() {
-        return Ok(Config::default());
+    if toml_path.exists() {
+        return load_toml(&toml_path);
     }
 
-    let contents = std::fs::read_to_string(&config_path).map_err(|e| {
-        Error::NonBlocking(format!(
-            "failed to read config {}: {e}",
-            config_path.display()
-        ))
+    let yaml_path = project_dir.join(".clc").join(YAML_CONFIG_FILENAME);
+    if yaml_path.exists() {
+        return load_yaml(&yaml_path);
+    }
+
+    Ok(Config::default())
+}
+
+fn load_toml(path: &Path) -> Result<Config, Error> {
+    let contents = std::fs::read_to_string(path).map_err(|e| {
+        Error::NonBlocking(format!("failed to read config {}: {e}", path.display()))
+    })?;
+
+    let toml_file: TomlFile = toml::from_str(&contents)
+        .map_err(|e| Error::NonBlocking(format!("invalid config {}: {e}", path.display())))?;
+
+    Ok(Config::from(toml_file))
+}
+
+fn load_yaml(path: &Path) -> Result<Config, Error> {
+    let contents = std::fs::read_to_string(path).map_err(|e| {
+        Error::NonBlocking(format!("failed to read config {}: {e}", path.display()))
     })?;
 
     serde_yml::from_str(&contents)
-        .map_err(|e| Error::NonBlocking(format!("invalid config {}: {e}", config_path.display())))
+        .map_err(|e| Error::NonBlocking(format!("invalid config {}: {e}", path.display())))
 }
 
-/// Print the effective config as YAML.
+/// Print the effective config as TOML.
 pub fn show(project_dir: &Path) -> Result<(), Error> {
     let config = load(project_dir)?;
-    let yaml = serde_yml::to_string(&config)
+    let toml_str = toml::to_string_pretty(&config)
         .map_err(|e| Error::NonBlocking(format!("failed to serialize config: {e}")))?;
-    print!("{yaml}");
+    print!("{toml_str}");
     Ok(())
 }
 
@@ -181,12 +255,12 @@ mod tests {
             },
             ..Config::default()
         };
-        let yaml = serde_yml::to_string(&config).unwrap();
-        assert!(yaml.contains("coordinator"));
-        assert!(yaml.contains("auto_grant"));
-        assert!(yaml.contains("always_escalate"));
-        assert!(yaml.contains("Bash(cargo *)"));
-        assert!(yaml.contains("Bash(rm *)"));
+        let output = toml::to_string_pretty(&config).unwrap();
+        assert!(output.contains("coordinator"));
+        assert!(output.contains("auto_grant"));
+        assert!(output.contains("always_escalate"));
+        assert!(output.contains("Bash(cargo *)"));
+        assert!(output.contains("Bash(rm *)"));
     }
 
     // --- TOML config tests (new behavior after migration) ---

@@ -204,6 +204,90 @@ pub fn seed_baseline(working_dir: &Path, extra_allow: &[String]) -> Result<(), E
     Ok(())
 }
 
+/// Write permissions into a worker's `.claude/settings.local.json` using
+/// config-driven defaults and deny rules.
+///
+/// When `config_defaults` is non-empty, uses those permissions instead of
+/// `BASELINE_PERMISSIONS`. When empty, falls back to the hardcoded baseline.
+///
+/// `config_deny` rules are written to `permissions.deny` in the settings file.
+/// `{worktree}` placeholders in both allow and deny lists are expanded to the
+/// actual `working_dir` path.
+///
+/// Idempotent — skips if `permissions.allow` is already present.
+pub fn seed_defaults(
+    working_dir: &Path,
+    config_defaults: &[String],
+    config_deny: &[String],
+) -> Result<(), Error> {
+    let settings_path = working_dir.join(".claude").join("settings.local.json");
+
+    // Read existing settings or start fresh.
+    let mut settings: serde_json::Value = if settings_path.exists() {
+        let content = fs::read_to_string(&settings_path)?;
+        serde_json::from_str(&content)?
+    } else {
+        serde_json::json!({})
+    };
+
+    // Don't overwrite if permissions are already seeded (e.g., re-dispatch after grant).
+    if settings
+        .get("permissions")
+        .and_then(|p| p.get("allow"))
+        .and_then(|a| a.as_array())
+        .is_some_and(|arr| !arr.is_empty())
+    {
+        return Ok(());
+    }
+
+    let working_dir_str = working_dir.to_string_lossy();
+
+    // Build allow list: config defaults or hardcoded baseline.
+    let mut seen = std::collections::HashSet::new();
+    let mut allow: Vec<serde_json::Value> = Vec::new();
+
+    if config_defaults.is_empty() {
+        // Fall back to hardcoded baseline.
+        for p in BASELINE_PERMISSIONS {
+            if seen.insert(p.to_string()) {
+                allow.push(serde_json::Value::String(p.to_string()));
+            }
+        }
+    } else {
+        // Use config-driven defaults, expanding {worktree}.
+        for p in config_defaults {
+            let expanded = p.replace("{worktree}", &working_dir_str);
+            if seen.insert(expanded.clone()) {
+                allow.push(serde_json::Value::String(expanded));
+            }
+        }
+    }
+
+    // Build deny list, expanding {worktree}.
+    let deny: Vec<serde_json::Value> = config_deny
+        .iter()
+        .map(|p| serde_json::Value::String(p.replace("{worktree}", &working_dir_str)))
+        .collect();
+
+    // Merge permissions into existing settings (preserving hooks, etc.).
+    let mut perms = serde_json::json!({
+        "allow": allow,
+        "defaultMode": "dontAsk"
+    });
+    if !deny.is_empty() {
+        perms["deny"] = serde_json::Value::Array(deny);
+    }
+    settings["permissions"] = perms;
+
+    let json = serde_json::to_string_pretty(&settings)?;
+    if let Some(parent) = settings_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(&settings_path, json)?;
+
+    Ok(())
+}
+
 /// Add a permission rule to `permissions.allow` in a settings.local.json file.
 fn add_permission_rule(settings_path: &Path, permission: &str) -> Result<(), Error> {
     let mut settings: serde_json::Value = if settings_path.exists() {
@@ -891,10 +975,13 @@ mod tests {
             .filter_map(|v| v.as_str())
             .collect();
 
+        let dir_str = dir.to_string_lossy();
+        let expected_write = format!("Write({dir_str}/**)");
+
         // Should use config defaults, not hardcoded BASELINE_PERMISSIONS.
         assert!(allow.contains(&"Read"));
         assert!(allow.contains(&"Grep"));
-        assert!(allow.contains(&"Write({worktree}/**)"));
+        assert!(allow.contains(&expected_write.as_str()), "Write permission with expanded worktree missing");
         // Should NOT contain hardcoded permissions not in config.
         assert!(!allow.contains(&"WebFetch"), "hardcoded WebFetch should not appear when config provides defaults");
         assert!(!allow.contains(&"MultiEdit"), "hardcoded MultiEdit should not appear when config provides defaults");
@@ -917,9 +1004,13 @@ mod tests {
             .as_array()
             .expect("permissions.deny should be an array");
 
+        let dir_str = dir.to_string_lossy();
+        let expected_write_deny = format!("Write({dir_str}/.clc/**)");
+        let expected_edit_deny = format!("Edit({dir_str}/.clc/**)");
+
         assert_eq!(deny.len(), 2);
-        assert!(deny.iter().any(|v| v == "Write({worktree}/.clc/**)"));
-        assert!(deny.iter().any(|v| v == "Edit({worktree}/.clc/**)"));
+        assert!(deny.iter().any(|v| v.as_str() == Some(expected_write_deny.as_str())));
+        assert!(deny.iter().any(|v| v.as_str() == Some(expected_edit_deny.as_str())));
     }
 
     #[test]
@@ -955,22 +1046,20 @@ mod tests {
         // {worktree} should be expanded to the actual working directory path.
         assert!(
             allow.iter().any(|p| p.contains(&*dir_str) && p.contains("/**")),
-            "allow rules should have {worktree} expanded to actual path, got: {:?}",
-            allow
+            "allow rules should have {{worktree}} expanded to actual path, got: {allow:?}",
         );
         assert!(
             deny.iter().any(|p| p.contains(&*dir_str) && p.contains("/.clc/**")),
-            "deny rules should have {worktree} expanded to actual path, got: {:?}",
-            deny
+            "deny rules should have {{worktree}} expanded to actual path, got: {deny:?}",
         );
         // Should NOT contain the literal {worktree} placeholder.
         assert!(
             !allow.iter().any(|p| p.contains("{worktree}")),
-            "allow should not contain literal {worktree}"
+            "allow should not contain literal {{worktree}}"
         );
         assert!(
             !deny.iter().any(|p| p.contains("{worktree}")),
-            "deny should not contain literal {worktree}"
+            "deny should not contain literal {{worktree}}"
         );
     }
 
