@@ -260,8 +260,9 @@ pub fn build_network_env(port: u16) -> BTreeMap<String, String> {
 /// Start mitmdump in server-replay mode using the given flow file.
 ///
 /// `path_env` is the PATH to search for the `mitmdump` binary.
-/// Returns a `MitmdumpHandle` that kills the process on drop, or an error
-/// string if mitmdump cannot be found or fails to start.
+/// Returns a `MitmdumpHandle` (with the discovered port) that kills the
+/// process on drop, or an error string if mitmdump cannot be found,
+/// fails to start, or doesn't announce its listening port.
 pub fn start_mitmdump_replay(
     flow: &camino::Utf8Path,
     path_env: &str,
@@ -277,26 +278,60 @@ pub fn start_mitmdump_replay(
             )
         })?;
 
-    let child = std::process::Command::new(mitmdump_bin.as_str())
+    let mut child = std::process::Command::new(mitmdump_bin.as_str())
         .args([
             "--server-replay",
             flow.as_str(),
             "--listen-port",
             "0",
-            "--quiet",
         ])
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
         .spawn()
         .map_err(|e| format!("failed to start mitmdump: {e}"))?;
 
-    Ok(MitmdumpHandle { child })
+    // Read stderr lines until we find the port announcement.
+    // Format: "Proxy server listening at http://*:PORT"
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "failed to capture mitmdump stderr".to_string())?;
+    let reader = std::io::BufReader::new(stderr);
+    use std::io::BufRead;
+    let mut port: Option<u16> = None;
+    for line in reader.lines() {
+        let line = line.map_err(|e| format!("failed to read mitmdump stderr: {e}"))?;
+        if let Some(p) = parse_mitmdump_port(&line) {
+            port = Some(p);
+            break;
+        }
+    }
+
+    let port = port.ok_or_else(|| {
+        let _ = child.kill();
+        let _ = child.wait();
+        "mitmdump exited without announcing a listening port".to_string()
+    })?;
+
+    Ok(MitmdumpHandle { child, port })
+}
+
+/// Parse the listening port from a mitmdump stderr line.
+/// Matches lines like "Proxy server listening at http://*:8080".
+fn parse_mitmdump_port(line: &str) -> Option<u16> {
+    if line.contains("listening at") {
+        // Extract port from the end: "http://*:PORT" or "http://0.0.0.0:PORT"
+        line.rsplit(':').next()?.trim().parse().ok()
+    } else {
+        None
+    }
 }
 
 /// RAII handle for a running mitmdump process. Kills the process on drop.
 #[derive(Debug)]
 pub struct MitmdumpHandle {
     child: std::process::Child,
+    pub port: u16,
 }
 
 impl Drop for MitmdumpHandle {
@@ -1038,20 +1073,64 @@ fn execute_transition(
         .unwrap_or(&system_path);
     let path_env = build_path_env(bin_dir_opt, graph.project_bin.as_deref(), base_path);
 
+    // Start mitmdump if network interception is configured.
+    // The handle must stay alive until the command completes (drop kills the process).
+    let _mitmdump_handle: Option<MitmdumpHandle>;
+    let cmd_env: std::borrow::Cow<'_, BTreeMap<String, String>>;
+
+    match &transition.network {
+        Some(crate::config::NetworkConfig::Replay { replay }) => {
+            // Resolve flow file path relative to source state's config dir
+            let flow_path = source_state.path.join(&graph.config_dir).join(replay);
+            match start_mitmdump_replay(flow_path.as_ref(), &path_env) {
+                Ok(handle) => {
+                    let mut merged = source_env.clone();
+                    merged.extend(build_network_env(handle.port));
+                    cmd_env = std::borrow::Cow::Owned(merged);
+                    _mitmdump_handle = Some(handle);
+                }
+                Err(e) => {
+                    return StepResult {
+                        transition_name: transition.name.clone(),
+                        source_name,
+                        target_name,
+                        exit_code: None,
+                        stdout: String::new(),
+                        stderr: e,
+                        comparison: None,
+                        output_diffs: Vec::new(),
+                        assertion_results: Vec::new(),
+                        passed: false,
+                        duration: step_start.elapsed(),
+                    };
+                }
+            }
+        }
+        Some(crate::config::NetworkConfig::Record { .. }) => {
+            // TODO: record mode — start mitmdump in record mode, stash flow after
+            _mitmdump_handle = None;
+            cmd_env = std::borrow::Cow::Borrowed(source_env);
+        }
+        None => {
+            _mitmdump_handle = None;
+            cmd_env = std::borrow::Cow::Borrowed(source_env);
+        }
+    }
+
     // Run the command — using recorder if recording is enabled, otherwise normal execution.
     let output = if let Some(cast_path) = recording_path {
         Some(crate::recorder::record_command(
             &transition.command,
             transition.shell,
             work_dir,
-            source_env,
+            &cmd_env,
             &path_env,
             cast_path,
             sandbox,
         ))
     } else if transition.shell {
         Some(crate::signal::run_tracked(
-            &mut sandbox.build_shell_command(&transition.command, work_dir, source_env, &path_env),
+            &mut sandbox.build_shell_command(&transition.command, work_dir, &cmd_env, &path_env),
         ))
     } else {
         let parts: Vec<&str> = transition.command.split_whitespace().collect();
@@ -1059,7 +1138,7 @@ fn execute_transition(
             None
         } else {
             Some(crate::signal::run_tracked(
-                &mut sandbox.build_direct_command(&parts, work_dir, source_env, &path_env),
+                &mut sandbox.build_direct_command(&parts, work_dir, &cmd_env, &path_env),
             ))
         }
     };
