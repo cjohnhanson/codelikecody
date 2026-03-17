@@ -1458,4 +1458,156 @@ transitions:
             "error message should mention mitmdump: {msg}"
         );
     }
+
+    /// When a transition has `network: { replay: ... }` and mitmdump is not
+    /// available on PATH, execute_transition should fail with an error
+    /// mentioning mitmdump rather than silently ignoring the network config.
+    #[test]
+    fn execute_transition_network_replay_fails_without_mitmdump() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        // Source state: transition with network replay pointing to a flow file
+        make_state(
+            root,
+            "a",
+            r#"
+transitions:
+  - command: "echo hello"
+    target: "../b"
+    network:
+      replay: test.flow
+"#,
+        );
+        // Create the referenced flow file in the source state's .missouri/
+        fs::write(root.join("a").join(".missouri").join("test.flow"), b"fake flow").unwrap();
+
+        // Target state: empty (no expected files beyond .missouri/)
+        make_state(root, "b", "{}");
+
+        let graph = StateGraph::discover(root, ".missouri").unwrap();
+        let transition = &graph.transitions[0];
+        let target = &graph.states[transition.target.0];
+
+        // PATH includes /usr/bin:/bin so sh can run, but no mitmdump
+        let empty_bin = root.join("empty_bin");
+        fs::create_dir_all(&empty_bin).unwrap();
+        let mut source_env = BTreeMap::new();
+        source_env.insert(
+            "PATH".into(),
+            format!("{empty_bin}:/usr/bin:/bin"),
+        );
+
+        // Work dir: empty temp (simulates a clean source state copy)
+        let work = tempfile::tempdir().unwrap();
+        let work_dir = Utf8Path::from_path(work.path()).unwrap();
+
+        let result = execute_transition(
+            transition,
+            work_dir,
+            &source_env,
+            target,
+            &graph,
+            &BareBackend,
+            false,
+            None,
+        );
+
+        assert!(
+            !result.passed,
+            "transition with network replay should fail when mitmdump not on PATH"
+        );
+        assert!(
+            result.stderr.contains("mitmdump"),
+            "error should mention mitmdump, got: {}",
+            result.stderr,
+        );
+    }
+
+    /// When a transition has `network: { replay: ... }` and mitmdump is
+    /// available, the transition command should receive HTTPS_PROXY and
+    /// HTTP_PROXY environment variables pointing at the mitmdump proxy.
+    #[test]
+    fn execute_transition_network_replay_injects_proxy_env() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        // Source state: command prints HTTPS_PROXY so we can verify injection
+        make_state(
+            root,
+            "a",
+            r#"
+transitions:
+  - command: "echo $HTTPS_PROXY"
+    target: "../b"
+    network:
+      replay: test.flow
+"#,
+        );
+        fs::write(
+            root.join("a").join(".missouri").join("test.flow"),
+            b"fake flow",
+        )
+        .unwrap();
+
+        make_state(root, "b", "{}");
+
+        // Create a fake mitmdump that announces a port on stderr and stays alive
+        let bin_dir = root.join("fake_bin");
+        fs::create_dir_all(&bin_dir).unwrap();
+        let fake_mitmdump = bin_dir.join("mitmdump");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::write(
+                &fake_mitmdump,
+                r#"#!/usr/bin/env python3
+import socket, sys, time, signal
+signal.signal(signal.SIGTERM, lambda *a: sys.exit(0))
+signal.signal(signal.SIGINT, lambda *a: sys.exit(0))
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(('127.0.0.1', 0))
+port = s.getsockname()[1]
+s.listen(1)
+print(f'Proxy server listening at http://*:{port}', file=sys.stderr, flush=True)
+time.sleep(300)
+"#,
+            )
+            .unwrap();
+            fs::set_permissions(&fake_mitmdump, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        let graph = StateGraph::discover(root, ".missouri").unwrap();
+        let transition = &graph.transitions[0];
+        let target = &graph.states[transition.target.0];
+
+        let mut source_env = BTreeMap::new();
+        source_env.insert("PATH".into(), format!("{bin_dir}:/usr/bin:/bin"));
+
+        let work = tempfile::tempdir().unwrap();
+        let work_dir = Utf8Path::from_path(work.path()).unwrap();
+
+        let result = execute_transition(
+            transition,
+            work_dir,
+            &source_env,
+            target,
+            &graph,
+            &BareBackend,
+            false,
+            None,
+        );
+
+        assert!(
+            result.passed,
+            "transition should pass with fake mitmdump; stderr: {}",
+            result.stderr,
+        );
+        assert!(
+            result.stdout.contains("http://127.0.0.1:"),
+            "HTTPS_PROXY should be injected into command env, got stdout: '{}'",
+            result.stdout,
+        );
+    }
 }
