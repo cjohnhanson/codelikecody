@@ -4,7 +4,7 @@ status: discovery
 priority:
 assignee:
 labels: [clc]
-depends_on: []
+depends_on: [clctoml-migrate-config-to-toml-with-config-rs-and-add-worker-permission-defaults]
 created: 2026-02-28T06:27:48Z
 updated: "2026-03-01T16:52:15Z"
 ---
