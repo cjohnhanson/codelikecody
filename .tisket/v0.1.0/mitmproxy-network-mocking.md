@@ -1,11 +1,12 @@
 ---
 title: "Hermetic network interception for missouri"
-status: todo
+status: in_progress
+priority:
 assignee:
 labels: [missouri, feature]
 depends_on: []
-created: "2026-02-23T00:00:00Z"
-updated: "2026-03-16T00:00:00Z"
+created: 2026-02-23T00:00:00Z
+updated: "2026-03-17T03:35:07Z"
 ---
 
 Network is another dimension of sandbox control in missouri, alongside
@@ -153,4 +154,3 @@ This tisket replaces:
 - The original thin `mitmproxy-network-mocking` stub
 
 ## Scratch Notes
-
