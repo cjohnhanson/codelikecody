@@ -63,3 +63,5 @@ This is an ongoing collection, not a single fix. Individual items can be spun ou
 
 - **Permission mismatch on command form**: Worker first requested `nix develop /full/path/to/flake#dev --command cargo test`. Permission was granted for "nix develop". Worker then tried the shorter form `nix develop --command cargo test -p missouri` which was denied because the permission string didn't match. Had to grant a second, more specific permission. Permission matching should be more flexible — granting "nix develop" should cover all `nix develop` invocations, not require exact command string matches.
 
+- **Baseline permissions not matching at runtime**: `Bash(git commit *)` is in `BASELINE_PERMISSIONS` (seeded at dispatch) but the mitmproxy worker still needed it granted manually. The seeded permission string may not match how Claude Code formats the tool call at runtime. Same pattern seen with `Bash(mkdir *)`. Either the seed format doesn't match Claude Code's internal matching, or the permissions aren't being written to `settings.local.json` correctly.
+
