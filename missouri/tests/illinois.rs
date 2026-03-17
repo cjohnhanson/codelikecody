@@ -422,6 +422,36 @@ fn illinois_assertions_passes() {
     assert!(stdout.contains("PASS"), "expected PASS in output: {stdout}");
 }
 
+/// Verify that the meltano fixture's pipeline-ready state uses a pinned pip_url for tap-csv.
+///
+/// An unpinned git URL (no `@tag` or `@commit`) installs from HEAD, which changes
+/// unpredictably. When the HEAD of MeltanoLabs/tap-csv changes in a breaking way,
+/// `meltano run` fails to install the plugin and exits 1, causing the illinois test
+/// to fail. Pinning to a specific tag ensures reproducible behavior.
+#[test]
+fn illinois_meltano_fixture_uses_pinned_pip_url() {
+    let meltano_yml = fs::read_to_string(format!(
+        "{}/tests/fixtures/09-meltano/pipeline-ready/meltano-project/meltano.yml",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .expect("failed to read pipeline-ready meltano.yml");
+
+    // The tap-csv pip_url must include a version specifier (@tag or @commit).
+    // Unpinned form: "git+https://github.com/MeltanoLabs/tap-csv.git"
+    // Pinned form:   "git+https://github.com/MeltanoLabs/tap-csv.git@v1.3.2"
+    let tap_csv_pip_url_line = meltano_yml
+        .lines()
+        .find(|l| l.contains("tap-csv.git"))
+        .expect("no tap-csv pip_url line found in pipeline-ready meltano.yml");
+
+    assert!(
+        tap_csv_pip_url_line.contains('@'),
+        "tap-csv pip_url is unpinned (no @version): {tap_csv_pip_url_line}\n\
+         Unpinned git URLs install from HEAD, which changes and can break meltano run.\n\
+         Pin to a specific tag, e.g. git+https://github.com/MeltanoLabs/tap-csv.git@v1.3.2"
+    );
+}
+
 // --- Recording illinois tests ---
 
 /// Comparator script that validates .cast files have valid NDJSON structure.
