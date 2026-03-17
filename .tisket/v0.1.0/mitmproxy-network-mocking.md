@@ -1,6 +1,6 @@
 ---
 title: "Hermetic network interception for missouri"
-status: done
+status: todo
 priority:
 assignee:
 labels: [missouri, feature]
@@ -120,28 +120,39 @@ random. Custom comparators handle this, same as filesystem comparators.
 
 ## Implementation scope
 
-### Config layer (config.rs, graph.rs)
+### Config layer (config.rs, graph.rs) — DONE
 
-- Add `NetworkConfig` to `TransitionConfig` (optional `network:` key)
-- Parse replay/record variants
-- Add `NetworkComparatorConfig` to `ComparatorsConfig`
+- `NetworkConfig` enum (`Replay { replay }`, `Record { record }`) with `#[serde(untagged)]`
+- `NetworkComparatorConfig` struct (`path`, `command`, `ignore`)
+- `TransitionConfig.network: Option<NetworkConfig>`
+- `ComparatorsConfig.network: Vec<NetworkComparatorConfig>`
+- `graph::NetworkComparator` enum (`Ignore`, `Custom { command }`)
+- `Transition.network` and `Transition.network_comparators` fields
+- `resolve_network_comparators()` function
+- 12 unit tests across config.rs, graph.rs, executor.rs
 
-### Execution layer (executor.rs)
+### Executor helpers — DONE
 
-- Before running transition command: if `network.replay`, start
-  `mitmdump --server-replay <flow> -p 0` and capture bound port
-- Inject HTTPS_PROXY and NODE_EXTRA_CA_CERTS into command env
-- After transition: tear down mitmdump
-- If `network.record`: start mitmdump in record mode, stash output
+- `build_network_env(port)` — sets HTTPS_PROXY, HTTP_PROXY, NODE_EXTRA_CA_CERTS
+- `start_mitmdump_replay(flow, path_env)` — finds mitmdump on PATH, spawns replay
+- `MitmdumpHandle` — RAII struct that kills process on drop
 
-### Comparison layer (compare.rs)
+### Executor integration — TODO
+
+- Wire `transition.network` into `execute_transition`:
+  if `Replay`, start mitmdump, merge network env into command env, tear down after
+- If `Record`, start mitmdump in record mode, stash flow file after
+- Port discovery: mitmdump with `-p 0` binds a random port — need to
+  read the bound port (from mitmdump's output or probe)
+
+### Comparison layer (compare.rs) — TODO
 
 - Add `NetworkDiff` variant alongside `FileDiff` and `EnvDiff`
 - Compare actual HAR against expected HAR in target state
 - Support `ignore` and `command` comparator overrides, keyed by
   request path pattern
 
-### mitmproxy dependency
+### mitmproxy dependency — TODO
 
 - Ensure mitmdump is available when `network:` is used
 - NixBackend: add mitmproxy to the nix shell expression automatically
