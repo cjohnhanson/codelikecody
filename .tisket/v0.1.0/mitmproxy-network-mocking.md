@@ -1,12 +1,12 @@
 ---
 title: "Hermetic network interception for missouri"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [missouri, feature]
 depends_on: []
 created: 2026-02-23T00:00:00Z
-updated: "2026-03-17T03:51:43Z"
+updated: "2026-03-17T22:06:53Z"
 ---
 
 Network is another dimension of sandbox control in missouri, alongside
