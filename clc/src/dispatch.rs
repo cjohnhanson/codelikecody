@@ -30,7 +30,8 @@ pub fn dispatch(
     id: &str,
     main_branch: &str,
     model: &str,
-    extra_allow: &[String],
+    worker_perm_defaults: &[String],
+    worker_perm_deny: &[String],
     coordinator_id: Option<&str>,
 ) -> Result<(), Error> {
     // Must be on main branch.
@@ -63,9 +64,9 @@ pub fn dispatch(
     // Pickup creates worktree, sets tisket status, inits clc.
     pickup::pickup(project_dir, id, main_branch, coordinator_id)?;
 
-    // Seed baseline permissions so the worker can function without
+    // Seed permissions so the worker can function without
     // --dangerously-skip-permissions.
-    permissions::seed_baseline(&worktree_dir, extra_allow)?;
+    permissions::seed_defaults(&worktree_dir, worker_perm_defaults, worker_perm_deny)?;
 
     // Build prompts.
     let initial_prompt = build_worker_prompt(project_dir, id)?;

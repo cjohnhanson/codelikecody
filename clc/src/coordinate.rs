@@ -55,7 +55,8 @@ pub fn coordinate(
     main_branch: &str,
     model: &str,
     filters: &CoordinateFilters<'_>,
-    extra_allow: &[String],
+    worker_perm_defaults: &[String],
+    worker_perm_deny: &[String],
     coordinator_config: &CoordinatorConfig,
 ) -> Result<(), Error> {
     use crate::workspace::WorktreeWorkspace;
@@ -64,7 +65,8 @@ pub fn coordinate(
         main_branch,
         model,
         filters,
-        extra_allow,
+        worker_perm_defaults,
+        worker_perm_deny,
         coordinator_config,
         WorktreeWorkspace::new,
     )
@@ -80,7 +82,8 @@ pub fn coordinate_with<W: Workspace>(
     main_branch: &str,
     model: &str,
     filters: &CoordinateFilters<'_>,
-    extra_allow: &[String],
+    worker_perm_defaults: &[String],
+    worker_perm_deny: &[String],
     coordinator_config: &CoordinatorConfig,
     workspace_factory: impl FnOnce(WorkspaceConfig) -> W,
 ) -> Result<(), Error> {
@@ -132,9 +135,9 @@ pub fn coordinate_with<W: Workspace>(
         )));
     }
 
-    // Seed baseline permissions so coordinator can function without
+    // Seed permissions so coordinator can function without
     // --dangerously-skip-permissions.
-    permissions::seed_baseline(project_dir, extra_allow)?;
+    permissions::seed_defaults(project_dir, worker_perm_defaults, worker_perm_deny)?;
 
     // Build the initial prompt with pickable tiskets.
     let initial_prompt =
@@ -871,6 +874,7 @@ mod workspace_tests {
             "claude-sonnet-4-6",
             &base_filters(),
             &[],
+            &[],
             &CoordinatorConfig::default(),
             move |config| {
                 MockWorkspace::capturing(
@@ -904,6 +908,7 @@ mod workspace_tests {
             "claude-opus-4-6",
             &base_filters(),
             &[],
+            &[],
             &CoordinatorConfig::default(),
             move |config| {
                 MockWorkspace::capturing(
@@ -936,6 +941,7 @@ mod workspace_tests {
             "claude-sonnet-4-6",
             &base_filters(),
             &[],
+            &[],
             &CoordinatorConfig::default(),
             move |config| {
                 MockWorkspace::capturing(
@@ -966,6 +972,7 @@ mod workspace_tests {
             "main",
             "claude-sonnet-4-6",
             &base_filters(),
+            &[],
             &[],
             &CoordinatorConfig::default(),
             move |config| {
@@ -1004,6 +1011,7 @@ mod workspace_tests {
             "main",
             "claude-sonnet-4-6",
             &dry_run_filters,
+            &[],
             &[],
             &CoordinatorConfig::default(),
             move |config| {

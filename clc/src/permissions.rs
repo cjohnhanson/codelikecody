@@ -145,15 +145,10 @@ const BASELINE_PERMISSIONS: &[&str] = &[
     "Bash(test *)",
 ];
 
-/// Write baseline permissions into a worker's `.claude/settings.local.json`.
-///
-/// Called at dispatch time so the worker can function without `--dangerously-skip-permissions`.
-/// Merges permissions into existing settings (e.g., hooks from `clc init`). Idempotent —
-/// skips if `permissions.allow` is already present.
-///
-/// `extra_allow` contains project-level permission rules from `config.yml` that are
-/// appended after baseline permissions (deduplicated).
-pub fn seed_baseline(working_dir: &Path, extra_allow: &[String]) -> Result<(), Error> {
+/// Legacy baseline permission seeding. Superseded by `seed_defaults` which supports
+/// config-driven permissions and deny rules. Retained for existing tests.
+#[cfg(test)]
+fn seed_baseline(working_dir: &Path, extra_allow: &[String]) -> Result<(), Error> {
     let settings_path = working_dir.join(".claude").join("settings.local.json");
 
     // Read existing settings or start fresh.

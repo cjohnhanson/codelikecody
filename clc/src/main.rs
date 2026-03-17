@@ -217,7 +217,8 @@ fn cmd_coordinate(model: &str, filters: &coordinate::CoordinateFilters<'_>) -> R
         &cfg.main_branch,
         model,
         filters,
-        &cfg.permissions.allow,
+        &cfg.worker.permissions.default,
+        &cfg.worker.permissions.deny,
         &cfg.coordinator,
     )
 }
@@ -299,7 +300,8 @@ fn cmd_dispatch(id: &str, model: &str, coordinator_id: Option<&str>) -> Result<(
         id,
         &cfg.main_branch,
         model,
-        &cfg.permissions.allow,
+        &cfg.worker.permissions.default,
+        &cfg.worker.permissions.deny,
         coordinator_id,
     )
 }
