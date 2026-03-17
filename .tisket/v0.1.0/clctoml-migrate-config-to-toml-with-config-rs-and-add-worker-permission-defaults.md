@@ -1,12 +1,12 @@
 ---
 title: "clc.toml: migrate config to TOML with config-rs and add worker permission defaults"
-status: todo
+status: in_progress
 priority: 2
 assignee:
 labels: [clc]
 depends_on: []
-created: "2026-03-17T22:00:47Z"
-updated: "2026-03-17T22:00:47Z"
+created: 2026-03-17T22:00:47Z
+updated: "2026-03-17T22:06:54Z"
 ---
 
 Move clc configuration from `.clc/config.yml` (serde_yml) to `clc.toml`
@@ -92,3 +92,5 @@ allowed the mitmproxy-network-mocking worker to write directly to
 `.clc/state`, bypassing the phase system (skipping review-requested →
 in-review → reviewed → done, going straight from green to done).
 With scoped permissions and deny rules, that write would be blocked.
+
+## Scratch Notes
