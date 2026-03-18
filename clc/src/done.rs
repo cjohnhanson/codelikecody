@@ -6,9 +6,9 @@ use crate::error::Error;
 use crate::git;
 use crate::phase::{self, Phase};
 
-pub fn done(project_dir: &Path, main_branch: &str) -> Result<(), Error> {
+pub fn done(project_dir: &Path, main_branch: &str, admin_branch: &str) -> Result<(), Error> {
     // Must not be on main branch.
-    let git_state = git::detect(project_dir, main_branch)
+    let git_state = git::detect(project_dir, main_branch, admin_branch)
         .ok_or_else(|| Error::NonBlocking("not inside a git repository".into()))?;
 
     if git_state.is_main {

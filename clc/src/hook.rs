@@ -33,7 +33,7 @@ pub fn run() -> Result<i32, Error> {
         .and_then(Value::as_str)
         .map_or_else(|| Path::new("."), Path::new);
     let cfg = config::load(cwd).unwrap_or_default();
-    let git_state = git::detect(cwd, &cfg.main_branch);
+    let git_state = git::detect(cwd, &cfg.main_branch, &cfg.admin_branch);
     let current_phase = phase::load(cwd).unwrap_or(None);
 
     // Phase bootstrap: auto-set tests-unwritten on unphased feature branches
@@ -110,6 +110,9 @@ fn assemble_prime(cwd: &Path, git: Option<&git::GitState>, phase: Option<phase::
         let _ = write!(out, "Branch: `{}`", state.branch);
         if state.is_main {
             out.push_str(" (trunk)");
+        }
+        if state.is_admin {
+            out.push_str(" (admin)");
         }
         if state.is_worktree {
             out.push_str(" [worktree]");
@@ -251,7 +254,7 @@ fn assemble_prime(cwd: &Path, git: Option<&git::GitState>, phase: Option<phase::
 pub fn prime_text() -> Result<String, Error> {
     let cwd = std::env::current_dir()?;
     let cfg = config::load(&cwd).unwrap_or_default();
-    let git_state = git::detect(&cwd, &cfg.main_branch);
+    let git_state = git::detect(&cwd, &cfg.main_branch, &cfg.admin_branch);
     let current_phase = phase::load(&cwd).unwrap_or(None);
     Ok(assemble_prime(&cwd, git_state.as_ref(), current_phase))
 }
@@ -319,8 +322,8 @@ fn maybe_bootstrap_phase(
 
     let state = git?;
 
-    // Don't bootstrap on main.
-    if state.is_main {
+    // Don't bootstrap on main or admin.
+    if state.is_main || state.is_admin {
         return None;
     }
 

@@ -29,13 +29,14 @@ pub fn dispatch(
     project_dir: &Path,
     id: &str,
     main_branch: &str,
+    admin_branch: &str,
     model: &str,
     worker_perm_defaults: &[String],
     worker_perm_deny: &[String],
     coordinator_id: Option<&str>,
 ) -> Result<(), Error> {
     // Must be on main branch.
-    let git_state = git::detect(project_dir, main_branch)
+    let git_state = git::detect(project_dir, main_branch, admin_branch)
         .ok_or_else(|| Error::NonBlocking("not inside a git repository".into()))?;
 
     if !git_state.is_main {
@@ -62,7 +63,7 @@ pub fn dispatch(
     }
 
     // Pickup creates worktree, sets tisket status, inits clc.
-    pickup::pickup(project_dir, id, main_branch, coordinator_id)?;
+    pickup::pickup(project_dir, id, main_branch, admin_branch, coordinator_id)?;
 
     // Seed permissions so the worker can function without
     // --dangerously-skip-permissions.

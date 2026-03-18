@@ -53,6 +53,7 @@ struct GrantConfigFile {
 pub fn coordinate(
     project_dir: &Path,
     main_branch: &str,
+    admin_branch: &str,
     model: &str,
     filters: &CoordinateFilters<'_>,
     worker_perm_defaults: &[String],
@@ -63,6 +64,7 @@ pub fn coordinate(
     coordinate_with(
         project_dir,
         main_branch,
+        admin_branch,
         model,
         filters,
         worker_perm_defaults,
@@ -80,6 +82,7 @@ pub fn coordinate(
 pub fn coordinate_with<W: Workspace>(
     project_dir: &Path,
     main_branch: &str,
+    admin_branch: &str,
     model: &str,
     filters: &CoordinateFilters<'_>,
     worker_perm_defaults: &[String],
@@ -88,7 +91,7 @@ pub fn coordinate_with<W: Workspace>(
     workspace_factory: impl FnOnce(WorkspaceConfig) -> W,
 ) -> Result<(), Error> {
     // Must be on trunk.
-    let git_state = git::detect(project_dir, main_branch)
+    let git_state = git::detect(project_dir, main_branch, admin_branch)
         .ok_or_else(|| Error::NonBlocking("not inside a git repository".into()))?;
 
     if !git_state.is_main {
@@ -871,6 +874,7 @@ mod workspace_tests {
         let result = coordinate_with(
             dir.path(),
             "main",
+            "clc-admin",
             "claude-sonnet-4-6",
             &base_filters(),
             &[],
@@ -905,6 +909,7 @@ mod workspace_tests {
         let _ = coordinate_with(
             dir.path(),
             "main",
+            "clc-admin",
             "claude-opus-4-6",
             &base_filters(),
             &[],
@@ -938,6 +943,7 @@ mod workspace_tests {
         let _ = coordinate_with(
             dir.path(),
             "main",
+            "clc-admin",
             "claude-sonnet-4-6",
             &base_filters(),
             &[],
@@ -970,6 +976,7 @@ mod workspace_tests {
         let _ = coordinate_with(
             dir.path(),
             "main",
+            "clc-admin",
             "claude-sonnet-4-6",
             &base_filters(),
             &[],
@@ -1009,6 +1016,7 @@ mod workspace_tests {
         let result = coordinate_with(
             dir.path(),
             "main",
+            "clc-admin",
             "claude-sonnet-4-6",
             &dry_run_filters,
             &[],

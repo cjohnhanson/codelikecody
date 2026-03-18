@@ -446,7 +446,7 @@ pub fn raw(project_dir: &Path, id: &str, max_lines: usize) -> Result<(), Error> 
 }
 
 /// Land a worker: stop if alive, merge to trunk, cleanup worktree.
-pub fn land(project_dir: &Path, id: &str, main_branch: &str) -> Result<(), Error> {
+pub fn land(project_dir: &Path, id: &str, main_branch: &str, admin_branch: &str) -> Result<(), Error> {
     let wdir = worker_dir_for(project_dir, id);
 
     // Stop worker if still alive.
@@ -457,7 +457,7 @@ pub fn land(project_dir: &Path, id: &str, main_branch: &str) -> Result<(), Error
     }
 
     // Merge the branch (also removes worktree and branch).
-    merge::merge(project_dir, id, main_branch)?;
+    merge::merge(project_dir, id, main_branch, admin_branch)?;
 
     // Remove coordinator cursor dir from project root.
     let cursor_dir = project_dir.join(".clc").join("workers").join(id);
@@ -547,7 +547,7 @@ fn collect_stranded(project_dir: &Path) -> Result<Vec<StrandedInfo>, Error> {
 
 /// Recover a stranded worker: run the done ceremony on its worktree without re-dispatching.
 /// The worker must be dead and at the `green` phase.
-pub fn recover(project_dir: &Path, id: &str, main_branch: &str) -> Result<(), Error> {
+pub fn recover(project_dir: &Path, id: &str, main_branch: &str, admin_branch: &str) -> Result<(), Error> {
     let work_dir = working_dir_for(project_dir, id);
     if !work_dir.is_dir() {
         return Err(Error::NonBlocking(format!(
@@ -588,7 +588,7 @@ pub fn recover(project_dir: &Path, id: &str, main_branch: &str) -> Result<(), Er
     crate::phase::set(&work_dir, "done", 1)?;
 
     // Run the done ceremony on the worktree.
-    crate::done::done(&work_dir, main_branch)?;
+    crate::done::done(&work_dir, main_branch, admin_branch)?;
 
     eprintln!("recovered worker '{id}' — phase advanced to done");
 
