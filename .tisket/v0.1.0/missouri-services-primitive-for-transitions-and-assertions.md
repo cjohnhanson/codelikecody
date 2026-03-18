@@ -1,12 +1,12 @@
 ---
 title: "Missouri services primitive for transitions and assertions"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [missouri, feature]
 depends_on: []
 created: 2026-03-18T02:11:51Z
-updated: "2026-03-18T02:34:47Z"
+updated: "2026-03-18T03:09:33Z"
 ---
 
 Add a `services:` key to TransitionConfig and AssertionConfig. Services are
@@ -84,3 +84,5 @@ services: Vec<ServiceConfig>  // default empty
 Test paths run in parallel via rayon. Each path gets its own temp dir and
 its own service instances with OS-assigned ports. No shared state between
 paths.
+
+## Scratch Notes
