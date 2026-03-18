@@ -1,6 +1,6 @@
 ---
 title: "Hermetic network interception for missouri"
-status: done
+status: todo
 priority:
 assignee:
 labels: [missouri, feature]
@@ -137,26 +137,35 @@ random. Custom comparators handle this, same as filesystem comparators.
 - `start_mitmdump_replay(flow, path_env)` — finds mitmdump on PATH, spawns replay
 - `MitmdumpHandle` — RAII struct that kills process on drop
 
-### Executor integration — TODO
+### Executor integration (replay) — DONE
 
-- Wire `transition.network` into `execute_transition`:
-  if `Replay`, start mitmdump, merge network env into command env, tear down after
-- If `Record`, start mitmdump in record mode, stash flow file after
-- Port discovery: mitmdump with `-p 0` binds a random port — need to
-  read the bound port (from mitmdump's output or probe)
+- `execute_transition` checks `transition.network` for `Replay`
+- Starts mitmdump, parses port from stderr, merges proxy env into command
+- `MitmdumpHandle` with `port` field, RAII cleanup
+- 2 integration tests (fails-without-mitmdump, injects-proxy-env)
 
-### Comparison layer (compare.rs) — TODO
+### Record mode — TODO
 
-- Add `NetworkDiff` variant alongside `FileDiff` and `EnvDiff`
-- Compare actual HAR against expected HAR in target state
-- Support `ignore` and `command` comparator overrides, keyed by
-  request path pattern
+- `execute_transition` handles `Record` variant (currently no-op stub)
+- Start mitmdump in record mode (`-w` flag) during transition
+- Stash captured flow file in source state's `.missouri/recordings/`
 
-### mitmproxy dependency — TODO
+### Build the actual missouri test — TODO
 
-- Ensure mitmdump is available when `network:` is used
-- NixBackend: add mitmproxy to the nix shell expression automatically
-- BareBackend: error if mitmdump is not on PATH
+- Record a real `clc dispatch` session with mitmdump capturing API traffic
+- Create missouri test path: dispatched-with-replay → worker-completed → merged
+- This is the end goal: hermetic full-loop test of the autonomous workflow
+
+### Comparison layer (compare.rs) — DEFERRED
+
+- `NetworkDiff` variant alongside `FileDiff` and `EnvDiff`
+- HAR comparison with comparator overrides
+- Not needed for the core record/replay goal
+
+### mitmproxy dependency — DEFERRED
+
+- NixBackend auto-adding mitmproxy to packages
+- Not blocking — can be declared in `packages:` manually for now
 
 ## What this subsumes
 
