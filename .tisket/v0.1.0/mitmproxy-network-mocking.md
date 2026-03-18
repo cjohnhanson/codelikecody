@@ -232,3 +232,16 @@ Implementation in executor.rs:
   - `None`: unchanged behavior
 
 All 76 unit tests pass. 53 CLI tests pass. 17 illinois tests pass (except pre-existing meltano failure).
+
+**Record mode implementation (session continued):**
+
+Tests added to executor.rs:
+- `start_mitmdump_record_errors_when_not_on_path` — mirrors replay version
+- `execute_transition_network_record_fails_without_mitmdump` — verifies step fails with mitmdump error
+- `execute_transition_network_record_injects_proxy_env` — verifies HTTPS_PROXY injected via fake mitmdump
+
+Implementation in executor.rs:
+- `start_mitmdump_record(output, path_env)` — spawns `mitmdump -w <output> --listen-port 0`, same port parsing as replay
+- `execute_transition` Record branch: creates `.missouri/recordings/` dir, generates flow filename from transition name, starts mitmdump record, merges proxy env, early-returns on error
+
+All 317 workspace tests pass (79 missouri unit, 53 CLI, 18 illinois, others).
