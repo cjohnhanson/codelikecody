@@ -4,9 +4,9 @@ status: todo
 priority:
 assignee:
 labels: [missouri, feature]
-depends_on: [epic-tisket-web-ui]
-created: "2026-03-18T02:11:51Z"
-updated: "2026-03-18T02:11:51Z"
+depends_on: []
+created: 2026-03-18T02:11:51Z
+updated: "2026-03-18T02:34:47Z"
 ---
 
 Add a `services:` key to TransitionConfig and AssertionConfig. Services are

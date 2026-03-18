@@ -4,9 +4,9 @@ status: todo
 priority:
 assignee:
 labels: [web, feature]
-depends_on: [epic-tisket-web-ui]
+depends_on: [missouri-services-primitive-for-transitions-and-assertions]
 created: 2026-03-18T02:11:51Z
-updated: "2026-03-18T02:12:22Z"
+updated: "2026-03-18T02:34:47Z"
 ---
 
 New workspace member `clc-api`. Axum HTTP API wrapping the tisket lib crate.
