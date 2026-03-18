@@ -1,12 +1,12 @@
 ---
 title: "clc.toml: migrate config to TOML with config-rs and add worker permission defaults"
-status: in_progress
+status: done
 priority: 2
 assignee:
 labels: [clc]
 depends_on: []
 created: 2026-03-17T22:00:47Z
-updated: "2026-03-17T22:06:54Z"
+updated: "2026-03-18T01:39:05Z"
 ---
 
 Move clc configuration from `.clc/config.yml` (serde_yml) to `clc.toml`
