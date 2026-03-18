@@ -3,7 +3,7 @@ assertions:
     command: "clc status 2>&1 | grep 'phase: tests-written'"
 
   - name: "config has required_attempts 2"
-    command: "clc config show 2>&1 | grep 'required_attempts: 2'"
+    command: "clc config show 2>&1 | grep 'required_attempts = 2'"
 
   - name: "no attempts recorded yet"
     command: "! grep -q 'attempts:' .clc/state || grep -q 'attempts: 0' .clc/state"
