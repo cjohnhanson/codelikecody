@@ -316,6 +316,56 @@ pub fn start_mitmdump_replay(
     Ok(MitmdumpHandle { child, port })
 }
 
+/// Start mitmdump in record mode, writing captured traffic to `output`.
+///
+/// `path_env` is the PATH to search for the `mitmdump` binary.
+/// Returns a `MitmdumpHandle` (with the discovered port) that kills the
+/// process on drop, or an error string if mitmdump cannot be found,
+/// fails to start, or doesn't announce its listening port.
+pub fn start_mitmdump_record(
+    output: &camino::Utf8Path,
+    path_env: &str,
+) -> Result<MitmdumpHandle, String> {
+    let mitmdump_bin = path_env
+        .split(':')
+        .map(|dir| camino::Utf8PathBuf::from(dir).join("mitmdump"))
+        .find(|p| p.exists())
+        .ok_or_else(|| {
+            "mitmdump not found on PATH — add mitmproxy to packages or install it manually"
+                .to_string()
+        })?;
+
+    let mut child = std::process::Command::new(mitmdump_bin.as_str())
+        .args(["-w", output.as_str(), "--listen-port", "0"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("failed to start mitmdump: {e}"))?;
+
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "failed to capture mitmdump stderr".to_string())?;
+    let reader = std::io::BufReader::new(stderr);
+    use std::io::BufRead;
+    let mut port: Option<u16> = None;
+    for line in reader.lines() {
+        let line = line.map_err(|e| format!("failed to read mitmdump stderr: {e}"))?;
+        if let Some(p) = parse_mitmdump_port(&line) {
+            port = Some(p);
+            break;
+        }
+    }
+
+    let port = port.ok_or_else(|| {
+        let _ = child.kill();
+        let _ = child.wait();
+        "mitmdump exited without announcing a listening port".to_string()
+    })?;
+
+    Ok(MitmdumpHandle { child, port })
+}
+
 /// Parse the listening port from a mitmdump stderr line.
 /// Matches lines like "Proxy server listening at http://*:8080".
 fn parse_mitmdump_port(line: &str) -> Option<u16> {
@@ -1107,9 +1157,54 @@ fn execute_transition(
             }
         }
         Some(crate::config::NetworkConfig::Record { .. }) => {
-            // TODO: record mode — start mitmdump in record mode, stash flow after
-            _mitmdump_handle = None;
-            cmd_env = std::borrow::Cow::Borrowed(source_env);
+            // Record mode: start mitmdump writing to a flow file in the source state's
+            // .missouri/recordings/ directory, named after the transition.
+            let recordings_dir = source_state
+                .path
+                .join(&graph.config_dir)
+                .join("recordings");
+            if let Err(e) = std::fs::create_dir_all(&recordings_dir) {
+                return StepResult {
+                    transition_name: transition.name.clone(),
+                    source_name,
+                    target_name,
+                    exit_code: None,
+                    stdout: String::new(),
+                    stderr: format!("failed to create recordings directory: {e}"),
+                    comparison: None,
+                    output_diffs: Vec::new(),
+                    assertion_results: Vec::new(),
+                    passed: false,
+                    duration: step_start.elapsed(),
+                };
+            }
+            let flow_name = transition
+                .name
+                .replace(|c: char| !c.is_alphanumeric() && c != '-' && c != '_', "_");
+            let flow_path = recordings_dir.join(format!("{flow_name}.flow"));
+            match start_mitmdump_record(flow_path.as_ref(), &path_env) {
+                Ok(handle) => {
+                    let mut merged = source_env.clone();
+                    merged.extend(build_network_env(handle.port));
+                    cmd_env = std::borrow::Cow::Owned(merged);
+                    _mitmdump_handle = Some(handle);
+                }
+                Err(e) => {
+                    return StepResult {
+                        transition_name: transition.name.clone(),
+                        source_name,
+                        target_name,
+                        exit_code: None,
+                        stdout: String::new(),
+                        stderr: e,
+                        comparison: None,
+                        output_diffs: Vec::new(),
+                        assertion_results: Vec::new(),
+                        passed: false,
+                        duration: step_start.elapsed(),
+                    };
+                }
+            }
         }
         None => {
             _mitmdump_handle = None;
@@ -1600,6 +1695,165 @@ transitions:
             result.stderr.contains("mitmdump"),
             "error should mention mitmdump, got: {}",
             result.stderr,
+        );
+    }
+
+    #[test]
+    fn start_mitmdump_record_errors_when_not_on_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+        let output_file = root.join("output.flow");
+
+        // Empty PATH so mitmdump is not found
+        let empty_dir = root.join("empty");
+        fs::create_dir_all(&empty_dir).unwrap();
+        let empty_path = empty_dir.to_string();
+
+        let result = start_mitmdump_record(&output_file, &empty_path);
+        assert!(result.is_err(), "expected error when mitmdump not on PATH");
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("mitmdump"),
+            "error message should mention mitmdump: {msg}"
+        );
+    }
+
+    /// When a transition has `network: { record: true }` and mitmdump is not
+    /// available on PATH, execute_transition should fail with an error
+    /// mentioning mitmdump.
+    #[test]
+    fn execute_transition_network_record_fails_without_mitmdump() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        make_state(
+            root,
+            "a",
+            r#"
+transitions:
+  - command: "echo hello"
+    target: "../b"
+    network:
+      record: true
+"#,
+        );
+        make_state(root, "b", "{}");
+
+        let graph = StateGraph::discover(root, ".missouri").unwrap();
+        let transition = &graph.transitions[0];
+        let target = &graph.states[transition.target.0];
+
+        // PATH includes /usr/bin:/bin so sh can run, but no mitmdump
+        let empty_bin = root.join("empty_bin");
+        fs::create_dir_all(&empty_bin).unwrap();
+        let mut source_env = BTreeMap::new();
+        source_env.insert(
+            "PATH".into(),
+            format!("{empty_bin}:/usr/bin:/bin"),
+        );
+
+        let work = tempfile::tempdir().unwrap();
+        let work_dir = Utf8Path::from_path(work.path()).unwrap();
+
+        let result = execute_transition(
+            transition,
+            work_dir,
+            &source_env,
+            target,
+            &graph,
+            &BareBackend,
+            false,
+            None,
+        );
+
+        assert!(
+            !result.passed,
+            "transition with network record should fail when mitmdump not on PATH"
+        );
+        assert!(
+            result.stderr.contains("mitmdump"),
+            "error should mention mitmdump, got: {}",
+            result.stderr,
+        );
+    }
+
+    /// When a transition has `network: { record: true }` and mitmdump is
+    /// available, the transition command should receive HTTPS_PROXY and
+    /// HTTP_PROXY environment variables pointing at the mitmdump proxy.
+    #[test]
+    fn execute_transition_network_record_injects_proxy_env() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        make_state(
+            root,
+            "a",
+            r#"
+transitions:
+  - command: "echo $HTTPS_PROXY"
+    target: "../b"
+    network:
+      record: true
+"#,
+        );
+        make_state(root, "b", "{}");
+
+        // Create a fake mitmdump that announces a port on stderr and stays alive
+        let bin_dir = root.join("fake_bin");
+        fs::create_dir_all(&bin_dir).unwrap();
+        let fake_mitmdump = bin_dir.join("mitmdump");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::write(
+                &fake_mitmdump,
+                r#"#!/usr/bin/env python3
+import socket, sys, time, signal
+signal.signal(signal.SIGTERM, lambda *a: sys.exit(0))
+signal.signal(signal.SIGINT, lambda *a: sys.exit(0))
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(('127.0.0.1', 0))
+port = s.getsockname()[1]
+s.listen(1)
+print(f'Proxy server listening at http://*:{port}', file=sys.stderr, flush=True)
+time.sleep(300)
+"#,
+            )
+            .unwrap();
+            fs::set_permissions(&fake_mitmdump, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        let graph = StateGraph::discover(root, ".missouri").unwrap();
+        let transition = &graph.transitions[0];
+        let target = &graph.states[transition.target.0];
+
+        let mut source_env = BTreeMap::new();
+        source_env.insert("PATH".into(), format!("{bin_dir}:/usr/bin:/bin"));
+
+        let work = tempfile::tempdir().unwrap();
+        let work_dir = Utf8Path::from_path(work.path()).unwrap();
+
+        let result = execute_transition(
+            transition,
+            work_dir,
+            &source_env,
+            target,
+            &graph,
+            &BareBackend,
+            false,
+            None,
+        );
+
+        assert!(
+            result.passed,
+            "transition should pass with fake mitmdump in record mode; stderr: {}",
+            result.stderr,
+        );
+        assert!(
+            result.stdout.contains("http://127.0.0.1:"),
+            "HTTPS_PROXY should be injected into command env in record mode, got stdout: '{}'",
+            result.stdout,
         );
     }
 
