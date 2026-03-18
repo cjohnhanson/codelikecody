@@ -139,8 +139,21 @@ With scoped permissions and deny rules, that write would be blocked.
 - `clc/tests/missouri/dispatched-with-config-permissions/` — existing permissions test
 - `clc/tests/missouri/.missouri/` — test infrastructure (bin wrappers, setup)
 
-**Next steps:**
-- Advance phase to tests-written
-- Implement: add config-rs + toml deps, rewrite config.rs, add seed_defaults to permissions.rs
-- Update dispatch.rs and main.rs to wire new config + seed_defaults
-- Update/retire old YAML missouri tests (has-config, has-bad-config, coordinator-policy-config)
+### 2026-03-17: Implementation complete (phase: green)
+
+**Changes made:**
+- `clc/Cargo.toml`: added `toml = "0.8"` dependency
+- `clc/src/config.rs`: added `WorkerPermissionsConfig`, `WorkerConfig`, `TomlFile` structs; `load()` now checks `clc.toml` first, falls back to `.clc/config.yml`; `show()` outputs TOML
+- `clc/src/permissions.rs`: added `seed_defaults()` with config-driven defaults, `{worktree}` expansion, deny rules; `seed_baseline()` demoted to test-only
+- `clc/src/dispatch.rs`: accepts `worker_perm_defaults` + `worker_perm_deny`, calls `seed_defaults`
+- `clc/src/coordinate.rs`: same parameter change, calls `seed_defaults`
+- `clc/src/main.rs`: passes `cfg.worker.permissions.default` and `cfg.worker.permissions.deny`
+
+**All 136 unit tests pass.**
+
+**Note:** Missouri E2E tests can't run in this environment due to rustup toolchain issue (no default toolchain configured). The `clc` binary builds fine with `cargo +nightly`.
+
+**Not done (future work):**
+- Remove `serde_yml` dep if unused elsewhere (it's still used for YAML fallback + topology.rs)
+- Update old YAML missouri tests (has-config, has-bad-config, coordinator-policy-config) to TOML
+- Add `clc.toml` to this project root with actual worker permission defaults
