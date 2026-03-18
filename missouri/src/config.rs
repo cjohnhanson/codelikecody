@@ -47,6 +47,27 @@ pub struct NetworkComparatorConfig {
     pub ignore: bool,
 }
 
+/// A background service to run during a transition or assertion.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ServiceConfig {
+    /// Command to start the service.
+    pub command: String,
+
+    /// Whether to run via `sh -c` (default: true).
+    #[serde(default = "default_true")]
+    pub shell: bool,
+
+    /// Regex pattern to extract port from stderr.
+    /// Must contain one capture group for the port number.
+    /// Default: `listening.*:(\d+)`
+    pub port_pattern: Option<String>,
+
+    /// Optional readiness check command.
+    /// `$PORT` is available in the environment.
+    /// Retried with backoff until success or timeout.
+    pub ready: Option<String>,
+}
+
 /// A transition from one state to another.
 #[derive(Debug, Deserialize)]
 pub struct TransitionConfig {
@@ -75,6 +96,10 @@ pub struct TransitionConfig {
 
     /// Expected stderr (exact match) when assertions are enabled.
     pub stderr: Option<String>,
+
+    /// Background services to run during this transition.
+    #[serde(default)]
+    pub services: Vec<ServiceConfig>,
 }
 
 /// Comparison overrides for a transition.
@@ -143,6 +168,10 @@ pub struct AssertionConfig {
     /// When true, the assertion passes if the command exits non-zero.
     #[serde(default)]
     pub should_fail: bool,
+
+    /// Background services to run during this assertion.
+    #[serde(default)]
+    pub services: Vec<ServiceConfig>,
 }
 
 /// Project-level missouri.yml structure (at the root config dir).
@@ -576,5 +605,94 @@ env:
         let config = parse_project_config(yaml).unwrap();
         assert_eq!(config.members.len(), 1);
         assert_eq!(config.env["GLOBAL"], "true");
+    }
+
+    #[test]
+    fn parse_transition_with_services() {
+        let yaml = r#"
+transitions:
+  - command: "curl http://localhost:$PORT/"
+    target: "../next"
+    services:
+      - command: "my-server --port 0"
+"#;
+        let config = parse_config(yaml).unwrap();
+        assert_eq!(config.transitions[0].services.len(), 1);
+        assert_eq!(config.transitions[0].services[0].command, "my-server --port 0");
+        assert!(config.transitions[0].services[0].shell);
+        assert!(config.transitions[0].services[0].port_pattern.is_none());
+        assert!(config.transitions[0].services[0].ready.is_none());
+    }
+
+    #[test]
+    fn parse_transition_with_services_full() {
+        let yaml = r#"
+transitions:
+  - command: "curl http://localhost:$PORT/"
+    target: "../next"
+    services:
+      - command: "/usr/bin/my-server"
+        shell: false
+        port_pattern: "Serving on port (\\d+)"
+        ready: "curl -sf http://localhost:$PORT/health"
+"#;
+        let config = parse_config(yaml).unwrap();
+        let svc = &config.transitions[0].services[0];
+        assert_eq!(svc.command, "/usr/bin/my-server");
+        assert!(!svc.shell);
+        assert_eq!(svc.port_pattern.as_deref(), Some("Serving on port (\\d+)"));
+        assert_eq!(svc.ready.as_deref(), Some("curl -sf http://localhost:$PORT/health"));
+    }
+
+    #[test]
+    fn parse_transition_services_absent() {
+        let yaml = r#"
+transitions:
+  - command: "echo hi"
+    target: "../next"
+"#;
+        let config = parse_config(yaml).unwrap();
+        assert!(config.transitions[0].services.is_empty());
+    }
+
+    #[test]
+    fn parse_assertion_with_services() {
+        let yaml = r#"
+assertions:
+  - command: "curl -sf http://localhost:$PORT/"
+    services:
+      - command: "my-server --port 0"
+"#;
+        let config = parse_config(yaml).unwrap();
+        assert_eq!(config.assertions[0].services.len(), 1);
+        assert_eq!(config.assertions[0].services[0].command, "my-server --port 0");
+    }
+
+    #[test]
+    fn parse_assertion_services_absent() {
+        let yaml = r#"
+assertions:
+  - command: "echo hi"
+"#;
+        let config = parse_config(yaml).unwrap();
+        assert!(config.assertions[0].services.is_empty());
+    }
+
+    #[test]
+    fn parse_multiple_services() {
+        let yaml = r#"
+transitions:
+  - command: "test-both"
+    target: "../next"
+    services:
+      - command: "server-a --port 0"
+      - command: "server-b --port 0"
+        ready: "curl -sf http://localhost:$PORT_1/ready"
+"#;
+        let config = parse_config(yaml).unwrap();
+        assert_eq!(config.transitions[0].services.len(), 2);
+        assert_eq!(config.transitions[0].services[0].command, "server-a --port 0");
+        assert_eq!(config.transitions[0].services[1].command, "server-b --port 0");
+        assert!(config.transitions[0].services[1].ready.is_some());
     }
 }
