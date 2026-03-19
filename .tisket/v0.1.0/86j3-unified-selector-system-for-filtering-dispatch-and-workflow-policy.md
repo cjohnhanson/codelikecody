@@ -1,12 +1,12 @@
 ---
 title: "Unified selector system for filtering, dispatch, and workflow policy"
-status: in_progress
+status: todo
 priority:
 assignee:
 labels: [tisket, clc, feature]
 depends_on: []
 created: 2026-03-09T02:17:58Z
-updated: "2026-03-18T03:18:44Z"
+updated: "2026-03-19T02:40:10Z"
 ---
 
 ## Context
@@ -82,5 +82,3 @@ tiskets.
 - OR composition (use multiple coordinators instead)
 - Custom phase definitions beyond ordering (custom gate logic)
 - Tag schema validation
-
-## Scratch Notes
