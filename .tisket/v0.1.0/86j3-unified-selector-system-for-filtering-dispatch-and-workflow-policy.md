@@ -84,3 +84,32 @@ tiskets.
 - Tag schema validation
 
 ## Scratch Notes
+
+### Design decisions (2026-03-18)
+
+Layer 1: `--where` flag added to `tisket issue list` (repeatable, ANDs together).
+Syntax: `--where label:docs --where status:todo`. Built-in namespaces: `label`, `project`, `status`.
+Test state: `tisket/tests/missouri/has-issues-for-selector/` (root state).
+
+Layer 2: `clc.toml` gets `[workflows.default]`, `[workflows.lightweight]`, `[[rules]]` sections.
+Lightweight (phases = []) → pickup sets phase to `done` immediately.
+Default → pickup sets `tests-unwritten`. Rules use `[[rules]]` with `[rules.match]` table.
+Test states: `clc/tests/missouri/has-workflow-policy-config/`, `picked-up-lightweight/`.
+Transition added to `clc/tests/missouri/initialized/.missouri/missouri.yml`.
+
+Layer 3: `--filter` flag added to `clc coordinate`, comma-separated `namespace:value` pairs.
+Example: `--filter "label:feature,project:v0.1.0"` (AND composition).
+Assertions added to existing `coordinate-filter-setup` state.
+
+### Files modified/created
+- `tisket/tests/missouri/has-issues-for-selector/` (new root state, 7 files)
+- `clc/tests/missouri/coordinate-filter-setup/.missouri/missouri.yml` (+--filter assertions)
+- `clc/tests/missouri/initialized/.missouri/missouri.yml` (+workflow policy transition)
+- `clc/tests/missouri/has-workflow-policy-config/` (new state, 4 files)
+- `clc/tests/missouri/picked-up-lightweight/` (new state, 3 files)
+
+### Next steps
+- Implement: selector grammar in tisket (--where flag in list_issues + CLI)
+- Implement: workflow policy config parsing in clc config.rs
+- Implement: pickup.rs evaluates workflow rules to set initial phase
+- Implement: --filter flag in coordinate.rs CLI + find_pickable_tiskets

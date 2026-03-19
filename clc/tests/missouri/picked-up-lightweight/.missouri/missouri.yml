@@ -1,0 +1,18 @@
+assertions:
+  - name: "worktree directory exists"
+    command: "test -d .worktrees/docs-task"
+
+  - name: "git branch exists"
+    command: "git branch --list docs-task | grep -q docs-task"
+
+  - name: "tisket status changed to in_progress"
+    command: "grep -q 'status: in_progress' .tisket/v0.1.0/docs-task.md"
+
+  - name: "worktree phase is done (lightweight workflow — no TDD phases)"
+    command: "cd .worktrees/docs-task && clc status 2>&1 | grep 'phase: done'"
+
+  - name: "clc done succeeds immediately from lightweight worktree"
+    command: "cd .worktrees/docs-task && clc done"
+
+  - name: "worktree is on docs-task branch"
+    command: "cd .worktrees/docs-task && test $(git rev-parse --abbrev-ref HEAD) = docs-task"

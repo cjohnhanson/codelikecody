@@ -175,3 +175,55 @@ assertions:
 
   - name: "grant-config with invalid YAML errors"
     command: "printf '][not valid yaml{{{\\n' > /tmp/bad-policy.yml && ! clc coordinate --dry-run --grant-config /tmp/bad-policy.yml 2>&1"
+
+  # --- Selector grammar: --filter flag ---
+  - name: "coordinate --help shows --filter flag"
+    command: "clc coordinate --help | grep -q '\\-\\-filter'"
+
+  - name: "--filter label:infrastructure includes alpha-task"
+    command: "clc coordinate --filter 'label:infrastructure' --dry-run | grep -q alpha-task"
+
+  - name: "--filter label:infrastructure lists exactly 1 tisket"
+    command: "test $(clc coordinate --filter 'label:infrastructure' --dry-run | wc -l | tr -d ' ') -eq 1"
+
+  - name: "--filter label:infrastructure excludes beta-task"
+    command: "! clc coordinate --filter 'label:infrastructure' --dry-run | grep -q beta-task"
+
+  - name: "--filter label:feature includes beta-task"
+    command: "clc coordinate --filter 'label:feature' --dry-run | grep -q beta-task"
+
+  - name: "--filter label:feature includes delta-task"
+    command: "clc coordinate --filter 'label:feature' --dry-run | grep -q delta-task"
+
+  - name: "--filter label:feature lists exactly 2 tiskets"
+    command: "test $(clc coordinate --filter 'label:feature' --dry-run | wc -l | tr -d ' ') -eq 2"
+
+  - name: "--filter label:feature,project:v0.1.0 includes only beta-task"
+    command: "clc coordinate --filter 'label:feature,project:v0.1.0' --dry-run | grep -q beta-task"
+
+  - name: "--filter label:feature,project:v0.1.0 excludes delta-task (wrong project)"
+    command: "! clc coordinate --filter 'label:feature,project:v0.1.0' --dry-run | grep -q delta-task"
+
+  - name: "--filter label:feature,project:v0.1.0 lists exactly 1 tisket"
+    command: "test $(clc coordinate --filter 'label:feature,project:v0.1.0' --dry-run | wc -l | tr -d ' ') -eq 1"
+
+  - name: "--filter with nonexistent label gives no pickable"
+    command: "clc coordinate --filter 'label:nonexistent' --dry-run 2>&1 | grep -q 'no pickable'"
+
+  - name: "--filter status:todo lists all 5 pickable tiskets"
+    command: "test $(clc coordinate --filter 'status:todo' --dry-run | wc -l | tr -d ' ') -eq 5"
+
+  - name: "--filter project:v0.2.0 shows delta-task"
+    command: "clc coordinate --filter 'project:v0.2.0' --dry-run | grep -q delta-task"
+
+  - name: "--filter project:v0.2.0 excludes alpha-task"
+    command: "! clc coordinate --filter 'project:v0.2.0' --dry-run | grep -q alpha-task"
+
+  - name: "--filter project:v0.2.0 lists exactly 1 tisket"
+    command: "test $(clc coordinate --filter 'project:v0.2.0' --dry-run | wc -l | tr -d ' ') -eq 1"
+
+  - name: "--filter label:feature,project:v0.1.0 lists exactly 1 tisket (AND composition)"
+    command: "test $(clc coordinate --filter 'label:feature,project:v0.1.0' --dry-run | wc -l | tr -d ' ') -eq 1"
+
+  - name: "--filter label:infrastructure,project:v0.2.0 gives no pickable (no intersection)"
+    command: "clc coordinate --filter 'label:infrastructure,project:v0.2.0' --dry-run 2>&1 | grep -q 'no pickable'"

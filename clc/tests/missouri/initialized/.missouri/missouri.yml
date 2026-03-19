@@ -654,3 +654,32 @@ transitions:
           ignore: true
         - path: ".clc/"
           ignore: true
+
+  - name: "setup workflow policy fixtures"
+    command: >-
+      git init -q -b main &&
+      git -c user.name=test -c user.email=test@test add -A &&
+      git -c user.name=test -c user.email=test@test commit -q -m init &&
+      printf 'tisket_dir: .tisket\nadditional_instructions: ""\n' > tisket.yml &&
+      mkdir -p .tisket/v0.1.0 &&
+      printf 'name: v0.1.0\n' > .tisket/v0.1.0/project.yml &&
+      printf -- '---\ntitle: "Docs task"\nstatus: todo\npriority:\nassignee:\nlabels: [docs]\ndepends_on: []\ncreated: "2025-01-01T00:00:00Z"\nupdated: "2025-01-01T00:00:00Z"\n---\n' > .tisket/v0.1.0/docs-task.md &&
+      printf -- '---\ntitle: "Feature task"\nstatus: todo\npriority:\nassignee:\nlabels: [feature]\ndepends_on: []\ncreated: "2025-01-01T00:00:00Z"\nupdated: "2025-01-01T00:00:00Z"\n---\n' > .tisket/v0.1.0/feature-task.md &&
+      printf '[project]\nmain_branch = "main"\n\n[workflows.default]\nphases = ["tests-unwritten", "tests-written", "red", "implementing", "green"]\n\n[workflows.lightweight]\nphases = []\n\n[[rules]]\nworkflow = "lightweight"\n[rules.match]\nlabel = "docs"\n' > clc.toml &&
+      git -c user.name=test -c user.email=test@test add -A &&
+      git -c user.name=test -c user.email=test@test commit -q -m 'add workflow policy config and tiskets'
+    target: "../has-workflow-policy-config"
+    comparators:
+      files:
+        - path: ".claude/"
+          ignore: true
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true
+        - path: "clc.toml"
+          ignore: true

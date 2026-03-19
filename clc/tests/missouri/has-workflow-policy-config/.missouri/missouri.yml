@@ -1,0 +1,51 @@
+assertions:
+  # --- Config parsing ---
+  - name: "clc config show succeeds with workflow policy config"
+    command: "clc config show"
+
+  - name: "clc config show contains workflows section"
+    command: "clc config show | grep -q 'workflows'"
+
+  - name: "clc config show contains rules section"
+    command: "clc config show | grep -q 'rules'"
+
+  # --- Pickup with default workflow (feature label, no match) ---
+  - name: "pickup of feature-task sets tests-unwritten phase (default workflow)"
+    command: >-
+      clc pickup feature-task &&
+      cd .worktrees/feature-task &&
+      clc status 2>&1 | grep 'phase: tests-unwritten'
+
+  # --- Pickup with lightweight workflow (docs label matches rule) ---
+  - name: "pickup of docs-task sets done phase (lightweight workflow)"
+    command: >-
+      clc pickup docs-task &&
+      cd .worktrees/docs-task &&
+      clc status 2>&1 | grep 'phase: done'
+
+  - name: "pickup of docs-task allows clc done immediately"
+    command: >-
+      clc pickup docs-task 2>/dev/null || true &&
+      cd .worktrees/docs-task &&
+      clc done
+
+transitions:
+  - name: "pickup docs-task (lightweight workflow)"
+    command: "clc pickup docs-task"
+    target: "../picked-up-lightweight"
+    comparators:
+      files:
+        - path: ".claude/"
+          ignore: true
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".worktrees/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true
+        - path: "clc.toml"
+          ignore: true
