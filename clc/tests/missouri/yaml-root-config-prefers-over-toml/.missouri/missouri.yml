@@ -1,0 +1,15 @@
+assertions:
+  - name: "clc.yml config file exists at project root"
+    command: "test -f clc.yml"
+
+  - name: "clc.toml also exists"
+    command: "test -f clc.toml"
+
+  - name: "config show reflects main_branch from clc.yml (not clc.toml)"
+    command: "clc config show 2>&1 | grep 'main_branch.*yaml-branch'"
+
+  - name: "config show does not show clc.toml main_branch"
+    command: "! clc config show 2>&1 | grep 'main_branch.*toml-branch'"
+
+  - name: "status reports main_branch from clc.yml"
+    command: "clc status 2>&1 | grep 'main_branch: yaml-branch'"

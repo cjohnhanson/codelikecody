@@ -634,3 +634,23 @@ transitions:
           ignore: true
         - path: "integration-file.txt"
           ignore: true
+
+  - name: "create clc.yml at project root"
+    command: "printf 'main_branch: trunk\n' > clc.yml"
+    target: "../has-yaml-root-config"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          ignore: true
+        - path: ".clc/"
+          ignore: true
+
+  - name: "create clc.yml and clc.toml at project root"
+    command: "printf 'main_branch: yaml-branch\n' > clc.yml && printf '[project]\nmain_branch = \"toml-branch\"\n' > clc.toml"
+    target: "../yaml-root-config-prefers-over-toml"
+    comparators:
+      files:
+        - path: ".claude/settings.local.json"
+          ignore: true
+        - path: ".clc/"
+          ignore: true

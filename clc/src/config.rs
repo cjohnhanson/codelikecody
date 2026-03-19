@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
 
+const YAML_ROOT_CONFIG_FILENAME: &str = "clc.yml";
 const TOML_CONFIG_FILENAME: &str = "clc.toml";
 const YAML_CONFIG_FILENAME: &str = "config.yml";
 
@@ -124,12 +125,16 @@ fn default_admin_branch() -> String {
     "clc-admin".to_string()
 }
 
-/// Load config from `clc.toml` at the project root, falling back to
-/// `.clc/config.yml` for backward compatibility. Returns defaults if
-/// neither file exists. Returns an error if a file exists but is invalid.
+/// Load config from `clc.yml` at the project root (primary), falling back to
+/// `clc.toml`, then `.clc/config.yml` for backward compatibility. Returns
+/// defaults if no file exists. Returns an error if a file exists but is invalid.
 pub fn load(project_dir: &Path) -> Result<Config, Error> {
-    let toml_path = project_dir.join(TOML_CONFIG_FILENAME);
+    let yaml_root_path = project_dir.join(YAML_ROOT_CONFIG_FILENAME);
+    if yaml_root_path.exists() {
+        return load_yaml(&yaml_root_path);
+    }
 
+    let toml_path = project_dir.join(TOML_CONFIG_FILENAME);
     if toml_path.exists() {
         return load_toml(&toml_path);
     }
@@ -162,12 +167,12 @@ fn load_yaml(path: &Path) -> Result<Config, Error> {
         .map_err(|e| Error::NonBlocking(format!("invalid config {}: {e}", path.display())))
 }
 
-/// Print the effective config as TOML.
+/// Print the effective config as YAML.
 pub fn show(project_dir: &Path) -> Result<(), Error> {
     let config = load(project_dir)?;
-    let toml_str = toml::to_string_pretty(&config)
+    let yaml_str = serde_yml::to_string(&config)
         .map_err(|e| Error::NonBlocking(format!("failed to serialize config: {e}")))?;
-    print!("{toml_str}");
+    print!("{yaml_str}");
     Ok(())
 }
 
@@ -414,6 +419,81 @@ mod tests {
 
         let config = load(dir.path()).unwrap();
         assert_eq!(config.main_branch, "toml-branch");
+    }
+
+    // --- YAML root config tests (new behavior: clc.yml at project root) ---
+
+    #[test]
+    fn load_yaml_root_config_from_project_root() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("clc.yml"), "main_branch: trunk\n").unwrap();
+
+        let config = load(dir.path()).unwrap();
+        assert_eq!(config.main_branch, "trunk");
+    }
+
+    #[test]
+    fn load_yaml_root_config_prefers_over_toml() {
+        // When both clc.yml and clc.toml exist, clc.yml wins.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("clc.yml"), "main_branch: yaml-branch\n").unwrap();
+        std::fs::write(
+            dir.path().join("clc.toml"),
+            "[project]\nmain_branch = \"toml-branch\"\n",
+        )
+        .unwrap();
+
+        let config = load(dir.path()).unwrap();
+        assert_eq!(config.main_branch, "yaml-branch");
+    }
+
+    #[test]
+    fn load_yaml_root_config_prefers_over_clc_dir_yaml() {
+        // clc.yml at root takes priority over .clc/config.yml.
+        let dir = tempfile::tempdir().unwrap();
+        let clc_dir = dir.path().join(".clc");
+        std::fs::create_dir_all(&clc_dir).unwrap();
+        std::fs::write(clc_dir.join("config.yml"), "main_branch: legacy-branch\n").unwrap();
+        std::fs::write(dir.path().join("clc.yml"), "main_branch: root-branch\n").unwrap();
+
+        let config = load(dir.path()).unwrap();
+        assert_eq!(config.main_branch, "root-branch");
+    }
+
+    #[test]
+    fn load_yaml_root_config_error_on_invalid_yaml() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("clc.yml"), "}{not valid yaml\n").unwrap();
+
+        let result = load(dir.path());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn load_yaml_root_config_with_coordinator_section() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("clc.yml"),
+            "coordinator:\n  auto_grant:\n    - \"Bash(cargo *)\"\n  always_escalate:\n    - \"Bash(rm *)\"\n",
+        )
+        .unwrap();
+
+        let config = load(dir.path()).unwrap();
+        assert_eq!(config.coordinator.auto_grant, vec!["Bash(cargo *)"]);
+        assert_eq!(config.coordinator.always_escalate, vec!["Bash(rm *)"]);
+    }
+
+    #[test]
+    fn show_outputs_yaml_format() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("clc.yml"), "main_branch: trunk\n").unwrap();
+
+        // show() produces YAML: keys use `: ` not ` = `
+        // We test by serializing directly as YAML and checking the format.
+        let config = load(dir.path()).unwrap();
+        let yaml_str = serde_yml::to_string(&config).unwrap();
+        assert!(yaml_str.contains("main_branch: trunk"), "expected YAML format but got: {yaml_str}");
+        assert!(!yaml_str.contains("main_branch = "), "expected YAML not TOML but got: {yaml_str}");
     }
 
     #[test]

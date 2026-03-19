@@ -24,7 +24,7 @@ assertions:
     command: "clc config show | grep -q 'Bash(git push \\*)'"
 
   - name: "config show still includes main_branch"
-    command: "clc config show | grep -q 'main_branch = .main.'"
+    command: "clc config show | grep -q 'main_branch: main'"
 
   - name: "config without coordinator section uses empty defaults"
     command: "printf 'main_branch: main\\n' > .clc/config2.yml && cp .clc/config2.yml .clc/config.yml && clc config show | grep -q 'coordinator'"

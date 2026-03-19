@@ -1,12 +1,18 @@
 assertions:
-  - name: "config file exists"
-    command: "test -f .clc/config.yml"
+  - name: "clc.yml config file exists at project root"
+    command: "test -f clc.yml"
 
-  - name: "config show reflects custom main_branch"
-    command: "clc config show 2>&1 | grep 'main_branch: trunk'"
+  - name: "no .clc/config.yml exists"
+    command: "! test -f .clc/config.yml"
+
+  - name: "no clc.toml exists"
+    command: "! test -f clc.toml"
+
+  - name: "config show reflects custom main_branch from clc.yml"
+    command: "clc config show 2>&1 | grep 'main_branch.*trunk'"
 
   - name: "config show does not show default main_branch"
-    command: "! clc config show 2>&1 | grep 'main_branch: main'"
+    command: "! clc config show 2>&1 | grep 'main_branch.*main'"
 
   - name: "status reports configured main_branch"
     command: "clc status 2>&1 | grep 'main_branch: trunk'"
