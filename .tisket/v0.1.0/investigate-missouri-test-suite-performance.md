@@ -1,12 +1,12 @@
 ---
 title: "Investigate missouri test suite performance"
-status: discovery
+status: in_progress
 priority:
 assignee:
 labels: [missouri]
 depends_on: []
-created: "2026-03-19T02:36:01Z"
-updated: "2026-03-19T02:36:01Z"
+created: 2026-03-19T02:36:01Z
+updated: "2026-03-19T03:41:00Z"
 ---
 
 ## Problem
@@ -20,3 +20,5 @@ Observed missouri test runs taking 5+ minutes during worker execution (`missouri
 - Check if subprocess spawning per transition is the bottleneck
 - Check if parallel missouri runs on the same machine cause resource contention
 - Consider whether missouri needs a timing/profiling report mode
+
+## Scratch Notes
