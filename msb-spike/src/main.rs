@@ -26,8 +26,8 @@ async fn main() -> Result<()> {
     sandbox.start(Some(StartOptions::default())).await?;
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
-    // Install nix — all in one big command to avoid state issues between calls
-    println!("=== installing nix (single command) ===");
+    // Install nix
+    println!("=== installing nix ===");
     let t0 = Instant::now();
     let out = sh(&sandbox, &format!(
         "cd /tmp && \
@@ -38,7 +38,7 @@ async fn main() -> Result<()> {
          mkdir -p /root/.cache/nix/tarball-cache-v2 /root/.cache/nix/fetcher-cache-v2 \
                   /nix/var/nix/db /nix/var/nix/gcroots /nix/var/nix/profiles \
                   /nix/var/nix/temproots /nix/var/nix/userpool /nix/var/nix/daemon-socket /etc/nix && \
-         cd /root/.cache/nix/tarball-cache-v2 && git init --bare 2>&1 && \
+         cd /root/.cache/nix/tarball-cache-v2 && git init --bare 2>&1 && cd / && \
          echo 'build-users-group =' > /etc/nix/nix.conf && \
          echo 'experimental-features = nix-command flakes' >> /etc/nix/nix.conf && \
          echo 'sandbox = false' >> /etc/nix/nix.conf && \
@@ -50,7 +50,25 @@ async fn main() -> Result<()> {
     println!("{out}");
     println!("install: {:?}", t0.elapsed());
 
-    // Now try nix build
+    // Debug: check DNS inside sandbox
+    println!("\n=== DNS debug ===");
+    let out = sh(&sandbox, "cat /etc/resolv.conf && echo --- && getent hosts api.github.com 2>&1 || echo getent failed && echo --- && curl -s --connect-timeout 5 https://api.github.com/ 2>&1 | head -3").await?;
+    println!("{out}");
+
+    // Populate /etc/hosts — nix's bundled libcurl/c-ares can't resolve DNS in the VM
+    // Hardcode IPs for the spike (resolved from host machine)
+    println!("\n=== populating /etc/hosts ===");
+    let out = sh(&sandbox, "\
+        echo '140.82.113.6 api.github.com' >> /etc/hosts && \
+        echo '140.82.112.3 github.com' >> /etc/hosts && \
+        echo '151.101.113.91 cache.nixos.org' >> /etc/hosts && \
+        echo '151.101.113.91 channels.nixos.org' >> /etc/hosts && \
+        echo '151.101.113.91 releases.nixos.org' >> /etc/hosts && \
+        cat /etc/hosts\
+    ").await?;
+    println!("hosts:\n{out}");
+
+    // Try nix build again
     println!("\n=== nix build nixpkgs#hello ===");
     let t1 = Instant::now();
     let out = sh(&sandbox, &format!(
