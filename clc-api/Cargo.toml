@@ -1,0 +1,27 @@
+[package]
+name = "clc-api"
+version = "0.1.0"
+edition = "2024"
+description = "HTTP API wrapping the tisket issue tracker"
+
+[lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }
+tisket = { path = "../tisket" }
+camino = "1"
+tower-http = { version = "0.6", features = ["cors"] }
