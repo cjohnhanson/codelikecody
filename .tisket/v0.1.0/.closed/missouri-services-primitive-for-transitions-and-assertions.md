@@ -1,12 +1,12 @@
 ---
 title: "Missouri services primitive for transitions and assertions"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: [missouri, feature]
 depends_on: []
 created: 2026-03-18T02:11:51Z
-updated: "2026-03-18T03:09:33Z"
+updated: "2026-03-19T02:33:28Z"
 ---
 
 Add a `services:` key to TransitionConfig and AssertionConfig. Services are
