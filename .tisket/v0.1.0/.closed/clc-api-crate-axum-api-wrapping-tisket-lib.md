@@ -1,12 +1,12 @@
 ---
 title: "clc-api crate — Axum API wrapping tisket lib"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: [web, feature]
 depends_on: [missouri-services-primitive-for-transitions-and-assertions]
 created: 2026-03-18T02:11:51Z
-updated: "2026-03-19T02:33:58Z"
+updated: "2026-03-19T03:00:30Z"
 ---
 
 New workspace member `clc-api`. Axum HTTP API wrapping the tisket lib crate.
@@ -30,5 +30,3 @@ New workspace member `clc-api`. Axum HTTP API wrapping the tisket lib crate.
 - Repo initialized from a root path passed via CLI flag or env var
 - Port 0 support: bind to 0, print actual port to stderr for missouri
 - JSON responses throughout, serde for request/response types
-
-## Scratch Notes
