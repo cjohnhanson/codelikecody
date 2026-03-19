@@ -8,11 +8,11 @@ assertions:
   - name: "worktree settings has permissions.allow"
     command: "jq -e '.permissions.allow' .worktrees/test-feature/.claude/settings.local.json"
 
-  - name: "worktree settings has baseline Read permission"
-    command: "jq -r '.permissions.allow[]' .worktrees/test-feature/.claude/settings.local.json | grep -qx 'Read'"
+  - name: "worktree settings does not have baseline Read when config overrides"
+    command: "! jq -r '.permissions.allow[]' .worktrees/test-feature/.claude/settings.local.json | grep -qx 'Read'"
 
-  - name: "worktree settings has baseline Bash(cargo *) permission"
-    command: "jq -r '.permissions.allow[]' .worktrees/test-feature/.claude/settings.local.json | grep -qx 'Bash(cargo \\*)'"
+  - name: "worktree settings does not have baseline Bash(cargo *) when config overrides"
+    command: "! jq -r '.permissions.allow[]' .worktrees/test-feature/.claude/settings.local.json | grep -qx 'Bash(cargo \\*)'"
 
   - name: "worktree settings has config-level Bash(npm *) permission"
     command: "jq -r '.permissions.allow[]' .worktrees/test-feature/.claude/settings.local.json | grep -qx 'Bash(npm \\*)'"

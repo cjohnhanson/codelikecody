@@ -88,7 +88,7 @@ transitions:
           ignore: true
 
   - name: "dispatch with config-level permissions"
-    command: "printf 'main_branch: main\\npermissions:\\n  allow:\\n    - \"Bash(npm *)\"\\n    - \"Bash(make *)\"\\n' > .clc/config.yml && clc dispatch test-feature --model haiku"
+    command: "printf 'main_branch: main\\nworker:\\n  permissions:\\n    default:\\n      - \"Bash(npm *)\"\\n      - \"Bash(make *)\"\\n' > .clc/config.yml && clc dispatch test-feature --model haiku"
     target: "../dispatched-with-config-permissions"
     comparators:
       files:
