@@ -96,10 +96,54 @@
               '';
             }
           );
+          # OCI image for missouri test sandboxes (always aarch64-linux,
+          # since microsandbox runs Linux microVMs via libkrun).
+          # Build with: nix build .#missouri-base-image
+          linuxPkgs = import nixpkgs { system = "aarch64-linux"; };
+          missouri-base-image = linuxPkgs.dockerTools.buildLayeredImage {
+            name = "missouri-base";
+            tag = "latest";
+            contents = with linuxPkgs; [
+              # Shell and core utilities
+              bash
+              coreutils
+              gnugrep
+              gnused
+              findutils
+              # Network tools
+              curl
+              cacert
+              mitmproxy
+              # Version control
+              git
+            ];
+            config = {
+              Cmd = [ "${linuxPkgs.bash}/bin/bash" ];
+              Env = [
+                "SSL_CERT_FILE=${linuxPkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+                "PATH=/usr/local/bin:/usr/bin:/bin:${
+                  linuxPkgs.lib.makeBinPath (
+                    with linuxPkgs;
+                    [
+                      bash
+                      coreutils
+                      gnugrep
+                      gnused
+                      findutils
+                      curl
+                      git
+                      mitmproxy
+                    ]
+                  )
+                }"
+              ];
+            };
+          };
         in
         {
           default = workspace;
           clc = workspace;
+          inherit missouri-base-image;
         }
       );
 
