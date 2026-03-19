@@ -43,7 +43,7 @@ const BASH_ALLOWLIST: &[&str] = &[
 pub fn evaluate(event: &Event, git: Option<&GitState>, phase: Option<Phase>) -> Response {
     // Escape hatch: set CLC_GUARD_OFF=1 to bypass all guard checks.
     // Used during clc development when the guard itself is being modified.
-    if std::env::var("CLC_GUARD_OFF").is_ok() {
+    if std::env::var("CLC_GUARD_OFF").is_ok_and(|v| !v.is_empty()) {
         return Response::Passthrough;
     }
     match event {
