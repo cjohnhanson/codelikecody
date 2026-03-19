@@ -9,10 +9,11 @@ pub fn pickup(
     project_dir: &Path,
     id: &str,
     main_branch: &str,
+    admin_branch: &str,
     coordinator_id: Option<&str>,
 ) -> Result<(), Error> {
     // Must be on main branch.
-    let git_state = git::detect(project_dir, main_branch)
+    let git_state = git::detect(project_dir, main_branch, admin_branch)
         .ok_or_else(|| Error::NonBlocking("not inside a git repository".into()))?;
 
     if !git_state.is_main {

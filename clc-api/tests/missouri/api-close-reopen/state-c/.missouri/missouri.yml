@@ -1,0 +1,12 @@
+assertions:
+  - name: "reopened issue back in active list"
+    command: "curl -sf http://localhost:$PORT/api/issues | jq -r '.[0].frontmatter.status'"
+    stdout: "todo\n"
+    services:
+      - command: "clc-api serve --port 0 --root ."
+
+  - name: "reopened issue not in closed list"
+    command: "curl -sf http://localhost:$PORT/api/issues?closed=true | jq 'length'"
+    stdout: "0\n"
+    services:
+      - command: "clc-api serve --port 0 --root ."

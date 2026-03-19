@@ -1,4 +1,5 @@
 members:
+  - clc-api/tests/missouri
   - clc/tests/missouri
   - tisket/tests/missouri
   - missouri/tests/missouri

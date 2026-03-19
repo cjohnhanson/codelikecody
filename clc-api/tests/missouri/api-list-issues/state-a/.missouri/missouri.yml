@@ -1,0 +1,26 @@
+transitions:
+  - name: "list issues returns test issue"
+    command: "curl -sf http://localhost:$PORT/api/issues | jq -r '.[0].frontmatter.title'"
+    stdout: "Test issue\n"
+    target: "../state-b"
+    services:
+      - command: "clc-api serve --port 0 --root ."
+
+assertions:
+  - name: "get single issue by id"
+    command: "curl -sf http://localhost:$PORT/api/issues/ab12-test-issue | jq -r '.frontmatter.status'"
+    stdout: "todo\n"
+    services:
+      - command: "clc-api serve --port 0 --root ."
+
+  - name: "list projects"
+    command: "curl -sf http://localhost:$PORT/api/projects | jq -r '.[0].name'"
+    stdout: "default\n"
+    services:
+      - command: "clc-api serve --port 0 --root ."
+
+  - name: "search finds issue"
+    command: "curl -sf http://localhost:$PORT/api/search?q=Test | jq -r '.[0].issue.frontmatter.title'"
+    stdout: "Test issue\n"
+    services:
+      - command: "clc-api serve --port 0 --root ."

@@ -14,6 +14,9 @@ struct ProjectSection {
     #[serde(default = "default_main_branch")]
     main_branch: String,
 
+    #[serde(default = "default_admin_branch")]
+    admin_branch: String,
+
     #[serde(default = "default_required_attempts")]
     required_attempts: u32,
 }
@@ -67,6 +70,9 @@ pub struct Config {
     #[serde(default = "default_main_branch")]
     pub main_branch: String,
 
+    #[serde(default = "default_admin_branch")]
+    pub admin_branch: String,
+
     #[serde(default = "default_required_attempts")]
     pub required_attempts: u32,
 
@@ -84,6 +90,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             main_branch: default_main_branch(),
+            admin_branch: default_admin_branch(),
             required_attempts: default_required_attempts(),
             permissions: PermissionsConfig::default(),
             worker: WorkerConfig::default(),
@@ -96,6 +103,7 @@ impl From<TomlFile> for Config {
     fn from(toml: TomlFile) -> Self {
         Self {
             main_branch: toml.project.main_branch,
+            admin_branch: toml.project.admin_branch,
             required_attempts: toml.project.required_attempts,
             permissions: PermissionsConfig::default(),
             worker: toml.worker,
@@ -110,6 +118,10 @@ const fn default_required_attempts() -> u32 {
 
 fn default_main_branch() -> String {
     "main".to_string()
+}
+
+fn default_admin_branch() -> String {
+    "clc-admin".to_string()
 }
 
 /// Load config from `clc.toml` at the project root, falling back to
@@ -283,8 +295,23 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let config = load(dir.path()).unwrap();
         assert_eq!(config.main_branch, "main");
+        assert_eq!(config.admin_branch, "clc-admin");
         assert!(config.coordinator.auto_grant.is_empty());
         assert!(config.coordinator.always_escalate.is_empty());
+    }
+
+    #[test]
+    fn load_toml_config_with_custom_admin_branch() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("clc.toml"),
+            "[project]\nadmin_branch = \"admin\"\n",
+        )
+        .unwrap();
+
+        let config = load(dir.path()).unwrap();
+        assert_eq!(config.admin_branch, "admin");
+        assert_eq!(config.main_branch, "main"); // default preserved
     }
 
     #[test]

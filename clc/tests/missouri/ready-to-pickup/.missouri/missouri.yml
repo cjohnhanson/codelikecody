@@ -35,6 +35,21 @@ assertions:
   - name: "admin is idempotent (second call succeeds)"
     command: "clc admin && clc admin"
 
+  - name: "admin guard allows Edit in src without phase"
+    command: "clc admin && (cd .worktrees/clc-admin && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"src/main.rs\"}}' | clc hook)"
+
+  - name: "admin guard allows Write without phase"
+    command: "clc admin && (cd .worktrees/clc-admin && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"src/new_file.rs\"}}' | clc hook)"
+
+  - name: "admin guard allows Stop without phase"
+    command: "clc admin && (cd .worktrees/clc-admin && echo '{\"hook_event_name\":\"Stop\",\"session_id\":\"test\",\"cwd\":\".\"}' | clc hook)"
+
+  - name: "admin guard allows unrestricted Bash"
+    command: "clc admin && (cd .worktrees/clc-admin && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"rm -rf /tmp/junk\"}}' | clc hook)"
+
+  - name: "admin prime shows admin annotation"
+    command: "clc admin && (cd .worktrees/clc-admin && clc prime | grep '(admin)')"
+
 transitions:
   - name: "pickup a tisket"
     command: "clc pickup test-feature"
@@ -73,7 +88,7 @@ transitions:
           ignore: true
 
   - name: "dispatch with config-level permissions"
-    command: "printf 'main_branch: main\\npermissions:\\n  allow:\\n    - \"Bash(npm *)\"\\n    - \"Bash(make *)\"\\n' > .clc/config.yml && clc dispatch test-feature --model haiku"
+    command: "printf 'main_branch: main\\nworker:\\n  permissions:\\n    default:\\n      - \"Bash(npm *)\"\\n      - \"Bash(make *)\"\\n' > .clc/config.yml && clc dispatch test-feature --model haiku"
     target: "../dispatched-with-config-permissions"
     comparators:
       files:

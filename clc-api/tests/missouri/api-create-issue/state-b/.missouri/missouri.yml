@@ -1,0 +1,18 @@
+assertions:
+  - name: "created issue is retrievable"
+    command: "curl -sf http://localhost:$PORT/api/issues?label=api | jq -r '.[0].frontmatter.title'"
+    stdout: "New API issue\n"
+    services:
+      - command: "clc-api serve --port 0 --root ."
+
+  - name: "created issue has correct labels"
+    command: "curl -sf http://localhost:$PORT/api/issues?label=api | jq -r '.[0].frontmatter.labels | join(\",\")'"
+    stdout: "api,test\n"
+    services:
+      - command: "clc-api serve --port 0 --root ."
+
+  - name: "created issue has correct priority"
+    command: "curl -sf http://localhost:$PORT/api/issues?label=api | jq -r '.[0].frontmatter.priority'"
+    stdout: "2\n"
+    services:
+      - command: "clc-api serve --port 0 --root ."

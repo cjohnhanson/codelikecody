@@ -1,0 +1,10 @@
+transitions:
+  - name: "edit issue via API"
+    command: "curl -sf -X PATCH http://localhost:$PORT/api/issues/ab12-editable-issue -H 'Content-Type: application/json' -d '{\"status\":\"in_progress\",\"title\":\"Edited issue\",\"add_label\":\"edited\"}'"
+    target: "../state-b"
+    services:
+      - command: "clc-api serve --port 0 --root ."
+    comparators:
+      files:
+        - path: ".tisket/default/ab12-editable-issue.md"
+          ignore: true

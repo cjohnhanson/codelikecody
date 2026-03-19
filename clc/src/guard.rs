@@ -43,7 +43,7 @@ const BASH_ALLOWLIST: &[&str] = &[
 pub fn evaluate(event: &Event, git: Option<&GitState>, phase: Option<Phase>) -> Response {
     // Escape hatch: set CLC_GUARD_OFF=1 to bypass all guard checks.
     // Used during clc development when the guard itself is being modified.
-    if std::env::var("CLC_GUARD_OFF").is_ok() {
+    if std::env::var("CLC_GUARD_OFF").is_ok_and(|v| !v.is_empty()) {
         return Response::Passthrough;
     }
     match event {
@@ -61,7 +61,7 @@ fn check_stop(git: Option<&GitState>, phase: Option<Phase>) -> Response {
         return Response::Passthrough;
     };
 
-    if state.is_main {
+    if state.is_main || state.is_admin {
         return Response::Passthrough;
     }
 
@@ -109,6 +109,11 @@ fn check_tool_use(
                  Pick up a tisket to begin work: `clc pickup <issue-id>`"
             ),
         };
+    }
+
+    // Admin branch: fully permissive — no phase enforcement.
+    if state.is_admin {
+        return Response::Passthrough;
     }
 
     // Feature branch: read-only tools always pass.
@@ -204,6 +209,7 @@ mod tests {
         GitState {
             branch: "feat-xyz".to_string(),
             is_main: false,
+            is_admin: false,
             is_worktree: true,
         }
     }
@@ -319,6 +325,51 @@ mod tests {
     fn edit_test_allowed_in_reviewed() {
         let git = feature_branch();
         let resp = evaluate(&edit_test_event(), Some(&git), Some(Phase::Reviewed));
+        assert!(matches!(resp, Response::Passthrough));
+    }
+
+    // --- Admin branch: fully permissive ---
+
+    fn admin_branch() -> GitState {
+        GitState {
+            branch: "clc-admin".to_string(),
+            is_main: false,
+            is_admin: true,
+            is_worktree: true,
+        }
+    }
+
+    #[test]
+    fn admin_edit_src_allowed_without_phase() {
+        let git = admin_branch();
+        // Call check_tool_use directly to bypass CLC_GUARD_OFF escape hatch.
+        let resp = check_tool_use(
+            "Edit",
+            &json!({"file_path": "src/main.rs"}),
+            Some(&git),
+            None,
+        );
+        assert!(matches!(resp, Response::Passthrough));
+    }
+
+    #[test]
+    fn admin_stop_allowed_without_phase() {
+        let git = admin_branch();
+        // Call check_stop directly to bypass CLC_GUARD_OFF escape hatch.
+        let resp = check_stop(Some(&git), None);
+        assert!(matches!(resp, Response::Passthrough));
+    }
+
+    #[test]
+    fn admin_bash_unrestricted() {
+        let git = admin_branch();
+        // Call check_tool_use directly to bypass CLC_GUARD_OFF escape hatch.
+        let resp = check_tool_use(
+            "Bash",
+            &json!({"command": "rm -rf /tmp/junk"}),
+            Some(&git),
+            None,
+        );
         assert!(matches!(resp, Response::Passthrough));
     }
 }

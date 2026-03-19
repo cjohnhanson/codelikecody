@@ -1,0 +1,23 @@
+assertions:
+  - name: "closed issue not in active list"
+    command: "curl -sf http://localhost:$PORT/api/issues | jq 'length'"
+    stdout: "0\n"
+    services:
+      - command: "clc-api serve --port 0 --root ."
+
+  - name: "closed issue in closed list"
+    command: "curl -sf http://localhost:$PORT/api/issues?closed=true | jq -r '.[0].frontmatter.status'"
+    stdout: "done\n"
+    services:
+      - command: "clc-api serve --port 0 --root ."
+
+transitions:
+  - name: "reopen issue via API"
+    command: "curl -sf -X POST http://localhost:$PORT/api/issues/ab12-closeable-issue/reopen"
+    target: "../state-c"
+    services:
+      - command: "clc-api serve --port 0 --root ."
+    comparators:
+      files:
+        - path: ".tisket/"
+          ignore: true

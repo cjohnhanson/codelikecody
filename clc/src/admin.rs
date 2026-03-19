@@ -3,10 +3,8 @@ use std::path::Path;
 use crate::error::Error;
 use crate::git;
 
-const ADMIN_BRANCH: &str = "clc-admin";
-
-pub fn admin(project_dir: &Path, main_branch: &str) -> Result<(), Error> {
-    let git_state = git::detect(project_dir, main_branch)
+pub fn admin(project_dir: &Path, main_branch: &str, admin_branch: &str) -> Result<(), Error> {
+    let git_state = git::detect(project_dir, main_branch, admin_branch)
         .ok_or_else(|| Error::NonBlocking("not inside a git repository".into()))?;
 
     if !git_state.is_main {
@@ -16,7 +14,7 @@ pub fn admin(project_dir: &Path, main_branch: &str) -> Result<(), Error> {
         )));
     }
 
-    let worktree_dir = project_dir.join(".worktrees").join(ADMIN_BRANCH);
+    let worktree_dir = project_dir.join(".worktrees").join(admin_branch);
 
     if worktree_dir.exists() {
         // Already exists — idempotent success.
@@ -24,7 +22,7 @@ pub fn admin(project_dir: &Path, main_branch: &str) -> Result<(), Error> {
     }
 
     // Create git worktree via gix.
-    crate::gix_ops::create_worktree(project_dir, &worktree_dir, ADMIN_BRANCH)?;
+    crate::gix_ops::create_worktree(project_dir, &worktree_dir, admin_branch)?;
 
     // Initialize clc in the admin worktree (no phase set — admin has no phase).
     crate::init::init(&worktree_dir, false, true)?;

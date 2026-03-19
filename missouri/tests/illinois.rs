@@ -744,6 +744,19 @@ fn illinois_record_dbt_nix_passes() {
 }
 
 #[test]
+fn illinois_services_passes() {
+    let tmp = setup_illinois_scenario("21-services", 0);
+    let output = run_illinois(&tmp);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "illinois services failed:\nstdout: {stdout}\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(stdout.contains("PASS"), "expected PASS in output: {stdout}");
+}
+
+#[test]
 fn illinois_record_fail_mid_path() {
     // 15-fail-mid-path: 1 path with 3 transitions, step 1 fails.
     // Only steps 0 and 1 should produce recordings (step 1 ran but failed).

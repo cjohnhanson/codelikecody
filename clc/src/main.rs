@@ -142,7 +142,7 @@ fn cmd_status() -> Result<(), Error> {
         }
     }
 
-    let git_state = git::detect(&cwd, &cfg.main_branch);
+    let git_state = git::detect(&cwd, &cfg.main_branch, &cfg.admin_branch);
     if let Some(ref state) = git_state {
         println!("branch: {}", state.branch);
         println!("is_main: {}", state.is_main);
@@ -215,6 +215,7 @@ fn cmd_coordinate(model: &str, filters: &coordinate::CoordinateFilters<'_>) -> R
     coordinate::coordinate(
         &project_dir,
         &cfg.main_branch,
+        &cfg.admin_branch,
         model,
         filters,
         &cfg.worker.permissions.default,
@@ -233,7 +234,7 @@ fn cmd_config(action: &cli::ConfigAction) -> Result<(), Error> {
 fn cmd_merge(id: &str) -> Result<(), Error> {
     let project_dir = std::env::current_dir()?;
     let cfg = config::load(&project_dir).unwrap_or_default();
-    merge::merge(&project_dir, id, &cfg.main_branch)?;
+    merge::merge(&project_dir, id, &cfg.main_branch, &cfg.admin_branch)?;
     eprintln!("merged '{id}' into trunk");
     Ok(())
 }
@@ -248,15 +249,15 @@ fn cmd_home() -> Result<(), Error> {
 fn cmd_admin() -> Result<(), Error> {
     let project_dir = std::env::current_dir()?;
     let cfg = config::load(&project_dir).unwrap_or_default();
-    admin::admin(&project_dir, &cfg.main_branch)?;
-    eprintln!("admin worktree ready at .worktrees/clc-admin");
+    admin::admin(&project_dir, &cfg.main_branch, &cfg.admin_branch)?;
+    eprintln!("admin worktree ready at .worktrees/{}", cfg.admin_branch);
     Ok(())
 }
 
 fn cmd_pickup(id: &str) -> Result<(), Error> {
     let project_dir = std::env::current_dir()?;
     let cfg = config::load(&project_dir).unwrap_or_default();
-    pickup::pickup(&project_dir, id, &cfg.main_branch, None)?;
+    pickup::pickup(&project_dir, id, &cfg.main_branch, &cfg.admin_branch, None)?;
     eprintln!("picked up '{id}' — worktree at .worktrees/{id}");
     Ok(())
 }
@@ -264,7 +265,7 @@ fn cmd_pickup(id: &str) -> Result<(), Error> {
 fn cmd_done() -> Result<(), Error> {
     let cwd = std::env::current_dir()?;
     let cfg = config::load(&cwd).unwrap_or_default();
-    done::done(&cwd, &cfg.main_branch)?;
+    done::done(&cwd, &cfg.main_branch, &cfg.admin_branch)?;
     eprintln!("done — work finalized");
     Ok(())
 }
@@ -299,6 +300,7 @@ fn cmd_dispatch(id: &str, model: &str, coordinator_id: Option<&str>) -> Result<(
         &project_dir,
         id,
         &cfg.main_branch,
+        &cfg.admin_branch,
         model,
         &cfg.worker.permissions.default,
         &cfg.worker.permissions.deny,
@@ -331,7 +333,7 @@ fn cmd_worker(id: &str, action: &cli::WorkerAction) -> Result<(), Error> {
         cli::WorkerAction::Raw { lines } => worker::raw(&project_dir, id, *lines),
         cli::WorkerAction::Recover => {
             let cfg = config::load(&project_dir).unwrap_or_default();
-            worker::recover(&project_dir, id, &cfg.main_branch)
+            worker::recover(&project_dir, id, &cfg.main_branch, &cfg.admin_branch)
         }
     }
 }
@@ -339,7 +341,7 @@ fn cmd_worker(id: &str, action: &cli::WorkerAction) -> Result<(), Error> {
 fn cmd_land(id: &str) -> Result<(), Error> {
     let project_dir = std::env::current_dir()?;
     let cfg = config::load(&project_dir).unwrap_or_default();
-    worker::land(&project_dir, id, &cfg.main_branch)
+    worker::land(&project_dir, id, &cfg.main_branch, &cfg.admin_branch)
 }
 
 fn cmd_permissions(action: &cli::PermissionsAction) -> Result<(), Error> {

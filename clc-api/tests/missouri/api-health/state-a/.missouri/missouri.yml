@@ -1,0 +1,7 @@
+transitions:
+  - name: "health check"
+    command: "curl -sf http://localhost:$PORT/health"
+    stdout: "ok"
+    target: "../state-b"
+    services:
+      - command: "clc-api serve --port 0 --root ."

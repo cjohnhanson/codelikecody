@@ -1,0 +1,10 @@
+transitions:
+  - name: "create issue via API"
+    command: "curl -sf -X POST http://localhost:$PORT/api/issues -H 'Content-Type: application/json' -d '{\"title\":\"New API issue\",\"project\":\"default\",\"labels\":[\"api\",\"test\"],\"priority\":\"2\"}' | jq -r '.id'"
+    target: "../state-b"
+    services:
+      - command: "clc-api serve --port 0 --root ."
+    comparators:
+      files:
+        - path: ".tisket/"
+          ignore: true

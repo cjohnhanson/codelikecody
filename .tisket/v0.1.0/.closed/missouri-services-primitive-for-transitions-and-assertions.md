@@ -1,12 +1,12 @@
 ---
 title: "Missouri services primitive for transitions and assertions"
-status: todo
+status: done
 priority:
 assignee:
 labels: [missouri, feature]
 depends_on: []
 created: 2026-03-18T02:11:51Z
-updated: "2026-03-18T02:34:47Z"
+updated: "2026-03-19T02:33:28Z"
 ---
 
 Add a `services:` key to TransitionConfig and AssertionConfig. Services are
@@ -84,3 +84,25 @@ services: Vec<ServiceConfig>  // default empty
 Test paths run in parallel via rayon. Each path gets its own temp dir and
 its own service instances with OS-assigned ports. No shared state between
 paths.
+
+## Scratch Notes
+
+### 2026-03-18 — Implementation complete
+
+All layers done:
+- config.rs: ServiceConfig struct, services on TransitionConfig + AssertionConfig (6 tests)
+- graph.rs: services on Transition + Assertion, wired into discover (3 tests)
+- executor.rs: ServiceHandle (RAII, process group, SIGTERM/SIGKILL, stderr drain),
+  start_service, build_service_env, run_ready_check, start_services.
+  Integrated into execute_transition and run_single_assertion. (7 tests)
+- illinois.rs: fixture 21-services, integration test passes
+- Dependency: regex = "1" added to Cargo.toml
+
+Total: 16 new tests, all passing. Pre-existing meltano nix failure unrelated.
+
+Decisions made:
+- No external crate for process groups — std process_group(0) + libc::kill(-pgid, sig)
+- regex crate for configurable port_pattern (already transitive dep via termimad)
+- Default port pattern: `listening.*:(\d+)`
+- SIGTERM → 100ms → SIGKILL on drop
+- Stderr drain thread prevents pipe buffer deadlock

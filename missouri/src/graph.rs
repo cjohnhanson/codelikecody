@@ -63,6 +63,8 @@ pub struct Transition {
     pub expected_stdout: Option<String>,
     /// Expected stderr (exact match) when assertions are enabled.
     pub expected_stderr: Option<String>,
+    /// Background services to run during this transition.
+    pub services: Vec<crate::config::ServiceConfig>,
 }
 
 /// A resolved assertion attached to a state.
@@ -75,6 +77,8 @@ pub struct Assertion {
     pub expected_stdout: Option<String>,
     pub expected_stderr: Option<String>,
     pub should_fail: bool,
+    /// Background services to run during this assertion.
+    pub services: Vec<crate::config::ServiceConfig>,
 }
 
 /// A resolved setup command from project-level config.
@@ -260,6 +264,7 @@ impl StateGraph {
                     network: t.network.clone(),
                     expected_stdout: t.stdout.clone(),
                     expected_stderr: t.stderr.clone(),
+                    services: t.services.clone(),
                 });
 
                 adjacency.entry(source_id).or_default().push(transition_idx);
@@ -283,6 +288,7 @@ impl StateGraph {
                     expected_stdout: a.stdout.clone(),
                     expected_stderr: a.stderr.clone(),
                     should_fail: a.should_fail,
+                    services: a.services.clone(),
                 });
             }
         }
@@ -1297,5 +1303,77 @@ transitions:
             "bin should be root's, not test_dir's: {bin_str}"
         );
         assert!(bin_str.ends_with(".missouri/bin"));
+    }
+
+    #[test]
+    fn discover_transition_with_services() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        make_state(
+            root,
+            "a",
+            r#"
+transitions:
+  - command: "curl http://localhost:$PORT/"
+    target: "../b"
+    services:
+      - command: "my-server --port 0"
+        ready: "curl -sf http://localhost:$PORT/health"
+"#,
+        );
+        make_state(root, "b", "{}");
+
+        let graph = StateGraph::discover(root, ".missouri").unwrap();
+        assert_eq!(graph.transitions[0].services.len(), 1);
+        assert_eq!(graph.transitions[0].services[0].command, "my-server --port 0");
+        assert_eq!(
+            graph.transitions[0].services[0].ready.as_deref(),
+            Some("curl -sf http://localhost:$PORT/health")
+        );
+    }
+
+    #[test]
+    fn discover_assertion_with_services() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        make_state(
+            root,
+            "a",
+            r#"
+assertions:
+  - command: "curl -sf http://localhost:$PORT/"
+    services:
+      - command: "my-server --port 0"
+"#,
+        );
+
+        let graph = StateGraph::discover(root, ".missouri").unwrap();
+        assert_eq!(graph.assertions[0].services.len(), 1);
+        assert_eq!(graph.assertions[0].services[0].command, "my-server --port 0");
+    }
+
+    #[test]
+    fn discover_services_absent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        make_state(
+            root,
+            "a",
+            r#"
+transitions:
+  - command: "echo"
+    target: "../b"
+assertions:
+  - command: "true"
+"#,
+        );
+        make_state(root, "b", "{}");
+
+        let graph = StateGraph::discover(root, ".missouri").unwrap();
+        assert!(graph.transitions[0].services.is_empty());
+        assert!(graph.assertions[0].services.is_empty());
     }
 }

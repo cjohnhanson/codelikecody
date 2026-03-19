@@ -1,3 +1,6 @@
+env:
+  CLC_GUARD_OFF: ""
+
 setup:
   - name: "build clc"
     command: "cargo build --quiet --manifest-path ../../Cargo.toml"

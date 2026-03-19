@@ -5,6 +5,7 @@ use std::path::Path;
 pub struct GitState {
     pub branch: String,
     pub is_main: bool,
+    pub is_admin: bool,
     pub is_worktree: bool,
 }
 
@@ -13,18 +14,21 @@ pub struct GitState {
 ///
 /// The `main_branch` parameter specifies the configured main branch name.
 /// The branch is considered "main" if it matches `main_branch` or `master`.
-pub fn detect(cwd: &Path, main_branch: &str) -> Option<GitState> {
+/// The `admin_branch` parameter specifies the configured admin branch name.
+pub fn detect(cwd: &Path, main_branch: &str, admin_branch: &str) -> Option<GitState> {
     let repo = gix::discover(cwd).ok()?;
 
     let head = repo.head().ok()?;
     let branch = head.referent_name()?.shorten().to_string();
 
     let is_main = branch == main_branch || branch == "master";
+    let is_admin = branch == admin_branch;
     let is_worktree = repo.kind() == gix::repository::Kind::LinkedWorkTree;
 
     Some(GitState {
         branch,
         is_main,
+        is_admin,
         is_worktree,
     })
 }

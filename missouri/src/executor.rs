@@ -391,6 +391,222 @@ impl Drop for MitmdumpHandle {
     }
 }
 
+/// Default regex pattern for extracting port from service stderr.
+const DEFAULT_PORT_PATTERN: &str = r"listening.*:(\d+)";
+
+/// RAII handle for a running background service. Sends SIGTERM then SIGKILL on drop.
+#[derive(Debug)]
+pub struct ServiceHandle {
+    child: std::process::Child,
+    pub port: u16,
+    /// Thread draining stderr to prevent pipe buffer blocking.
+    _stderr_drain: Option<std::thread::JoinHandle<()>>,
+}
+
+impl Drop for ServiceHandle {
+    fn drop(&mut self) {
+        let pid = self.child.id() as i32;
+        // SIGTERM the process group
+        unsafe { libc::kill(-pid, libc::SIGTERM) };
+        std::thread::sleep(Duration::from_millis(100));
+        // SIGKILL if still alive
+        if let Ok(None) = self.child.try_wait() {
+            unsafe { libc::kill(-pid, libc::SIGKILL) };
+        }
+        let _ = self.child.wait();
+    }
+}
+
+/// Start a background service, capture its port from stderr, and return a handle.
+///
+/// The service command is spawned in its own process group (via `process_group(0)`)
+/// so the entire tree can be killed on drop.
+///
+/// After the port is captured, a drain thread keeps reading stderr to prevent
+/// the service from blocking on a full pipe buffer.
+pub fn start_service(
+    config: &crate::config::ServiceConfig,
+    work_dir: &Utf8Path,
+    env: &BTreeMap<String, String>,
+    path_env: &str,
+    sandbox: &dyn Backend,
+) -> Result<ServiceHandle, String> {
+    use std::io::BufRead;
+    use std::os::unix::process::CommandExt;
+
+    let mut cmd = if config.shell {
+        sandbox.build_shell_command(&config.command, work_dir, env, path_env)
+    } else {
+        let parts: Vec<&str> = config.command.split_whitespace().collect();
+        if parts.is_empty() {
+            return Err("empty service command".into());
+        }
+        sandbox.build_direct_command(&parts, work_dir, env, path_env)
+    };
+
+    cmd.stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .process_group(0);
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("failed to start service '{}': {e}", config.command))?;
+
+    // Parse port from stderr
+    let pattern_str = config
+        .port_pattern
+        .as_deref()
+        .unwrap_or(DEFAULT_PORT_PATTERN);
+    let pattern = regex::Regex::new(pattern_str)
+        .map_err(|e| format!("invalid port_pattern '{pattern_str}': {e}"))?;
+
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "failed to capture service stderr".to_string())?;
+    let reader = std::io::BufReader::new(stderr);
+    let mut port: Option<u16> = None;
+    let mut lines = reader.lines();
+
+    // Read stderr lines until port is found (with timeout)
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while Instant::now() < deadline {
+        match lines.next() {
+            Some(Ok(line)) => {
+                if let Some(caps) = pattern.captures(&line) {
+                    if let Some(m) = caps.get(1) {
+                        if let Ok(p) = m.as_str().parse::<u16>() {
+                            port = Some(p);
+                            break;
+                        }
+                    }
+                }
+            }
+            Some(Err(e)) => {
+                return Err(format!("failed to read service stderr: {e}"));
+            }
+            None => {
+                // Service exited before announcing port
+                let _ = child.wait();
+                return Err(format!(
+                    "service '{}' exited before announcing a port",
+                    config.command
+                ));
+            }
+        }
+    }
+
+    let port = port.ok_or_else(|| {
+        let pid = child.id() as i32;
+        unsafe { libc::kill(-pid, libc::SIGKILL) };
+        let _ = child.wait();
+        format!(
+            "service '{}' did not announce port within 30s",
+            config.command
+        )
+    })?;
+
+    // Spawn drain thread for remaining stderr
+    let drain = std::thread::spawn(move || {
+        for line in lines {
+            let _ = line; // just drain
+        }
+    });
+
+    Ok(ServiceHandle {
+        child,
+        port,
+        _stderr_drain: Some(drain),
+    })
+}
+
+/// Build environment variables for service ports.
+///
+/// Single service: sets `PORT`.
+/// Multiple services: sets `PORT_0`, `PORT_1`, etc. Also sets `PORT` = first port.
+fn build_service_env(ports: &[u16]) -> BTreeMap<String, String> {
+    let mut env = BTreeMap::new();
+    match ports.len() {
+        0 => {}
+        1 => {
+            env.insert("PORT".into(), ports[0].to_string());
+        }
+        _ => {
+            env.insert("PORT".into(), ports[0].to_string());
+            for (i, port) in ports.iter().enumerate() {
+                env.insert(format!("PORT_{i}"), port.to_string());
+            }
+        }
+    }
+    env
+}
+
+/// Run a readiness check command with exponential backoff.
+/// Retries up to 10 times with 100ms, 200ms, 400ms, ... delays (max 5s each).
+fn run_ready_check(
+    command: &str,
+    work_dir: &Utf8Path,
+    env: &BTreeMap<String, String>,
+    path_env: &str,
+    sandbox: &dyn Backend,
+) -> Result<(), String> {
+    let mut delay = Duration::from_millis(100);
+    let max_attempts = 10;
+
+    for attempt in 0..max_attempts {
+        let output = crate::signal::run_tracked(
+            &mut sandbox.build_shell_command(command, work_dir, env, path_env),
+        );
+        match output {
+            Ok(o) if o.status.success() => return Ok(()),
+            _ if attempt == max_attempts - 1 => {
+                return Err(format!(
+                    "service ready check '{command}' failed after {max_attempts} attempts",
+                ));
+            }
+            _ => {
+                std::thread::sleep(delay);
+                delay = std::cmp::min(delay * 2, Duration::from_secs(5));
+            }
+        }
+    }
+    unreachable!()
+}
+
+/// Start all services from a config list. Returns handles (for RAII drop)
+/// and the port environment variables to inject.
+fn start_services(
+    services: &[crate::config::ServiceConfig],
+    work_dir: &Utf8Path,
+    env: &BTreeMap<String, String>,
+    path_env: &str,
+    sandbox: &dyn Backend,
+) -> Result<(Vec<ServiceHandle>, BTreeMap<String, String>), String> {
+    let mut handles = Vec::new();
+    let mut ports = Vec::new();
+
+    for svc in services {
+        // Include previously assigned ports in the env for this service
+        let mut svc_env = env.clone();
+        svc_env.extend(build_service_env(&ports));
+
+        let handle = start_service(svc, work_dir, &svc_env, path_env, sandbox)?;
+        ports.push(handle.port);
+
+        // Run ready check if specified
+        if let Some(ready_cmd) = &svc.ready {
+            let mut ready_env = env.clone();
+            ready_env.extend(build_service_env(&ports));
+            run_ready_check(ready_cmd, work_dir, &ready_env, path_env, sandbox)?;
+        }
+
+        handles.push(handle);
+    }
+
+    let port_env = build_service_env(&ports);
+    Ok((handles, port_env))
+}
+
 /// Build the PATH env var: state bin/ → project bin/ → base path.
 fn build_path_env(
     state_bin: Option<&Utf8Path>,
@@ -977,9 +1193,36 @@ fn run_single_assertion(
         .unwrap_or(&system_path);
     let path_env = build_path_env(bin_dir_opt, graph.project_bin.as_deref(), base_path);
 
+    // Start services if configured
+    let _service_handles: Vec<ServiceHandle>;
+    let assertion_env: std::borrow::Cow<'_, BTreeMap<String, String>>;
+    if !assertion.services.is_empty() {
+        match start_services(&assertion.services, work_dir, state_env, &path_env, sandbox) {
+            Ok((handles, port_env)) => {
+                let mut merged = state_env.clone();
+                merged.extend(port_env);
+                assertion_env = std::borrow::Cow::Owned(merged);
+                _service_handles = handles;
+            }
+            Err(e) => {
+                return AssertionResult {
+                    name: assertion.name.clone(),
+                    passed: false,
+                    exit_code: None,
+                    stdout_diff: None,
+                    stderr_diff: None,
+                    error: Some(format!("failed to start service: {e}")),
+                };
+            }
+        }
+    } else {
+        _service_handles = Vec::new();
+        assertion_env = std::borrow::Cow::Borrowed(state_env);
+    }
+
     let output = if assertion.shell {
         Some(crate::signal::run_tracked(
-            &mut sandbox.build_shell_command(&assertion.command, work_dir, state_env, &path_env),
+            &mut sandbox.build_shell_command(&assertion.command, work_dir, &assertion_env, &path_env),
         ))
     } else {
         let parts: Vec<&str> = assertion.command.split_whitespace().collect();
@@ -987,7 +1230,7 @@ fn run_single_assertion(
             None
         } else {
             Some(crate::signal::run_tracked(
-                &mut sandbox.build_direct_command(&parts, work_dir, state_env, &path_env),
+                &mut sandbox.build_direct_command(&parts, work_dir, &assertion_env, &path_env),
             ))
         }
     };
@@ -1126,7 +1369,7 @@ fn execute_transition(
     // Start mitmdump if network interception is configured.
     // The handle must stay alive until the command completes (drop kills the process).
     let _mitmdump_handle: Option<MitmdumpHandle>;
-    let cmd_env: std::borrow::Cow<'_, BTreeMap<String, String>>;
+    let mut cmd_env: std::borrow::Cow<'_, BTreeMap<String, String>>;
 
     match &transition.network {
         Some(crate::config::NetworkConfig::Replay { replay }) => {
@@ -1210,6 +1453,36 @@ fn execute_transition(
             _mitmdump_handle = None;
             cmd_env = std::borrow::Cow::Borrowed(source_env);
         }
+    }
+
+    // Start services if configured
+    let _service_handles: Vec<ServiceHandle>;
+    if !transition.services.is_empty() {
+        match start_services(&transition.services, work_dir, &cmd_env, &path_env, sandbox) {
+            Ok((handles, port_env)) => {
+                let mut merged = cmd_env.into_owned();
+                merged.extend(port_env);
+                cmd_env = std::borrow::Cow::Owned(merged);
+                _service_handles = handles;
+            }
+            Err(e) => {
+                return StepResult {
+                    transition_name: transition.name.clone(),
+                    source_name,
+                    target_name,
+                    exit_code: None,
+                    stdout: String::new(),
+                    stderr: e,
+                    comparison: None,
+                    output_diffs: Vec::new(),
+                    assertion_results: Vec::new(),
+                    passed: false,
+                    duration: step_start.elapsed(),
+                };
+            }
+        }
+    } else {
+        _service_handles = Vec::new();
     }
 
     // Run the command — using recorder if recording is enabled, otherwise normal execution.
@@ -1940,6 +2213,172 @@ time.sleep(300)
         assert!(
             result.stdout.contains("http://127.0.0.1:"),
             "HTTPS_PROXY should be injected into command env, got stdout: '{}'",
+            result.stdout,
+        );
+    }
+
+    #[test]
+    fn build_service_env_single() {
+        let env = build_service_env(&[8080]);
+        assert_eq!(env.get("PORT").map(|s| s.as_str()), Some("8080"));
+        assert!(env.get("PORT_0").is_none());
+    }
+
+    #[test]
+    fn build_service_env_multiple() {
+        let env = build_service_env(&[8080, 9090]);
+        assert_eq!(env.get("PORT").map(|s| s.as_str()), Some("8080"));
+        assert_eq!(env.get("PORT_0").map(|s| s.as_str()), Some("8080"));
+        assert_eq!(env.get("PORT_1").map(|s| s.as_str()), Some("9090"));
+    }
+
+    #[test]
+    fn build_service_env_empty() {
+        let env = build_service_env(&[]);
+        assert!(env.is_empty());
+    }
+
+    #[test]
+    fn service_handle_starts_and_drops() {
+        // Fake service that binds port 0 and prints it to stderr
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        let config = crate::config::ServiceConfig {
+            command: r#"python3 -c "
+import socket, sys, time, signal
+signal.signal(signal.SIGTERM, lambda *a: sys.exit(0))
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.bind(('127.0.0.1', 0))
+port = s.getsockname()[1]
+s.listen(1)
+print(f'listening on :{port}', file=sys.stderr, flush=True)
+time.sleep(300)
+""#
+            .into(),
+            shell: true,
+            port_pattern: None,
+            ready: None,
+        };
+
+        let env = BTreeMap::new();
+        let handle =
+            start_service(&config, root, &env, "/usr/bin:/bin", &BareBackend).unwrap();
+
+        assert!(handle.port > 0, "port should be assigned: {}", handle.port);
+
+        // Verify process is running
+        let pid = handle.child.id();
+        let alive = unsafe { libc::kill(pid as i32, 0) };
+        assert_eq!(alive, 0, "service process should be alive");
+
+        // Drop kills it
+        let pid_copy = pid;
+        drop(handle);
+        std::thread::sleep(Duration::from_millis(200));
+        let dead = unsafe { libc::kill(pid_copy as i32, 0) };
+        assert_ne!(dead, 0, "service process should be dead after drop");
+    }
+
+    #[test]
+    fn service_handle_custom_port_pattern() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        let config = crate::config::ServiceConfig {
+            command: r#"python3 -c "
+import socket, sys, time, signal
+signal.signal(signal.SIGTERM, lambda *a: sys.exit(0))
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.bind(('127.0.0.1', 0))
+port = s.getsockname()[1]
+s.listen(1)
+print(f'Serving HTTP on 0.0.0.0 port {port}', file=sys.stderr, flush=True)
+time.sleep(300)
+""#
+            .into(),
+            shell: true,
+            port_pattern: Some(r"port (\d+)".into()),
+            ready: None,
+        };
+
+        let env = BTreeMap::new();
+        let handle =
+            start_service(&config, root, &env, "/usr/bin:/bin", &BareBackend).unwrap();
+
+        assert!(handle.port > 0, "port should be parsed with custom pattern");
+        drop(handle);
+    }
+
+    #[test]
+    fn service_exits_before_port_is_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        let config = crate::config::ServiceConfig {
+            command: "echo 'no port here' >&2".into(),
+            shell: true,
+            port_pattern: None,
+            ready: None,
+        };
+
+        let env = BTreeMap::new();
+        let result = start_service(&config, root, &env, "/usr/bin:/bin", &BareBackend);
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().contains("exited before announcing"),
+            "error should mention port announcement failure"
+        );
+    }
+
+    #[test]
+    fn execute_transition_with_services_injects_port() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        make_state(
+            root,
+            "a",
+            r#"
+transitions:
+  - command: "echo $PORT"
+    target: "../b"
+    services:
+      - command: "python3 -c \"import socket,sys,time,signal; signal.signal(signal.SIGTERM,lambda *a:sys.exit(0)); s=socket.socket(); s.bind(('127.0.0.1',0)); port=s.getsockname()[1]; s.listen(1); print(f'listening on :{port}',file=sys.stderr,flush=True); time.sleep(300)\""
+"#,
+        );
+        make_state(root, "b", "{}");
+
+        let graph = StateGraph::discover(root, ".missouri").unwrap();
+        let transition = &graph.transitions[0];
+        let target = &graph.states[transition.target.0];
+
+        let mut source_env = BTreeMap::new();
+        source_env.insert("PATH".into(), "/usr/bin:/bin".into());
+
+        let work = tempfile::tempdir().unwrap();
+        let work_dir = Utf8Path::from_path(work.path()).unwrap();
+
+        let result = execute_transition(
+            transition,
+            work_dir,
+            &source_env,
+            target,
+            &graph,
+            &BareBackend,
+            false,
+            None,
+        );
+
+        assert!(
+            result.passed,
+            "transition with service should pass; stderr: {}",
+            result.stderr,
+        );
+        let port: u16 = result.stdout.trim().parse().unwrap_or(0);
+        assert!(
+            port > 0,
+            "PORT should be injected as a valid port number, got stdout: '{}'",
             result.stdout,
         );
     }
