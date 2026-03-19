@@ -1,0 +1,10 @@
+transitions:
+  - name: "close issue via API"
+    command: "curl -sf -X POST http://localhost:$PORT/api/issues/ab12-closeable-issue/close"
+    target: "../state-b"
+    services:
+      - command: "clc-api serve --port 0 --root ."
+    comparators:
+      files:
+        - path: ".tisket/"
+          ignore: true
