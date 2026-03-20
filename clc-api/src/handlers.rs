@@ -42,6 +42,7 @@ pub async fn list_issues(
         params.status.as_deref(),
         params.label.as_deref(),
         params.closed,
+        &[],
     )?;
     Ok(Json(issues))
 }
