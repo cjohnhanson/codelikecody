@@ -1,11 +1,12 @@
 ---
 title: "Browser testing with Playwright"
-status: discovery
+status: done
+priority:
 assignee:
 labels: [missouri, feature]
 depends_on: []
-created: "2026-02-23T00:00:00Z"
-updated: "2026-02-23T00:00:00Z"
+created: 2026-02-23T00:00:00Z
+updated: "2026-03-20T02:45:56Z"
 ---
 
 Bring missouri's "show me state" philosophy to browser testing. States are
