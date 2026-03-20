@@ -1,0 +1,77 @@
+#!/bin/sh
+# Playwright browser test for clc-web
+# Writes a temp script and runs it via uv to avoid heredoc env issues
+SCRIPT="/tmp/browser-test-$$.py"
+cat > "$SCRIPT" << 'PYTHON'
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["playwright"]
+# ///
+import json
+import os
+import sys
+import time
+
+from playwright.sync_api import sync_playwright
+
+action = sys.argv[1] if len(sys.argv) > 1 else "board"
+port = os.environ.get("PORT", "8080")
+base_url = f"http://127.0.0.1:{port}"
+
+print(f"browser-test: action={action} port={port} url={base_url}", file=sys.stderr)
+
+with sync_playwright() as p:
+    browser = p.chromium.launch()
+    context = browser.new_context(viewport={"width": 1280, "height": 720})
+    page = context.new_page()
+
+    if action == "board":
+        page.goto(base_url, wait_until="networkidle")
+        time.sleep(2)
+
+        os.makedirs("browser", exist_ok=True)
+        page.screenshot(path="browser/screenshot.png", full_page=True)
+
+        heading = page.query_selector("h1")
+        heading_text = heading.inner_text() if heading else ""
+
+        cards = page.query_selector_all("article")
+        card_titles = []
+        for card in cards:
+            h3 = card.query_selector("h3")
+            if h3:
+                card_titles.append(h3.inner_text())
+
+        state = {
+            "heading": heading_text,
+            "issue_count": len(card_titles),
+            "issues": card_titles,
+        }
+        with open("browser/state.json", "w") as f:
+            json.dump(state, f, indent=2)
+
+        print(json.dumps(state))
+
+    elif action == "detail":
+        issue_id = sys.argv[2] if len(sys.argv) > 2 else ""
+        page.goto(f"{base_url}/issues/{issue_id}", wait_until="networkidle")
+        time.sleep(2)
+
+        os.makedirs("browser", exist_ok=True)
+        page.screenshot(path="browser/screenshot.png", full_page=True)
+
+        heading = page.query_selector("h1")
+        title = heading.inner_text() if heading else "not found"
+
+        status_dd = page.query_selector("dd")
+        status = status_dd.inner_text() if status_dd else ""
+
+        state = {"title": title, "status": status}
+        with open("browser/state.json", "w") as f:
+            json.dump(state, f, indent=2)
+
+        print(json.dumps(state))
+
+    browser.close()
+PYTHON
+exec uv run --with playwright python3 "$SCRIPT" "$@"

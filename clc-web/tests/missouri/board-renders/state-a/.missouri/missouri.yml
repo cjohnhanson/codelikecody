@@ -1,0 +1,10 @@
+transitions:
+  - name: "board renders issues"
+    command: "browser-test board"
+    target: "../state-b"
+    services:
+      - command: "serve-app"
+    comparators:
+      files:
+        - path: "browser/"
+          ignore: true

@@ -1,0 +1,5 @@
+assertions:
+  - name: "issue detail page renders"
+    command: "browser-test detail ab12-board-test-issue"
+    services:
+      - command: "serve-app"

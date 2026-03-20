@@ -1,0 +1,16 @@
+#!/bin/sh
+# Start clc-api serving both API and static frontend files.
+# Derives dist dir from the clc-api binary location on PATH.
+CLCAPI=$(command -v clc-api)
+if [ -z "$CLCAPI" ]; then
+    echo "clc-api not found on PATH" >&2
+    exit 1
+fi
+# cargo build puts binary at <project>/target/debug/clc-api
+PROJECT=$(dirname "$(dirname "$(dirname "$CLCAPI")")")
+DIST="$PROJECT/clc-web/dist"
+if [ ! -d "$DIST" ]; then
+    echo "dist not found at $DIST — run 'trunk build' in clc-web/ first" >&2
+    exit 1
+fi
+exec clc-api serve --port 0 --root . --static-dir "$DIST"
