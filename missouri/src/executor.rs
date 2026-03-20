@@ -1109,6 +1109,10 @@ fn run_path_transitions(
 }
 
 /// Copy a state's files (excluding .missouri/) to a temp directory.
+///
+/// If the state's config directory contains a `dot-git/` directory, it is
+/// copied into the temp dir as `.git/`. This allows fixtures to carry git
+/// repository state without conflicting with the outer repo's `.git/`.
 fn copy_state_to_temp(
     state_id: StateId,
     graph: &StateGraph,
@@ -1120,6 +1124,16 @@ fn copy_state_to_temp(
 
     copy_dir_recursive(&state.path, &temp_path, &graph.config_dir)
         .map_err(|e| format!("failed to copy state to temp dir: {e}"))?;
+
+    // Restore dot-git/ → .git/ if present in the config directory.
+    let dot_git_src = state.path.join(&graph.config_dir).join("dot-git");
+    if dot_git_src.exists() {
+        let git_dst = temp_path.join(".git");
+        std::fs::create_dir_all(&git_dst)
+            .map_err(|e| format!("failed to create .git dir: {e}"))?;
+        copy_dir_recursive(&dot_git_src, &git_dst, &graph.config_dir)
+            .map_err(|e| format!("failed to copy dot-git to .git: {e}"))?;
+    }
 
     Ok((temp_dir, temp_path))
 }
@@ -2381,5 +2395,55 @@ transitions:
             "PORT should be injected as a valid port number, got stdout: '{}'",
             result.stdout,
         );
+    }
+
+    #[test]
+    fn copy_state_to_temp_restores_dot_git() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        // Create a state with .missouri/dot-git/
+        let state_dir = root.join("a");
+        let missouri_dir = state_dir.join(".missouri");
+        let dot_git_dir = missouri_dir.join("dot-git");
+        fs::create_dir_all(&dot_git_dir).unwrap();
+        fs::write(dot_git_dir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        fs::write(
+            missouri_dir.join("missouri.yml"),
+            "transitions:\n  - command: \"echo\"\n    target: \"../b\"\n",
+        )
+        .unwrap();
+        // Also create a regular file in the state
+        fs::write(state_dir.join("README.md"), "hello").unwrap();
+
+        make_state(root, "b", "{}");
+
+        let graph = StateGraph::discover(root, ".missouri").unwrap();
+        let state_id = graph
+            .states
+            .iter()
+            .find(|s| s.name == "a")
+            .unwrap()
+            .id;
+
+        let (_temp_dir, work_dir) = copy_state_to_temp(state_id, &graph).unwrap();
+
+        // .git/ should exist in the temp dir (restored from dot-git/)
+        assert!(
+            work_dir.join(".git").exists(),
+            ".git should be restored from .missouri/dot-git/"
+        );
+        assert!(
+            work_dir.join(".git/HEAD").exists(),
+            ".git/HEAD should be copied"
+        );
+        assert_eq!(
+            fs::read_to_string(work_dir.join(".git/HEAD")).unwrap(),
+            "ref: refs/heads/main\n"
+        );
+        // Regular files should also be copied
+        assert!(work_dir.join("README.md").exists());
+        // .missouri/ itself should NOT be copied
+        assert!(!work_dir.join(".missouri").exists());
     }
 }
