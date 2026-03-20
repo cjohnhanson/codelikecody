@@ -22,3 +22,19 @@ Observed missouri test runs taking 5+ minutes during worker execution (`missouri
 - Consider whether missouri needs a timing/profiling report mode
 
 ## Scratch Notes
+
+### 2026-03-19 — first profiling run
+
+Full run: `missouri run -d clc/tests/missouri -v` — **135m48s** total
+- 31 paths, 120 transitions, 3831 assertions
+- 29 passed, 2 failed (pre-existing failures, investigating separately)
+- Setup step (`cargo build`) completes quickly — not the bottleneck
+
+Key observations:
+- ~28 of 31 paths share `bare-project → initialized` prefix, re-executed every time
+- `initialized` state has massive assertion/transition surface (40KB+ missouri.yml)
+- Individual path times: 16s (trivial) to 5m28s (has-tisket)
+- `workers-merged → integration-landed` transition alone: 1m23s
+- 1% CPU utilization — likely I/O bound or waiting on subprocess spawning
+
+Second run in progress with latest main (includes test fixes). Comparing.
