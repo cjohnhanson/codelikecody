@@ -302,18 +302,29 @@ impl MicrosandboxBackend {
 
             sandbox.stop().await.ok(); // best-effort cleanup
 
-            // Parse the structured output
+            // Parse the structured output. Use split() instead of lines() to
+            // preserve exact whitespace including trailing newlines.
             let mut stdout = String::new();
             let mut stderr = String::new();
             let mut exit_code = -1i32;
             let mut section = "";
+            let mut in_section = false;
 
-            for line in raw.lines() {
+            for line in raw.split('\n') {
                 match line {
-                    "__STDOUT__" => section = "stdout",
-                    "__STDERR__" => section = "stderr",
-                    "__EXIT__" => section = "exit",
-                    _ => match section {
+                    "__STDOUT__" => {
+                        section = "stdout";
+                        in_section = true;
+                    }
+                    "__STDERR__" => {
+                        section = "stderr";
+                        in_section = true;
+                    }
+                    "__EXIT__" => {
+                        section = "exit";
+                        in_section = true;
+                    }
+                    _ if in_section => match section {
                         "stdout" => {
                             if !stdout.is_empty() {
                                 stdout.push('\n');
@@ -331,7 +342,18 @@ impl MicrosandboxBackend {
                         }
                         _ => {}
                     },
+                    _ => {}
                 }
+            }
+
+            // The Python print() adds a trailing newline after each section marker,
+            // which gets consumed as a delimiter during parsing. Restore the trailing
+            // newline that the subprocess stdout/stderr originally had.
+            if !stdout.is_empty() && !stdout.ends_with('\n') {
+                stdout.push('\n');
+            }
+            if !stderr.is_empty() && !stderr.ends_with('\n') {
+                stderr.push('\n');
             }
 
             Ok(CommandOutput {
