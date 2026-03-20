@@ -23,6 +23,10 @@ enum Command {
         /// Root directory of the tisket repository
         #[arg(long, default_value = ".")]
         root: String,
+
+        /// Serve static files from this directory (for bundled frontend)
+        #[arg(long)]
+        static_dir: Option<String>,
     },
 }
 
@@ -31,7 +35,11 @@ async fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::Serve { port, root } => {
+        Command::Serve {
+            port,
+            root,
+            static_dir,
+        } => {
             let root = Utf8PathBuf::from(&root);
 
             // Fail fast if tisket.yml is missing
@@ -40,7 +48,11 @@ async fn main() {
                 std::process::exit(1);
             }
 
-            let app = clc_api::router(AppState { root });
+            let app = if let Some(dir) = static_dir {
+                clc_api::router_with_static(AppState { root }, &dir)
+            } else {
+                clc_api::router(AppState { root })
+            };
 
             let listener = TcpListener::bind(format!("0.0.0.0:{port}"))
                 .await

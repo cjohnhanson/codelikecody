@@ -24,4 +24,4 @@ serde_json = "1"
 clap = { version = "4", features = ["derive"] }
 tisket = { path = "../tisket" }
 camino = "1"
-tower-http = { version = "0.6", features = ["cors"] }
+tower-http = { version = "0.6", features = ["cors", "fs"] }
