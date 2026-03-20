@@ -11,6 +11,14 @@ use crate::error;
 use crate::graph::{Assertion, SandboxConfig, StateGraph, StateId, Transition};
 use crate::paths::TestPath;
 
+/// Output from executing a command.
+#[derive(Debug)]
+pub struct CommandOutput {
+    pub stdout: String,
+    pub stderr: String,
+    pub exit_code: i32,
+}
+
 /// Backend for building commands in a specific execution environment.
 pub trait Backend: std::fmt::Debug + Send + Sync {
     /// Build a Command for a shell command (sh -c "...").
@@ -30,6 +38,34 @@ pub trait Backend: std::fmt::Debug + Send + Sync {
         env: &BTreeMap<String, String>,
         path_env: &str,
     ) -> Command;
+
+    /// Execute a command and return its output. Default implementation builds
+    /// a local Command and runs it. Backends that execute commands remotely
+    /// (e.g., inside a microVM) override this.
+    fn execute(
+        &self,
+        command: &str,
+        shell: bool,
+        work_dir: &Utf8Path,
+        env: &BTreeMap<String, String>,
+        path_env: &str,
+    ) -> Result<CommandOutput, String> {
+        let mut cmd = if shell {
+            self.build_shell_command(command, work_dir, env, path_env)
+        } else {
+            let parts: Vec<&str> = command.split_whitespace().collect();
+            if parts.is_empty() {
+                return Err("empty command".into());
+            }
+            self.build_direct_command(&parts, work_dir, env, path_env)
+        };
+        let output = cmd.output().map_err(|e| format!("failed to execute command: {e}"))?;
+        Ok(CommandOutput {
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            exit_code: output.status.code().unwrap_or(-1),
+        })
+    }
 
     /// Pre-warm the backend so parallel invocations don't race on shared state.
     /// Default is a no-op; NixBackend uses this to populate the nix store cache
@@ -198,10 +234,108 @@ impl Backend for NixBackend {
 /// Microsandbox backend: transitions run inside microVM sandboxes.
 ///
 /// Commands execute inside a microsandbox VM via the SDK, not as local
-/// processes. The `Backend` trait methods are not used — `execute_transition`
-/// takes a separate code path when this backend is active.
+/// processes. The `execute` method overrides the default to run commands
+/// inside the VM. The `build_*_command` methods are unused.
 #[derive(Debug)]
 pub struct MicrosandboxBackend;
+
+impl MicrosandboxBackend {
+    /// Run a command inside a microsandbox VM and capture output.
+    fn run_in_sandbox(
+        &self,
+        command: &str,
+        env: &BTreeMap<String, String>,
+    ) -> Result<CommandOutput, String> {
+        use microsandbox::{BaseSandbox, PythonSandbox, SandboxOptions, StartOptions};
+
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| format!("failed to create tokio runtime: {e}"))?;
+
+        rt.block_on(async {
+            let options = SandboxOptions::builder()
+                .server_url("http://127.0.0.1:5555")
+                .build();
+            let mut sandbox = PythonSandbox::create_with_options(options)
+                .await
+                .map_err(|e| format!("failed to create sandbox: {e}"))?;
+            sandbox
+                .start(Some(StartOptions::default()))
+                .await
+                .map_err(|e| format!("failed to start sandbox: {e}"))?;
+
+            // Wait for portal sidecar
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+            // Build env string for the shell command
+            let env_prefix: String = env
+                .iter()
+                .map(|(k, v)| format!("export {k}={v};"))
+                .collect::<Vec<_>>()
+                .join(" ");
+
+            let full_command = if env_prefix.is_empty() {
+                command.to_string()
+            } else {
+                format!("{env_prefix} {command}")
+            };
+
+            // Execute via Python subprocess (command.run has SDK version mismatch issues)
+            let escaped = full_command.replace('\\', "\\\\").replace('"', "\\\"");
+            let code = format!(
+                "import subprocess; r = subprocess.run(['sh', '-c', \"{escaped}\"], capture_output=True, text=True, timeout=300); print('__STDOUT__'); print(r.stdout, end=''); print('__STDERR__'); print(r.stderr, end=''); print('__EXIT__'); print(r.returncode)"
+            );
+
+            let exec = sandbox
+                .run(&code)
+                .await
+                .map_err(|e| format!("failed to execute in sandbox: {e}"))?;
+            let raw = exec
+                .output()
+                .await
+                .map_err(|e| format!("failed to get output: {e}"))?;
+
+            sandbox.stop().await.ok(); // best-effort cleanup
+
+            // Parse the structured output
+            let mut stdout = String::new();
+            let mut stderr = String::new();
+            let mut exit_code = -1i32;
+            let mut section = "";
+
+            for line in raw.lines() {
+                match line {
+                    "__STDOUT__" => section = "stdout",
+                    "__STDERR__" => section = "stderr",
+                    "__EXIT__" => section = "exit",
+                    _ => match section {
+                        "stdout" => {
+                            if !stdout.is_empty() {
+                                stdout.push('\n');
+                            }
+                            stdout.push_str(line);
+                        }
+                        "stderr" => {
+                            if !stderr.is_empty() {
+                                stderr.push('\n');
+                            }
+                            stderr.push_str(line);
+                        }
+                        "exit" => {
+                            exit_code = line.trim().parse().unwrap_or(-1);
+                        }
+                        _ => {}
+                    },
+                }
+            }
+
+            Ok(CommandOutput {
+                stdout,
+                stderr,
+                exit_code,
+            })
+        })
+    }
+}
 
 impl Backend for MicrosandboxBackend {
     fn build_shell_command(
@@ -211,7 +345,7 @@ impl Backend for MicrosandboxBackend {
         _env: &BTreeMap<String, String>,
         _path_env: &str,
     ) -> Command {
-        unreachable!("MicrosandboxBackend executes commands inside a VM, not via local Command")
+        unreachable!("MicrosandboxBackend uses execute() instead of build_shell_command()")
     }
 
     fn build_direct_command(
@@ -221,7 +355,18 @@ impl Backend for MicrosandboxBackend {
         _env: &BTreeMap<String, String>,
         _path_env: &str,
     ) -> Command {
-        unreachable!("MicrosandboxBackend executes commands inside a VM, not via local Command")
+        unreachable!("MicrosandboxBackend uses execute() instead of build_direct_command()")
+    }
+
+    fn execute(
+        &self,
+        command: &str,
+        _shell: bool,
+        _work_dir: &Utf8Path,
+        env: &BTreeMap<String, String>,
+        _path_env: &str,
+    ) -> Result<CommandOutput, String> {
+        self.run_in_sandbox(command, env)
     }
 }
 
@@ -1902,6 +2047,98 @@ transitions:
             matches!(graph.sandbox_config, SandboxConfig::Microsandbox),
             "microsandbox: true should take precedence over packages"
         );
+    }
+
+    /// Check if the microsandbox server is reachable at the default address.
+    fn msb_server_available() -> bool {
+        std::net::TcpStream::connect_timeout(
+            &"127.0.0.1:5555".parse().unwrap(),
+            std::time::Duration::from_millis(100),
+        )
+        .is_ok()
+    }
+
+    #[test]
+    fn microsandbox_backend_executes_command_in_vm() {
+        if !msb_server_available() {
+            eprintln!("skipping microsandbox_backend_executes_command_in_vm: msb server not running");
+            return;
+        }
+
+        let backend = MicrosandboxBackend;
+        let env = BTreeMap::new();
+        let work_dir = Utf8Path::new("/tmp");
+        let result = backend
+            .execute("echo hello-from-sandbox", true, work_dir, &env, "")
+            .unwrap();
+        assert_eq!(result.stdout.trim(), "hello-from-sandbox");
+        assert_eq!(result.exit_code, 0);
+    }
+
+    #[test]
+    fn microsandbox_backend_captures_exit_code() {
+        if !msb_server_available() {
+            eprintln!("skipping microsandbox_backend_captures_exit_code: msb server not running");
+            return;
+        }
+
+        let backend = MicrosandboxBackend;
+        let env = BTreeMap::new();
+        let work_dir = Utf8Path::new("/tmp");
+        let result = backend
+            .execute("exit 42", true, work_dir, &env, "")
+            .unwrap();
+        assert_eq!(result.exit_code, 42);
+    }
+
+    #[test]
+    fn microsandbox_backend_captures_stderr() {
+        if !msb_server_available() {
+            eprintln!("skipping microsandbox_backend_captures_stderr: msb server not running");
+            return;
+        }
+
+        let backend = MicrosandboxBackend;
+        let env = BTreeMap::new();
+        let work_dir = Utf8Path::new("/tmp");
+        let result = backend
+            .execute("echo oops >&2", true, work_dir, &env, "")
+            .unwrap();
+        assert_eq!(result.stderr.trim(), "oops");
+        assert_eq!(result.exit_code, 0);
+    }
+
+    #[test]
+    fn microsandbox_backend_injects_env() {
+        if !msb_server_available() {
+            eprintln!("skipping microsandbox_backend_injects_env: msb server not running");
+            return;
+        }
+
+        let backend = MicrosandboxBackend;
+        let mut env = BTreeMap::new();
+        env.insert("MISSOURI_TEST_VAR".into(), "sandbox-value".into());
+        let work_dir = Utf8Path::new("/tmp");
+        let result = backend
+            .execute("echo $MISSOURI_TEST_VAR", true, work_dir, &env, "")
+            .unwrap();
+        assert_eq!(result.stdout.trim(), "sandbox-value");
+    }
+
+    #[test]
+    fn microsandbox_backend_runs_in_linux_vm() {
+        if !msb_server_available() {
+            eprintln!("skipping microsandbox_backend_runs_in_linux_vm: msb server not running");
+            return;
+        }
+
+        let backend = MicrosandboxBackend;
+        let env = BTreeMap::new();
+        let work_dir = Utf8Path::new("/tmp");
+        let result = backend
+            .execute("uname -s", true, work_dir, &env, "")
+            .unwrap();
+        assert_eq!(result.stdout.trim(), "Linux");
     }
 
     #[test]

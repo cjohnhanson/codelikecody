@@ -6,6 +6,8 @@ description = "Show-me-state: e2e testing as directed graphs of filesystem state
 
 [dependencies]
 camino = { version = "1", features = ["serde1"] }
+microsandbox = "0.1.2"
+tokio = { version = "1", features = ["rt-multi-thread"] }
 console = "0.15"
 ctrlc = "3.4"
 clap = { version = "4", features = ["derive", "env", "unicode", "wrap_help"] }
