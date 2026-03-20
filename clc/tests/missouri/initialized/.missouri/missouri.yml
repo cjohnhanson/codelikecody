@@ -24,7 +24,7 @@ assertions:
     command: "jq -e '.hooks.Stop' .claude/settings.local.json"
 
   - name: "config show prints defaults when no config file"
-    command: "clc config show 2>&1 | grep 'main_branch = .main.'"
+    command: "clc config show 2>&1 | grep 'main_branch: main'"
 
   - name: "config show exits 0 with no config file"
     command: "clc config show"
