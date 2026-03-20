@@ -67,6 +67,12 @@ pub trait Backend: std::fmt::Debug + Send + Sync {
         })
     }
 
+    /// Whether this backend executes commands inside a microsandbox VM.
+    /// When true, execute_transition uses execute() instead of build_*_command().
+    fn is_microsandbox(&self) -> bool {
+        false
+    }
+
     /// Pre-warm the backend so parallel invocations don't race on shared state.
     /// Default is a no-op; NixBackend uses this to populate the nix store cache
     /// before paths execute concurrently.
@@ -367,6 +373,10 @@ impl Backend for MicrosandboxBackend {
         _path_env: &str,
     ) -> Result<CommandOutput, String> {
         self.run_in_sandbox(command, env)
+    }
+
+    fn is_microsandbox(&self) -> bool {
+        true
     }
 }
 
@@ -1662,76 +1672,104 @@ fn execute_transition(
         _service_handles = Vec::new();
     }
 
-    // Run the command — using recorder if recording is enabled, otherwise normal execution.
-    let output = if let Some(cast_path) = recording_path {
-        Some(crate::recorder::record_command(
+    // Run the command. Microsandbox backend uses execute() which runs inside
+    // a VM. Other backends build a local Command and run it with signal tracking.
+    let (exit_code, stdout, stderr) = if sandbox.is_microsandbox() {
+        match sandbox.execute(
             &transition.command,
             transition.shell,
             work_dir,
             &cmd_env,
             &path_env,
-            cast_path,
-            sandbox,
-        ))
-    } else if transition.shell {
-        Some(crate::signal::run_tracked(
-            &mut sandbox.build_shell_command(&transition.command, work_dir, &cmd_env, &path_env),
-        ))
+        ) {
+            Ok(out) => (Some(out.exit_code), out.stdout, out.stderr),
+            Err(e) => {
+                return StepResult {
+                    transition_name: transition.name.clone(),
+                    source_name,
+                    target_name,
+                    exit_code: None,
+                    stdout: String::new(),
+                    stderr: format!("microsandbox execution failed: {e}"),
+                    comparison: None,
+                    output_diffs: Vec::new(),
+                    assertion_results: Vec::new(),
+                    passed: false,
+                    duration: step_start.elapsed(),
+                };
+            }
+        }
     } else {
-        let parts: Vec<&str> = transition.command.split_whitespace().collect();
-        if parts.is_empty() {
-            None
-        } else {
-            Some(crate::signal::run_tracked(
-                &mut sandbox.build_direct_command(&parts, work_dir, &cmd_env, &path_env),
+        let output = if let Some(cast_path) = recording_path {
+            Some(crate::recorder::record_command(
+                &transition.command,
+                transition.shell,
+                work_dir,
+                &cmd_env,
+                &path_env,
+                cast_path,
+                sandbox,
             ))
+        } else if transition.shell {
+            Some(crate::signal::run_tracked(
+                &mut sandbox
+                    .build_shell_command(&transition.command, work_dir, &cmd_env, &path_env),
+            ))
+        } else {
+            let parts: Vec<&str> = transition.command.split_whitespace().collect();
+            if parts.is_empty() {
+                None
+            } else {
+                Some(crate::signal::run_tracked(
+                    &mut sandbox.build_direct_command(&parts, work_dir, &cmd_env, &path_env),
+                ))
+            }
+        };
+
+        let output = match output {
+            Some(result) => result,
+            None => {
+                return StepResult {
+                    transition_name: transition.name.clone(),
+                    source_name,
+                    target_name,
+                    exit_code: None,
+                    stdout: String::new(),
+                    stderr: "empty command".into(),
+                    comparison: None,
+                    output_diffs: Vec::new(),
+                    assertion_results: Vec::new(),
+                    passed: false,
+                    duration: step_start.elapsed(),
+                };
+            }
+        };
+
+        match output {
+            Ok(o) => (
+                o.status.code(),
+                String::from_utf8_lossy(&o.stdout).into_owned(),
+                String::from_utf8_lossy(&o.stderr).into_owned(),
+            ),
+            Err(e) => {
+                return StepResult {
+                    transition_name: transition.name.clone(),
+                    source_name,
+                    target_name,
+                    exit_code: None,
+                    stdout: String::new(),
+                    stderr: format!("failed to execute command: {e}"),
+                    comparison: None,
+                    output_diffs: Vec::new(),
+                    assertion_results: Vec::new(),
+                    passed: false,
+                    duration: step_start.elapsed(),
+                };
+            }
         }
     };
 
-    // Handle empty command (non-shell mode)
-    let output = match output {
-        Some(result) => result,
-        None => {
-            return StepResult {
-                transition_name: transition.name.clone(),
-                source_name,
-                target_name,
-                exit_code: None,
-                stdout: String::new(),
-                stderr: "empty command".into(),
-                comparison: None,
-                output_diffs: Vec::new(),
-                assertion_results: Vec::new(),
-                passed: false,
-                duration: step_start.elapsed(),
-            };
-        }
-    };
-
-    let output = match output {
-        Ok(o) => o,
-        Err(e) => {
-            return StepResult {
-                transition_name: transition.name.clone(),
-                source_name,
-                target_name,
-                exit_code: None,
-                stdout: String::new(),
-                stderr: format!("failed to execute command: {e}"),
-                comparison: None,
-                output_diffs: Vec::new(),
-                assertion_results: Vec::new(),
-                passed: false,
-                duration: step_start.elapsed(),
-            };
-        }
-    };
-
-    let exit_code = output.status.code();
-    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-
-    if !output.status.success() {
+    if exit_code != Some(0) {
         return StepResult {
             transition_name: transition.name.clone(),
             source_name,
