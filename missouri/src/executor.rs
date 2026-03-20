@@ -1139,7 +1139,7 @@ fn copy_state_to_temp(
                         .map_err(|e| format!("failed to create {real_name} dir: {e}"))?;
                     let src = Utf8PathBuf::try_from(entry.path())
                         .map_err(|e| format!("dot-dir path not UTF-8: {e}"))?;
-                    copy_dir_recursive(&src, &dst, &graph.config_dir)
+                    copy_dir_recursive_inner(&src, &dst, &graph.config_dir, true)
                         .map_err(|e| format!("failed to copy {name_str} to {real_name}: {e}"))?;
                 }
             }
@@ -1150,13 +1150,24 @@ fn copy_state_to_temp(
 }
 
 /// Recursively copy directory contents, skipping the config directory.
+/// When `skip_gitkeep` is true, `.gitkeep` files are also skipped (used
+/// for dot-dir restoration where `.gitkeep` is git plumbing, not content).
 fn copy_dir_recursive(src: &Utf8Path, dst: &Utf8Path, config_dir: &str) -> std::io::Result<()> {
+    copy_dir_recursive_inner(src, dst, config_dir, false)
+}
+
+fn copy_dir_recursive_inner(
+    src: &Utf8Path,
+    dst: &Utf8Path,
+    config_dir: &str,
+    skip_gitkeep: bool,
+) -> std::io::Result<()> {
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
 
-        if name_str == config_dir {
+        if name_str == config_dir || (skip_gitkeep && name_str == ".gitkeep") {
             continue;
         }
 
@@ -1167,7 +1178,7 @@ fn copy_dir_recursive(src: &Utf8Path, dst: &Utf8Path, config_dir: &str) -> std::
         let ft = entry.file_type()?;
         if ft.is_dir() {
             std::fs::create_dir_all(&dst_path)?;
-            copy_dir_recursive(&src_path, &dst_path, config_dir)?;
+            copy_dir_recursive_inner(&src_path, &dst_path, config_dir, skip_gitkeep)?;
         } else if ft.is_symlink() {
             let target = std::fs::read_link(&src_path)?;
             #[cfg(unix)]
