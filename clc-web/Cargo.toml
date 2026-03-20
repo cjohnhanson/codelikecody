@@ -1,0 +1,26 @@
+[package]
+name = "clc-web"
+version = "0.1.0"
+edition = "2024"
+description = "Leptos CSR frontend for the tisket issue tracker"
+
+[lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+
+[dependencies]
+leptos = { version = "0.8", features = ["csr"] }
+leptos_router = "0.8"
+console_error_panic_hook = "0.1"
+gloo-net = { version = "0.6", features = ["http", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+web-sys = "0.3"
