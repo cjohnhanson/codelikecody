@@ -1,12 +1,12 @@
 ---
 title: "missouri subgraph execution — break graph at complete fixtures"
-status: todo
+status: in_progress
 priority: 2
 assignee:
 labels: [missouri]
 depends_on: []
-created: "2026-03-20T03:37:45Z"
-updated: "2026-03-20T03:37:45Z"
+created: 2026-03-20T03:37:45Z
+updated: "2026-03-20T03:51:49Z"
 ---
 
 ## Problem
@@ -74,3 +74,5 @@ is part of this work.
 
 clc suite: ~20 min → ~2-3 min (31 × 25s prefix eliminated, replaced by
 31 parallel paths of 1-5s each starting from fixture)
+
+## Scratch Notes
