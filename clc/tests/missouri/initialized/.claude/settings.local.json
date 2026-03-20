@@ -1,1 +1,38 @@
-{}
+{
+	"hooks": {
+		"Notification": [
+			{ "hooks": [{ "command": "clc hook", "type": "command" }] }
+		],
+		"PermissionRequest": [
+			{ "hooks": [{ "command": "clc hook", "type": "command" }] }
+		],
+		"PostToolUse": [
+			{ "hooks": [{ "command": "clc hook", "type": "command" }] }
+		],
+		"PostToolUseFailure": [
+			{ "hooks": [{ "command": "clc hook", "type": "command" }] }
+		],
+		"PreCompact": [{ "hooks": [{ "command": "clc hook", "type": "command" }] }],
+		"PreToolUse": [{ "hooks": [{ "command": "clc hook", "type": "command" }] }],
+		"SessionEnd": [{ "hooks": [{ "command": "clc hook", "type": "command" }] }],
+		"SessionStart": [
+			{ "hooks": [{ "command": "clc hook", "type": "command" }] }
+		],
+		"Stop": [{ "hooks": [{ "command": "clc hook", "type": "command" }] }],
+		"SubagentStart": [
+			{ "hooks": [{ "command": "clc hook", "type": "command" }] }
+		],
+		"SubagentStop": [
+			{ "hooks": [{ "command": "clc hook", "type": "command" }] }
+		],
+		"TaskCompleted": [
+			{ "hooks": [{ "command": "clc hook", "type": "command" }] }
+		],
+		"TeammateIdle": [
+			{ "hooks": [{ "command": "clc hook", "type": "command" }] }
+		],
+		"UserPromptSubmit": [
+			{ "hooks": [{ "command": "clc hook", "type": "command" }] }
+		]
+	}
+}

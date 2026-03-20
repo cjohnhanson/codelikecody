@@ -76,3 +76,18 @@ clc suite: ~20 min → ~2-3 min (31 × 25s prefix eliminated, replaced by
 31 parallel paths of 1-5s each starting from fixture)
 
 ## Scratch Notes
+
+### 2026-03-20 session
+
+Done:
+- `dot-git/` convention implemented in `copy_state_to_temp` — `.missouri/dot-git/`
+  is restored as `.git/` when copying state to temp. Test passing.
+- `initialized` fixture updated: real `settings.local.json` with 14 hook events,
+  `.clc/` directory, `.missouri/dot-git/` with minimal git repo
+- Manual test confirmed: fixture works as starting point for downstream transitions
+
+In progress:
+- Existing test suite running to verify fixture changes don't break `bare-project → initialized` comparison
+- Next: implement subgraph execution in the executor — identify states whose
+  fixtures are complete and enumerate/run paths within subgraphs rather than
+  full graph traversal
