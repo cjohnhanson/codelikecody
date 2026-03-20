@@ -6,12 +6,21 @@ Prompt content in this project includes:
 - Hook context injection (SessionStart, reinforcement, Stop messages)
 - Documentation that agents consume (docs bundled in the binary)
 
-## Test failures
+## CRITICAL: Test failures and compiler warnings
 
-A test failure is a test failure. Never dismiss a failing test as
-"pre-existing" or "unrelated to this change." Every failure must be
-investigated and either fixed or captured as a tisket. Work is not
-complete while tests are failing.
+**Test failures and compiler warnings are NEVER acceptable. There are
+no exceptions to this rule.**
+
+- Never dismiss a failing test as "pre-existing" or "unrelated to this change."
+- Never dismiss a compiler warning as "from another branch" or "not in scope."
+- Never say "that's not ours to fix." If it's in the build output, it's yours to fix.
+- Never proceed with other work while tests are failing or warnings exist.
+- `cargo build --workspace` must produce zero warnings.
+- `cargo test --workspace` failures must be investigated and fixed or captured as a tisket.
+
+Every failure. Every warning. Every time. Work is not complete until
+the build is clean and tests pass. If something broke from a merge,
+fix it — the merge made it yours.
 
 ## Stale binary
 
