@@ -1110,9 +1110,9 @@ fn run_path_transitions(
 
 /// Copy a state's files (excluding .missouri/) to a temp directory.
 ///
-/// If the state's config directory contains a `dot-git/` directory, it is
-/// copied into the temp dir as `.git/`. This allows fixtures to carry git
-/// repository state without conflicting with the outer repo's `.git/`.
+/// Directories in the config directory named `dot-<name>/` are restored as
+/// `.<name>/` in the temp dir. This allows fixtures to carry dotfile state
+/// (`.git/`, `.clc/`, etc.) that can't be tracked directly by git.
 fn copy_state_to_temp(
     state_id: StateId,
     graph: &StateGraph,
@@ -1125,14 +1125,25 @@ fn copy_state_to_temp(
     copy_dir_recursive(&state.path, &temp_path, &graph.config_dir)
         .map_err(|e| format!("failed to copy state to temp dir: {e}"))?;
 
-    // Restore dot-git/ → .git/ if present in the config directory.
-    let dot_git_src = state.path.join(&graph.config_dir).join("dot-git");
-    if dot_git_src.exists() {
-        let git_dst = temp_path.join(".git");
-        std::fs::create_dir_all(&git_dst)
-            .map_err(|e| format!("failed to create .git dir: {e}"))?;
-        copy_dir_recursive(&dot_git_src, &git_dst, &graph.config_dir)
-            .map_err(|e| format!("failed to copy dot-git to .git: {e}"))?;
+    // Restore dot-<name>/ → .<name>/ for each matching directory in config dir.
+    let config_path = state.path.join(&graph.config_dir);
+    if config_path.exists() {
+        if let Ok(entries) = std::fs::read_dir(&config_path) {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy();
+                if name_str.starts_with("dot-") && entry.file_type().map_or(false, |ft| ft.is_dir()) {
+                    let real_name = format!(".{}", &name_str[4..]);
+                    let dst = temp_path.join(&real_name);
+                    std::fs::create_dir_all(&dst)
+                        .map_err(|e| format!("failed to create {real_name} dir: {e}"))?;
+                    let src = Utf8PathBuf::try_from(entry.path())
+                        .map_err(|e| format!("dot-dir path not UTF-8: {e}"))?;
+                    copy_dir_recursive(&src, &dst, &graph.config_dir)
+                        .map_err(|e| format!("failed to copy {name_str} to {real_name}: {e}"))?;
+                }
+            }
+        }
     }
 
     Ok((temp_dir, temp_path))
@@ -2398,22 +2409,26 @@ transitions:
     }
 
     #[test]
-    fn copy_state_to_temp_restores_dot_git() {
+    fn copy_state_to_temp_restores_dot_dirs() {
         let tmp = tempfile::tempdir().unwrap();
         let root = Utf8Path::from_path(tmp.path()).unwrap();
 
-        // Create a state with .missouri/dot-git/
+        // Create a state with .missouri/dot-git/ and .missouri/dot-clc/
         let state_dir = root.join("a");
         let missouri_dir = state_dir.join(".missouri");
+
         let dot_git_dir = missouri_dir.join("dot-git");
         fs::create_dir_all(&dot_git_dir).unwrap();
         fs::write(dot_git_dir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+
+        let dot_clc_dir = missouri_dir.join("dot-clc");
+        fs::create_dir_all(&dot_clc_dir).unwrap();
+
         fs::write(
             missouri_dir.join("missouri.yml"),
             "transitions:\n  - command: \"echo\"\n    target: \"../b\"\n",
         )
         .unwrap();
-        // Also create a regular file in the state
         fs::write(state_dir.join("README.md"), "hello").unwrap();
 
         make_state(root, "b", "{}");
@@ -2428,22 +2443,17 @@ transitions:
 
         let (_temp_dir, work_dir) = copy_state_to_temp(state_id, &graph).unwrap();
 
-        // .git/ should exist in the temp dir (restored from dot-git/)
-        assert!(
-            work_dir.join(".git").exists(),
-            ".git should be restored from .missouri/dot-git/"
-        );
-        assert!(
-            work_dir.join(".git/HEAD").exists(),
-            ".git/HEAD should be copied"
-        );
+        // .git/ restored from dot-git/
+        assert!(work_dir.join(".git").exists());
         assert_eq!(
             fs::read_to_string(work_dir.join(".git/HEAD")).unwrap(),
             "ref: refs/heads/main\n"
         );
-        // Regular files should also be copied
+        // .clc/ restored from dot-clc/
+        assert!(work_dir.join(".clc").exists());
+        // Regular files copied
         assert!(work_dir.join("README.md").exists());
-        // .missouri/ itself should NOT be copied
+        // .missouri/ not copied
         assert!(!work_dir.join(".missouri").exists());
     }
 }
