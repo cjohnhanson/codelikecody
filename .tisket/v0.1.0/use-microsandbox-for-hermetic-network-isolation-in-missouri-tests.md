@@ -6,7 +6,7 @@ assignee:
 labels: [missouri, network]
 depends_on: []
 created: 2026-03-19T02:16:09Z
-updated: "2026-03-19T02:16:28Z"
+updated: "2026-03-20T04:34:33Z"
 ---
 
 microsandbox.dev provides microVM-based isolation via libkrun. Each sandbox

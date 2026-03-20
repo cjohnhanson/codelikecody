@@ -386,11 +386,6 @@ pub fn has_relevant_uncommitted_changes(project_dir: &Path) -> Result<bool, Erro
                 !is_ephemeral_path(rela_path.as_ref())
             }
             Ok(gix::status::index_worktree::Item::DirectoryContents { entry, .. }) => {
-                // Only flag genuinely untracked entries — not ignored ones.
-                // gix's dir::entry::Status::Untracked means "not in index" but
-                // in worktrees, gitignored paths may also appear as Untracked
-                // if the ignore file resolution doesn't work correctly.
-                // Filter out known build/ephemeral directories as a safeguard.
                 matches!(entry.status, gix::dir::entry::Status::Untracked)
                     && !is_ephemeral_path(entry.rela_path.as_ref())
                     && !entry.rela_path.starts_with(b"target/")
