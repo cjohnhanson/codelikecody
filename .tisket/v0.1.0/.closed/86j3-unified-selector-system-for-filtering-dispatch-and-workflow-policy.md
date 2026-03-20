@@ -1,12 +1,12 @@
 ---
 title: "Unified selector system for filtering, dispatch, and workflow policy"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: [tisket, clc, feature]
 depends_on: []
 created: 2026-03-09T02:17:58Z
-updated: "2026-03-19T02:40:26Z"
+updated: "2026-03-20T01:59:53Z"
 ---
 
 ## Context
