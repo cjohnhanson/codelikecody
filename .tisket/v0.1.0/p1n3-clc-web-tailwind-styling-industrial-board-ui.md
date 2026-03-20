@@ -1,10 +1,12 @@
 ---
 title: "clc-web: Tailwind styling — industrial board UI"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [web, feature]
 depends_on: []
-created: "2026-03-20T03:49:20Z"
-updated: "2026-03-20T03:49:20Z"
+created: 2026-03-20T03:49:20Z
+updated: "2026-03-20T03:50:09Z"
 ---
+
+## Scratch Notes
