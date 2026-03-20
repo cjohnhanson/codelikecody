@@ -388,7 +388,6 @@ pub fn has_relevant_uncommitted_changes(project_dir: &Path) -> Result<bool, Erro
             Ok(gix::status::index_worktree::Item::DirectoryContents { entry, .. }) => {
                 matches!(entry.status, gix::dir::entry::Status::Untracked)
                     && !is_ephemeral_path(entry.rela_path.as_ref())
-                    && !entry.rela_path.starts_with(b"target/")
             }
             _ => false,
         });
