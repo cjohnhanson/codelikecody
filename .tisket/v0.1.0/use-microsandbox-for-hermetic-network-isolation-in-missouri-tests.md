@@ -177,23 +177,35 @@ to missouri's transition execution.
 persistent "nix builder" microsandbox. The runtime dependency is just the
 missouri binary (with microsandbox-core linked in).
 
+**`clc builder` — persistent nix builder sandbox:**
+- `clc builder start` boots a sandbox from any OCI image (debian:slim, alpine, etc.)
+- `/nix/store` mounted from a persistent host directory (~/.clc/nix-store)
+- Nix bootstrapped inside on first run, cached in persistent store after that
+- `clc builder stop` kills VM, store survives. Next start is fast.
+- Config in clc.yaml: `builder: { image: "debian:bookworm-slim", store: "~/.clc/nix-store" }`
+
+**flake.nix as environment definition:**
+- A `flake.nix` in a missouri state directory defines the sandbox environment
+- User writes a normal flake with a `devShell` — standard nix, nothing missouri-specific
+- Missouri reads the devShell's packages (buildInputs + nativeBuildInputs)
+- Missouri builds the OCI image itself inside the builder sandbox:
+  `dockerTools.buildLayeredImage { contents = shell.buildInputs ++ shell.nativeBuildInputs; }`
+- The `dockerTools` call is missouri's responsibility, not the user's
+- No flake.nix → fall back to `packages:` list or bare backend
+
 **Image build flow:**
-1. Missouri starts/reuses a persistent "nix builder" sandbox
-   - Pre-built OCI image with nix installed, pulled from registry on first run
-   - `/nix/store` on a persistent volume (survives across runs, avoids re-downloads)
-2. Mounts project dir (read-only) for flake.nix access
-3. Mounts scratch dir (read-write) for output
-4. Runs `nix build .#missouri-image --out-link /output/image` inside sandbox
-5. Reads OCI tarball from scratch mount on host side
+1. Missouri finds flake.nix in state directory (or inherits from parent)
+2. Starts/reuses the persistent builder sandbox via `clc builder`
+3. Mounts project dir (read-only) for flake.nix access
+4. Evaluates the flake's devShell, wraps it in dockerTools.buildLayeredImage
+5. OCI tarball comes back to host via shared volume
 6. Loads tarball into microsandbox, boots test sandbox from it
 
 **Test execution flow:**
 1. Missouri boots test sandbox from the built image
-   - Image contains: project binaries (cross-compiled to aarch64-linux),
-     mitmdump, coreutils, bash, ca-certs, git
    - `NetworkScope::None` for hermetic network isolation
 2. Mounts test state directory into sandbox via volume
-3. Runs transition command inside sandbox via `Command::run()`
+3. Runs transition command inside sandbox
 4. Captures stdout/stderr, compares filesystem state
 
 **What this replaces:**
@@ -202,11 +214,5 @@ missouri binary (with microsandbox-core linked in).
 - `mitmproxy` host-side process management → mitmdump inside sandbox
 - Composable sandbox model → single VM provides all isolation layers
 
-**Runtime deps:** missouri binary. That's it. microsandbox server managed
-by missouri on demand. Nix builder sandbox pulled on first run.
-
-**OCI image layering:**
-- Base layer: "nix builder" image (nix + basic Linux userland)
-- Per-project layer: flake.nix defines project-specific packages + binaries
-- missouri base image: mitmdump + ca-certs + test infrastructure
-- The flake output `missouri-image` composes these
+**Runtime deps:** missouri binary (with microsandbox-core linked in). That's it.
+microsandbox server managed by missouri on demand.
