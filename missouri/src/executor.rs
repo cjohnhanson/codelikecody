@@ -910,9 +910,12 @@ pub struct SetupResult {
 }
 
 /// Run setup commands before test paths. Returns results and whether all passed.
-pub fn run_setup_phase(graph: &StateGraph, opts: &RunOptions) -> Vec<SetupResult> {
+/// Setup commands always run on the host (BareBackend), never inside a sandbox —
+/// they're for building binaries, initializing state, etc.
+pub fn run_setup_phase(graph: &StateGraph, _opts: &RunOptions) -> Vec<SetupResult> {
     let base_path = std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin:/usr/bin:/bin".into());
     let path_env = build_path_env(None, graph.project_bin.as_deref(), &base_path);
+    let bare = BareBackend;
 
     graph
         .setup
@@ -926,7 +929,7 @@ pub fn run_setup_phase(graph: &StateGraph, opts: &RunOptions) -> Vec<SetupResult
                 &graph.project_root,
                 &path_env,
                 &graph.project_env,
-                &*opts.sandbox,
+                &bare,
             );
             if !result.passed {
                 *still_passing = false;
