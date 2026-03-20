@@ -131,6 +131,14 @@ fn load_state(project_dir: &Path) -> Result<Option<State>, Error> {
     Ok(Some(State { phase, attempts }))
 }
 
+/// Initialize the phase state for a freshly created worktree.
+/// Unlike `set`, this bypasses sequential-transition validation — it is
+/// only for use during `clc pickup` when the worktree has no prior state.
+pub fn init_phase(project_dir: &Path, target: &str) -> Result<(), Error> {
+    let target_phase: Phase = target.parse()?;
+    write_state(project_dir, target_phase, 0)
+}
+
 /// Validate and perform a phase transition, writing the new state file.
 /// Forward transitions are gated by `required_attempts`.
 pub fn set(project_dir: &Path, target: &str, required_attempts: u32) -> Result<(), Error> {

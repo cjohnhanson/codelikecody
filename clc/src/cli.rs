@@ -76,6 +76,9 @@ pub enum Command {
         /// Only tiskets in the dependency chain rooted at this id.
         #[arg(long)]
         depends_on: Option<String>,
+        /// Filter by comma-separated selectors (e.g. "label:feature,project:v0.1.0").
+        #[arg(long)]
+        filter: Option<String>,
         /// List pickable tiskets and exit without spawning a coordinator.
         #[arg(long)]
         dry_run: bool,

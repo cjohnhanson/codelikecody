@@ -87,8 +87,17 @@ pub fn pickup(
     // Initialize clc in the worktree.
     crate::init::init(&worktree_dir, false, true)?;
 
-    // Set initial phase.
-    crate::phase::set(&worktree_dir, "tests-unwritten", 1)?;
+    // Resolve initial phase from workflow policy.
+    // If no workflows are configured, fall back to the standard TDD starting phase.
+    let config = crate::config::load(project_dir).unwrap_or_default();
+    let initial_phase = if config.workflows.is_empty() {
+        "tests-unwritten"
+    } else {
+        let workflow = config.resolve_workflow(&issue.frontmatter.labels, &issue.project);
+        workflow.phases.first().map(|s| s.as_str()).unwrap_or("done")
+    };
+
+    crate::phase::init_phase(&worktree_dir, initial_phase)?;
 
     Ok(())
 }

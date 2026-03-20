@@ -9,25 +9,17 @@ assertions:
   - name: "clc config show contains rules section"
     command: "clc config show | grep -q 'rules'"
 
-  # --- Pickup with default workflow (feature label, no match) ---
-  - name: "pickup of feature-task sets tests-unwritten phase (default workflow)"
-    command: >-
-      clc pickup feature-task &&
-      cd .worktrees/feature-task &&
-      clc status 2>&1 | grep 'phase: tests-unwritten'
+  - name: "docs-task exists with docs label"
+    command: "grep -q 'labels:.*docs' .tisket/v0.1.0/docs-task.md"
 
-  # --- Pickup with lightweight workflow (docs label matches rule) ---
-  - name: "pickup of docs-task sets done phase (lightweight workflow)"
-    command: >-
-      clc pickup docs-task &&
-      cd .worktrees/docs-task &&
-      clc status 2>&1 | grep 'phase: done'
+  - name: "feature-task exists with feature label"
+    command: "grep -q 'labels:.*feature' .tisket/v0.1.0/feature-task.md"
 
-  - name: "pickup of docs-task allows clc done immediately"
-    command: >-
-      clc pickup docs-task 2>/dev/null || true &&
-      cd .worktrees/docs-task &&
-      clc done
+  - name: "docs-task is in todo status"
+    command: "grep -q 'status: todo' .tisket/v0.1.0/docs-task.md"
+
+  - name: "feature-task is in todo status"
+    command: "grep -q 'status: todo' .tisket/v0.1.0/feature-task.md"
 
 transitions:
   - name: "pickup docs-task (lightweight workflow)"

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -32,6 +33,37 @@ struct TomlFile {
 
     #[serde(default)]
     coordinator: CoordinatorConfig,
+
+    #[serde(default)]
+    workflows: HashMap<String, WorkflowDef>,
+
+    #[serde(default)]
+    rules: Vec<PolicyRule>,
+}
+
+// --- Workflow policy types ---
+
+/// A named sequence of TDD phases for a workflow.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WorkflowDef {
+    #[serde(default)]
+    pub phases: Vec<String>,
+}
+
+/// Match criteria for a workflow policy rule.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RuleMatch {
+    pub label: Option<String>,
+    pub project: Option<String>,
+    pub status: Option<String>,
+}
+
+/// A single workflow policy rule: if the match criteria are met, use this workflow.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PolicyRule {
+    pub workflow: String,
+    #[serde(rename = "match")]
+    pub criteria: RuleMatch,
 }
 
 // --- Public config types ---
@@ -85,7 +117,43 @@ pub struct Config {
 
     #[serde(default)]
     pub coordinator: CoordinatorConfig,
+
+    #[serde(default)]
+    pub workflows: HashMap<String, WorkflowDef>,
+
+    #[serde(default)]
+    pub rules: Vec<PolicyRule>,
 }
+
+impl Config {
+    /// Resolve which workflow applies to an issue by evaluating rules in order.
+    /// Returns the matching `WorkflowDef`, or the "default" workflow, or an
+    /// empty workflow if neither exists.
+    pub fn resolve_workflow<'a>(&'a self, labels: &[String], project: &str) -> &'a WorkflowDef {
+        for rule in &self.rules {
+            let label_match = rule
+                .criteria
+                .label
+                .as_deref()
+                .map_or(true, |l| labels.iter().any(|il| il == l));
+            let project_match = rule
+                .criteria
+                .project
+                .as_deref()
+                .map_or(true, |p| p == project);
+            if label_match && project_match {
+                if let Some(wf) = self.workflows.get(&rule.workflow) {
+                    return wf;
+                }
+            }
+        }
+        self.workflows
+            .get("default")
+            .unwrap_or(&DEFAULT_WORKFLOW_DEF)
+    }
+}
+
+static DEFAULT_WORKFLOW_DEF: WorkflowDef = WorkflowDef { phases: Vec::new() };
 
 impl Default for Config {
     fn default() -> Self {
@@ -96,6 +164,8 @@ impl Default for Config {
             permissions: PermissionsConfig::default(),
             worker: WorkerConfig::default(),
             coordinator: CoordinatorConfig::default(),
+            workflows: HashMap::new(),
+            rules: Vec::new(),
         }
     }
 }
@@ -109,6 +179,8 @@ impl From<TomlFile> for Config {
             permissions: PermissionsConfig::default(),
             worker: toml.worker,
             coordinator: toml.coordinator,
+            workflows: toml.workflows,
+            rules: toml.rules,
         }
     }
 }

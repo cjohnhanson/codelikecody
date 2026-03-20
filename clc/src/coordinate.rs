@@ -23,6 +23,8 @@ pub struct CoordinateFilters<'a> {
     pub exclude_label: Option<&'a str>,
     pub project: Option<&'a str>,
     pub depends_on: Option<&'a str>,
+    /// Comma-separated `namespace:value` selectors (AND composition).
+    pub filter: Option<&'a str>,
     pub dry_run: bool,
     pub coordinator_id: Option<&'a str>,
     pub auto_grant: &'a [String],
@@ -112,6 +114,7 @@ pub fn coordinate_with<W: Workspace>(
         filters.exclude_label,
         filters.project,
         filters.depends_on,
+        filters.filter,
     )?;
 
     if pickable.is_empty() {
@@ -214,6 +217,7 @@ fn find_pickable_tiskets(
     exclude_label: Option<&str>,
     project: Option<&str>,
     depends_on: Option<&str>,
+    filter: Option<&str>,
 ) -> Result<Vec<String>, Error> {
     let utf8_dir = Utf8Path::new(
         project_dir
@@ -223,6 +227,14 @@ fn find_pickable_tiskets(
 
     let repo =
         tisket::Repo::open(utf8_dir).map_err(|e| Error::NonBlocking(format!("tisket: {e}")))?;
+
+    // Parse comma-separated selector filter string.
+    let selectors: Vec<tisket::Selector> = filter
+        .unwrap_or("")
+        .split(',')
+        .filter(|s| !s.is_empty())
+        .filter_map(tisket::Selector::parse)
+        .collect();
 
     // Build the dependency chain scope if --depends-on is specified.
     let chain_scope = if let Some(root_id) = depends_on {
@@ -235,7 +247,7 @@ fn find_pickable_tiskets(
     };
 
     let issues = repo
-        .list_issues(project, None, None, false)
+        .list_issues(project, None, None, false, &[])
         .map_err(|e| Error::NonBlocking(format!("tisket: {e}")))?;
 
     let mut pickable: Vec<String> = issues
@@ -258,6 +270,8 @@ fn find_pickable_tiskets(
                 .as_ref()
                 .is_none_or(|scope| scope.contains(&i.id))
         })
+        // Selector filter: apply all --filter namespace:value selectors.
+        .filter(|i| tisket::selector::matches_all(&selectors, i))
         .map(|i| i.id)
         .collect();
 
@@ -282,12 +296,12 @@ fn find_pickable_tiskets(
 fn build_dependency_chain(repo: &tisket::Repo, root_id: &str) -> Result<Vec<String>, Error> {
     // Collect all issues across all projects to scan for dependents.
     let all_issues = repo
-        .list_issues(None, None, None, false)
+        .list_issues(None, None, None, false, &[])
         .map_err(|e| Error::NonBlocking(format!("tisket: {e}")))?;
 
     // Also include closed issues to find the full chain.
     let closed_issues = repo
-        .list_issues(None, None, None, true)
+        .list_issues(None, None, None, true, &[])
         .map_err(|e| Error::NonBlocking(format!("tisket: {e}")))?;
 
     // Build a map of id → depends_on for all issues.
@@ -507,6 +521,7 @@ mod tests {
             exclude_label: None,
             project: None,
             depends_on: None,
+            filter: None,
             dry_run: false,
             coordinator_id: None,
             auto_grant: &[],
@@ -854,6 +869,7 @@ mod workspace_tests {
             exclude_label: None,
             project: None,
             depends_on: None,
+            filter: None,
             dry_run: false,
             coordinator_id: None,
             auto_grant: &[],
