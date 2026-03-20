@@ -640,7 +640,7 @@ transitions:
     target: "../has-yaml-root-config"
     comparators:
       files:
-        - path: ".claude/settings.local.json"
+        - path: ".claude/"
           ignore: true
         - path: ".clc/"
           ignore: true
@@ -650,7 +650,7 @@ transitions:
     target: "../yaml-root-config-prefers-over-toml"
     comparators:
       files:
-        - path: ".claude/settings.local.json"
+        - path: ".claude/"
           ignore: true
         - path: ".clc/"
           ignore: true
