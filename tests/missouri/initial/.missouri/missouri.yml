@@ -3,8 +3,3 @@ transitions:
     command: "echo hello-from-microsandbox"
     target: ../echoed
     stdout: "hello-from-microsandbox\n"
-
-  - name: "uname proves linux execution"
-    command: "uname -s"
-    target: ../uname-checked
-    stdout: "Linux\n"

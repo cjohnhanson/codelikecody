@@ -1,1 +1,5 @@
-{}
+transitions:
+  - name: "uname proves linux execution"
+    command: "uname -s"
+    target: ../uname-checked
+    stdout: "Linux\n"
