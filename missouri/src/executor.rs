@@ -195,11 +195,42 @@ impl Backend for NixBackend {
     }
 }
 
+/// Microsandbox backend: transitions run inside microVM sandboxes.
+///
+/// Commands execute inside a microsandbox VM via the SDK, not as local
+/// processes. The `Backend` trait methods are not used — `execute_transition`
+/// takes a separate code path when this backend is active.
+#[derive(Debug)]
+pub struct MicrosandboxBackend;
+
+impl Backend for MicrosandboxBackend {
+    fn build_shell_command(
+        &self,
+        _command: &str,
+        _work_dir: &Utf8Path,
+        _env: &BTreeMap<String, String>,
+        _path_env: &str,
+    ) -> Command {
+        unreachable!("MicrosandboxBackend executes commands inside a VM, not via local Command")
+    }
+
+    fn build_direct_command(
+        &self,
+        _parts: &[&str],
+        _work_dir: &Utf8Path,
+        _env: &BTreeMap<String, String>,
+        _path_env: &str,
+    ) -> Command {
+        unreachable!("MicrosandboxBackend executes commands inside a VM, not via local Command")
+    }
+}
+
 /// Detect and prepare backend from project-level config.
 ///
 /// Reads `graph.sandbox_config` to determine the backend:
 /// - `SandboxConfig::None` → `BareBackend`
 /// - `SandboxConfig::Packages(pkgs)` → `NixBackend` (or `BareBackend` if preinstalled)
+/// - `SandboxConfig::Microsandbox` → `MicrosandboxBackend`
 ///
 /// When `MISSOURI_SANDBOX=preinstalled` is set, packages config resolves to
 /// `BareBackend` — tools are assumed to already be on PATH (e.g., inside a
@@ -226,6 +257,7 @@ pub fn detect_sandbox(graph: &StateGraph) -> error::Result<Box<dyn Backend>> {
                 .map_err(|msg| error::Error::SandboxWarm { message: msg })?;
             Ok(Box::new(backend))
         }
+        SandboxConfig::Microsandbox => Ok(Box::new(MicrosandboxBackend)),
     }
 }
 
@@ -1799,6 +1831,76 @@ transitions:
         assert!(
             debug.starts_with("BareBackend"),
             "expected BareBackend when MISSOURI_SANDBOX=preinstalled, got {debug}"
+        );
+    }
+
+    #[test]
+    fn detect_sandbox_microsandbox_from_config() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        let root_missouri = root.join(".missouri");
+        fs::create_dir_all(&root_missouri).unwrap();
+        fs::write(
+            root_missouri.join("missouri.yml"),
+            "microsandbox: true\n",
+        )
+        .unwrap();
+
+        make_state(
+            root,
+            "a",
+            r#"
+transitions:
+  - command: "echo hello"
+    target: "../b"
+"#,
+        );
+        make_state(root, "b", "{}");
+
+        let graph = StateGraph::discover(root, ".missouri").unwrap();
+        assert!(
+            matches!(graph.sandbox_config, SandboxConfig::Microsandbox),
+            "expected Microsandbox, got {:?}",
+            graph.sandbox_config
+        );
+
+        let backend = detect_sandbox(&graph).unwrap();
+        let debug = format!("{backend:?}");
+        assert!(
+            debug.starts_with("MicrosandboxBackend"),
+            "expected MicrosandboxBackend, got {debug}"
+        );
+    }
+
+    #[test]
+    fn detect_sandbox_microsandbox_overrides_packages() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        let root_missouri = root.join(".missouri");
+        fs::create_dir_all(&root_missouri).unwrap();
+        fs::write(
+            root_missouri.join("missouri.yml"),
+            "microsandbox: true\npackages:\n  - python3\n",
+        )
+        .unwrap();
+
+        make_state(
+            root,
+            "a",
+            r#"
+transitions:
+  - command: "echo hello"
+    target: "../b"
+"#,
+        );
+        make_state(root, "b", "{}");
+
+        let graph = StateGraph::discover(root, ".missouri").unwrap();
+        assert!(
+            matches!(graph.sandbox_config, SandboxConfig::Microsandbox),
+            "microsandbox: true should take precedence over packages"
         );
     }
 

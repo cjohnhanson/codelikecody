@@ -198,6 +198,10 @@ pub struct ProjectConfig {
     /// When set, `missouri run` iterates each member and runs its tests independently.
     #[serde(default)]
     pub members: Vec<Utf8PathBuf>,
+
+    /// Run transitions inside microsandbox microVMs for hermetic isolation.
+    #[serde(default)]
+    pub microsandbox: bool,
 }
 
 /// A setup command that runs before test execution.
@@ -452,6 +456,28 @@ packages:
 "#;
         let config = parse_project_config(yaml).unwrap();
         assert_eq!(config.packages, vec!["python3", "uv"]);
+    }
+
+    #[test]
+    fn parse_project_config_microsandbox() {
+        let yaml = "microsandbox: true\n";
+        let config = parse_project_config(yaml).unwrap();
+        assert!(config.microsandbox);
+    }
+
+    #[test]
+    fn parse_project_config_microsandbox_default_false() {
+        let yaml = "{}";
+        let config = parse_project_config(yaml).unwrap();
+        assert!(!config.microsandbox);
+    }
+
+    #[test]
+    fn parse_project_config_microsandbox_with_packages() {
+        let yaml = "microsandbox: true\npackages:\n  - python3\n";
+        let config = parse_project_config(yaml).unwrap();
+        assert!(config.microsandbox);
+        assert_eq!(config.packages, vec!["python3"]);
     }
 
     #[test]

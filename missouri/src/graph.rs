@@ -96,6 +96,8 @@ pub enum SandboxConfig {
     None,
     /// Packages to make available via `nix shell`.
     Packages(Vec<String>),
+    /// Run transitions inside microsandbox microVMs.
+    Microsandbox,
 }
 
 /// The complete state graph.
@@ -419,7 +421,9 @@ fn load_project_config(root: &Utf8Path, config_dir: &str) -> Result<ProjectConfi
             })
             .collect();
 
-        let sandbox = if !cfg.packages.is_empty() {
+        let sandbox = if cfg.microsandbox {
+            SandboxConfig::Microsandbox
+        } else if !cfg.packages.is_empty() {
             SandboxConfig::Packages(cfg.packages)
         } else {
             SandboxConfig::None
