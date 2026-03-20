@@ -4,7 +4,6 @@ use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::Router;
 use tower_http::cors::CorsLayer;
-use tower_http::services::ServeDir;
 
 pub mod error;
 pub mod handlers;

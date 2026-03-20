@@ -1,7 +1,9 @@
+#[allow(dead_code)]
 mod api;
 mod app;
 mod components;
 mod pages;
+#[allow(dead_code)]
 mod types;
 
 fn main() {
