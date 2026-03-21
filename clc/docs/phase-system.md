@@ -201,4 +201,4 @@ tests-unwritten restrictions) but there's no phase to advance from.
 
 ## Further reading
 
-- [CLI Reference](cli-reference.md) — the `clc status` and `clc status set` commands
+- [CLI Reference](/clc/cli-reference) — the `clc status` and `clc status set` commands

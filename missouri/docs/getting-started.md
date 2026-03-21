@@ -210,7 +210,7 @@ Filesystem mismatches work the same way. If the command produces a file that doe
 ## Next steps
 
 - Add more states and chain transitions into multi-step paths. Missouri discovers all root-to-leaf paths automatically.
-- Use `comparators` on transitions to ignore volatile files or use custom diff commands. See [cli-reference.md](cli-reference.md) for the full `missouri.yml` schema.
+- Use `comparators` on transitions to ignore volatile files or use custom diff commands. See [cli-reference.md](/missouri/cli-reference) for the full `missouri.yml` schema.
 - Add `env` to states or the project config to inject environment variables.
 - Put shared scripts in `.missouri/bin/` -- they're automatically added to PATH during test runs.
 - Use `--verbose` (`-v`) for detailed output, or `--keep-temp` to inspect the temp directories missouri creates.

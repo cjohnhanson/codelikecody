@@ -46,13 +46,17 @@ check: fmt-check clippy test
 
 # --- docs site ---
 
-# serve docs site locally
+# serve docs site locally (leptos app)
 docs-serve:
-    cd docs && mdbook serve --open
+    cd docs-web && trunk serve --open
 
 # build docs site
 docs-build:
-    cd docs && mdbook build
+    cd docs-web && trunk build
+
+# serve docs via mdbook (alternative)
+docs-mdbook:
+    cd clc/docs && mdbook serve --open
 
 # --- utilities ---
 

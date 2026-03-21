@@ -14,7 +14,7 @@ The project is three tools: **clc**, **tisket**, and **missouri**. They're desig
 
 ### clc — workflow enforcement
 
-clc is the orchestrator. It runs as a hook system inside Claude Code, intercepting every event in the agent's session: tool calls, prompt submissions, stop attempts. Based on the current git branch and workflow phase, it decides what's allowed and what's blocked. See the [clc CLI reference](clc/cli-reference.md) for the full command surface.
+clc is the orchestrator. It runs as a hook system inside Claude Code, intercepting every event in the agent's session: tool calls, prompt submissions, stop attempts. Based on the current git branch and workflow phase, it decides what's allowed and what's blocked. See the [clc CLI reference](/clc/cli-reference) for the full command surface.
 
 The core mechanism is a phase system. Work progresses through an ordered sequence:
 
@@ -34,7 +34,7 @@ Tisket is an issue tracker where issues are markdown files with YAML frontmatter
 
 Issues follow a status lifecycle: `discovery` → `todo` → `in_progress` → `done`. New issues start in `discovery` — an idea captured, not yet scoped. Promotion to `todo` is a deliberate decision that the issue has enough detail for an agent (or a person) to pick it up and work it without guessing.
 
-Tisket provides git-aware divergence detection (has the issue changed since this branch diverged?) and full-text search across titles, bodies, and scratch notes. The scratch notes section on each issue serves as the agent's working memory — the only persistent state that survives context compaction and session boundaries. See the [tisket CLI reference](tisket/cli-reference.md) for the full command and schema details.
+Tisket provides git-aware divergence detection (has the issue changed since this branch diverged?) and full-text search across titles, bodies, and scratch notes. The scratch notes section on each issue serves as the agent's working memory — the only persistent state that survives context compaction and session boundaries. See the [tisket CLI reference](/tisket/cli-reference) for the full command and schema details.
 
 ### missouri — filesystem state graph testing
 
@@ -42,7 +42,7 @@ Missouri is an end-to-end test framework built around a specific model: directed
 
 Each state is a directory. The directory contains the files that should exist in that state, plus a `.missouri/missouri.yml` config that defines transitions (shell commands that move to other states) and assertions (shell expressions that must hold). Missouri walks every path through the graph, executing transitions in sandboxed temp directories and comparing the resulting filesystem against the expected state.
 
-This model is a natural fit for testing CLI tools and workflow systems, where the interesting behavior is "run this command, check that these files changed in these ways." Missouri handles the scaffolding — temp dirs, file comparison, path enumeration, parallel execution — so tests are just directories of expected output. The [missouri getting started tutorial](missouri/getting-started.md) walks through building a test suite from scratch, and the [CLI reference](missouri/cli-reference.md) covers the full config schema.
+This model is a natural fit for testing CLI tools and workflow systems, where the interesting behavior is "run this command, check that these files changed in these ways." Missouri handles the scaffolding — temp dirs, file comparison, path enumeration, parallel execution — so tests are just directories of expected output. The [missouri getting started tutorial](/missouri/getting-started) walks through building a test suite from scratch, and the [CLI reference](/missouri/cli-reference) covers the full config schema.
 
 ## How they fit together
 
@@ -70,7 +70,7 @@ Between prompts, the `UserPromptSubmit` hook fires a lightweight reinforcement: 
 
 The phase bootstrapping handles worktrees that were created outside `clc pickup` — if an agent session starts on a feature branch with no phase and a matching tisket exists, the hook auto-sets `tests-unwritten` and advances the tisket to `in_progress`.
 
-The [getting started tutorial](getting-started.md) walks through the full cycle end-to-end.
+The [getting started tutorial](/getting-started) walks through the full cycle end-to-end.
 
 ## Multi-agent orchestration
 

@@ -4,4 +4,4 @@
 .claude/*
 !.claude/skills
 .clc/
-docs/book/
+clc/docs/book/

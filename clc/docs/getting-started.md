@@ -305,7 +305,7 @@ In practice, an agent does this autonomously. The agent receives a tisket, enter
 
 ## Next
 
-- [The Phase System](clc/phase-system.md) — deeper explanation of phases, restrictions, and the guard
-- [Multi-Agent Orchestration](clc/orchestration.md) — dispatch multiple agents to work in parallel
-- [clc CLI Reference](clc/cli-reference.md) — every command and flag
-- [tisket CLI Reference](tisket/cli-reference.md) — issue management commands and schema
+- [The Phase System](/clc/phase-system) — deeper explanation of phases, restrictions, and the guard
+- [Multi-Agent Orchestration](/clc/orchestration) — dispatch multiple agents to work in parallel
+- [clc CLI Reference](/clc/cli-reference) — every command and flag
+- [tisket CLI Reference](/tisket/cli-reference) — issue management commands and schema
