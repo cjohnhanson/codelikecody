@@ -1,211 +1,215 @@
 ---
 name: documentation-writing
 description: >
-  Guides collaborative writing of project documentation. Enforces a
-  section-by-section drafting process where the user directs and curates
-  rather than receiving a finished document. Applies Diátaxis type
-  discipline, project file conventions, and source-verified technical
-  claims. Triggered when asked to write, draft, or create docs, guides,
-  tutorials, references, or explanations. Not triggered for inline code
-  comments, commit messages, PR descriptions, or README updates.
+  Guides collaborative writing of project documentation through nested
+  review loops. Individual docs go through draft → fresh-eyes → fix
+  cycles. The full doc set goes through a site-level coherence review.
+  Applies Diátaxis type discipline, cross-linking, source verification,
+  and prose quality checks. Triggered when asked to write, draft, or
+  create docs, guides, tutorials, references, or explanations. Not
+  triggered for inline code comments, commit messages, PR descriptions,
+  or README updates.
 ---
 
 # Documentation Writing
 
 ## The core problem this skill solves
 
-Without guidance, documentation gets written in one shot and presented as
-finished. The user becomes a reviewer instead of a co-author. This skill
-enforces a collaborative process where the user shapes the document at
-every stage.
+Documentation fails in two ways. The obvious way: it gets written in one
+shot and presented as finished — mechanically correct but lifeless. The
+subtler way: individual docs pass review but the doc set as a whole
+doesn't cohere — concepts are mentioned but not linked, pages assume
+knowledge that's explained elsewhere, and there's no natural reading
+path through the site.
 
-## Process: three phases, no shortcuts
+This skill addresses both through nested review loops.
 
-### Phase 1 — Context (do this before writing anything)
+## Two loops
 
-Determine these four things. Ask the user if any are unclear:
+### Inner loop — individual doc
 
-1. **Doc type** — exactly one of: tutorial, guide, reference, explanation
-2. **Audience** — who reads this and what do they already know?
-3. **Purpose** — what should the reader be able to do or understand after?
-4. **Scope** — what's explicitly out of bounds?
+Every doc goes through this cycle. Don't move to the next doc until the
+current one passes.
 
-Don't start drafting until type, audience, and purpose are settled. If
-the user's request implies a type (e.g., "write a reference for the CLI"),
-confirm it rather than assuming.
+1. **Context** — determine doc type, audience, purpose, scope
+2. **Draft** — write the doc (section-by-section if interactive, full
+   draft if batching)
+3. **Fresh-eyes review** — spawn a sub-agent that has NOT seen the
+   drafting conversation. It reads the doc cold and evaluates:
+   - Does the opening earn attention? Would you keep reading?
+   - Is every paragraph pulling its weight, or is there filler?
+   - Are concepts mentioned that aren't explained or linked?
+   - Does the voice sound human or generated?
+   - What's the weakest section? Quote it.
+4. **Fix** — address the review findings
+5. **Repeat** steps 3-4 until the fresh-eyes pass comes back clean
 
-### Phase 2 — Structure and drafting
+The fresh-eyes review is the quality gate. Accuracy checks (source
+verification, type discipline) are necessary but not sufficient. The
+fresh-eyes review checks whether the doc is *good*, not just *correct*.
 
-1. Propose a section outline. Wait for approval or changes.
-2. Start with the hardest section — the one most likely to require
-   discussion. Don't start with the introduction.
-3. For each section:
-   a. Brainstorm 2-3 approaches or framings. Present them briefly.
-   b. User picks, combines, or redirects.
-   c. Draft that section only.
-   d. Refine via surgical edits. Don't rewrite surrounding sections.
-4. Write the introduction last, once the shape of the document is clear.
+### Outer loop — whole site
 
-**The user selects and directs. The agent drafts.** Never present a
-complete document without having gone through sections individually.
+After all individual docs have passed their inner loops:
 
-If the user says "just write it" or similar, push back once: propose the
-outline, flag the hardest section, and offer to start there. If they
-insist on a single-pass draft, comply — but flag that a review pass
-should follow.
+1. **Site-level fresh-eyes review** — spawn a sub-agent that navigates
+   the full doc set as a reader would. It:
+   - Lands on the index page and tries to find something specific
+   - Follows cross-links between docs
+   - Reads two or three docs end-to-end
+   - Evaluates: is there a natural reading path? Are there dead ends?
+     Do concepts get introduced without links? Is the voice consistent
+     across docs? Does the sidebar ordering make sense?
+2. **Cross-linking pass** — find every concept mention that's explained
+   in another doc and add a link on first mention. Don't over-link —
+   link a term once per doc, on first use.
+3. **Fix** — address site-level issues (may require going back into
+   inner loops for specific docs)
+4. **Repeat** until the site-level pass comes back clean
 
-### Phase 3 — Review
+### Separate evaluator prompts
 
-After all sections are drafted:
+Use different sub-agents for different review dimensions. Don't ask one
+agent to check everything — accuracy reviewers check different things
+than quality reviewers.
 
-1. Re-read the full document for flow, redundancy, and slop.
-2. Check type discipline (see below).
-3. For reference docs, run the verification step (see below).
-4. If the document is substantial (>500 words), offer to spawn a
-   sub-agent to read it cold and flag anything confusing. The sub-agent
-   shouldn't have seen the drafting conversation — the point is to catch
-   curse-of-knowledge blind spots.
+**Accuracy evaluator** (for reference docs especially):
+- Is every CLI flag, config field, and default value correct?
+- Spot-check 5-10 claims against source code
+- Are there hallucinated features or behaviors?
+
+**Quality evaluator** (for all docs):
+- Does the opening paragraph hook the reader?
+- Is every paragraph earning its place?
+- Are there sentences that sound generated rather than written?
+- Quote the weakest passage and say why it's weak
+- What's missing that a reader would want to know?
+
+**Site coherence evaluator** (outer loop):
+- Navigate the docs as a new user would
+- Follow 3-5 cross-links — do they work? Do they land in the right place?
+- Are the same concepts explained differently in different docs?
+- Is there a natural "what to read first → what to read next" flow?
+- What's the biggest gap in the doc set?
+
+## Cross-linking
+
+Docs reference concepts explained elsewhere. Link them.
+
+**Rules:**
+- Link a concept on first mention in each doc, not every mention
+- Use the route slug as the link target (e.g., `/clc/phase-system`)
+- Don't link obvious terms that any developer would know
+- Do link project-specific terms: phases, worktrees, tiskets, scratch
+  notes, guard, prime text, coordinators, workers, divergence detection
+- When mentioning a tool feature in passing, link to its doc rather than
+  re-explaining inline
+
+**Cross-linking pass:** after all docs are drafted, read each doc
+looking for unlinked concept mentions. Add links. This is a distinct
+step, not something done during drafting — it's easier to catch gaps
+when reading the finished text.
 
 ## File conventions
 
-All documentation lives in `docs/` at the project root.
+Documentation lives in per-crate `docs/` directories:
+- `clc/docs/` — ecosystem-level docs and clc-specific docs
+- `missouri/docs/` — missouri-specific docs
+- `tisket/docs/` — tisket-specific docs
 
-Every doc file requires YAML frontmatter:
+Every doc file uses an HTML comment metadata block (compatible with
+both mdBook and the docs-web Leptos app):
 
-```yaml
----
+```html
+<!-- metadata
 title: "The document title"
 description: "One-sentence summary for indexes and search"
 type: tutorial | guide | reference | explanation
----
+-->
 ```
 
-File naming: lowercase, hyphens, descriptive. Match the title loosely.
-Example: `cli-configuration-reference.md` for a doc titled
-"CLI Configuration Reference."
+File naming: lowercase, hyphens, descriptive.
 
-Internal links use relative paths between docs: `[see the CLI ref](./cli-configuration-reference.md)`.
+Internal links use absolute route slugs without `.md` extensions:
+`[phase system](/clc/phase-system)`.
 
-These conventions anticipate a static site generator (Hugo/Zola style)
-but none is configured yet. The frontmatter and structure should be
-compatible with either.
+## Diátaxis coverage
+
+Each tool should have docs in all four quadrants:
+
+| | Tutorial | Guide | Reference | Explanation |
+|---|---|---|---|---|
+| Per tool | Getting started | How-to guides | CLI reference | What is / why |
+
+Not every quadrant needs to be filled immediately, but gaps should be
+identified and tracked.
 
 ## Type discipline
 
-One document, one Diátaxis type. This is the rule that gets broken most
-often, and it matters because mixed-type docs serve no audience well.
+One document, one Diátaxis type. The failure modes:
 
-The failure modes to watch for:
+- **Reference in tutorials.** Tree diagrams, exhaustive field listings,
+  full API surfaces. If it describes *what exists* rather than *what to
+  do next*, extract it and link to the reference.
 
-- **Reference material leaking into tutorials.** A tutorial that includes
-  a project structure tree diagram, a full config field listing, or an
-  exhaustive API surface table. If it's describing *what exists* rather
-  than *what to do next*, it's reference. Extract it.
+- **Reference in explanations.** Phase tables, flag listings. The
+  explanation discusses *why*; link to reference for *what*.
 
-- **Reference material leaking into explanations.** An explanation that
-  includes a 30-line lifecycle phase table or a complete flag listing.
-  The explanation should discuss *why* things work the way they do and
-  link to the reference for the specifics.
-
-- **How-to steps leaking into reference.** A reference doc that starts
-  walking the reader through a workflow. That's a guide. Split it.
-
-When type mixing is detected during drafting or review, flag it and
-propose a split. The extracted material becomes its own doc with its own
-frontmatter.
+- **How-to steps in reference.** Workflow narratives in a reference doc.
+  That's a guide. Split it.
 
 ## Reference doc verification
 
-**Every technical claim in a reference doc must be verified against actual
-source code, CLI `--help` output, or test fixtures.**
+Every technical claim in a reference doc must be verified against source
+code, CLI `--help` output, or test fixtures. After drafting, do a
+verification pass: grep/read the codebase for every field, flag, and
+behavior mentioned. Mark unverifiable claims with
+`<!-- unverified: [reason] -->`.
 
-This means:
-
-- Before documenting a config field, grep for it in the codebase. Confirm
-  the field name, type, default value, and behavior.
-- Before documenting a CLI flag, run `<tool> --help` or read the argument
-  parser source. Confirm the flag exists, its syntax, and its effect.
-- Before documenting an API surface, read the actual type definitions.
-  Don't rely on memory or inference.
-- After the full reference draft is complete, do a verification pass:
-  grep/read the codebase for every field, flag, and behavior mentioned.
-  Remove or correct anything that doesn't match.
-
-If something can't be verified (e.g., the code is in a private dependency
-or the behavior is only observable at runtime), mark it explicitly:
-`<!-- unverified: [reason] -->`. Don't silently guess.
-
-The default assumption should be that any technical detail written from
-memory is wrong until confirmed against source. This isn't about
-diligence — it's about the observed failure rate.
+The default assumption: any technical detail written from memory is
+wrong until confirmed against source.
 
 ## Voice and tone
 
-Write for a competent peer. The reader is a developer who knows their
-tools — don't over-explain, don't condescend, don't sell.
+Write for a competent peer. Direct, technically precise, conversational
+but not sloppy.
 
-**Register:** Direct, technically precise, conversational but not sloppy.
-Use contractions naturally (it's, don't, won't). Short sentences. If a
-paragraph runs past four sentences, it probably needs splitting or cutting.
+**Avoid:** corporate blog openings ("This guide walks you through..."),
+over-explanation, forced enthusiasm, inspirational framing, hedging
+without reason. See [references/voice-examples.md](references/voice-examples.md).
 
-**What to avoid:**
-
-- **Corporate blog structure.** No "This guide walks you through..." or
-  "In this tutorial, you'll learn how to..." or "Let's break this down."
-  Don't describe what the document will do. Just do it.
-  See [references/voice-examples.md](references/voice-examples.md) for
-  before/after pairs.
-
-- **Over-explanation.** If the audience is developers, they know what YAML
-  is, what a config file does, and how to run a CLI command. If the
-  audience was specified in Phase 1, trust that specification.
-
-- **Forced enthusiasm.** Documentation doesn't need to sell. "The powerful
-  caching layer" is just "the caching layer." Drop adjectives that
-  evaluate rather than describe.
-
-- **Inspirational framing.** No "unleash the full potential" or "take your
-  workflow to the next level." Say what the thing does. Let the reader
-  decide if it's useful.
-
-- **Hedging without reason.** Don't write "you might want to consider
-  possibly using" — write "use." Be direct unless genuine uncertainty
-  exists, in which case name the uncertainty explicitly.
-
-**What to do:**
-
-- State things plainly. Lead with the content, not meta-commentary about
-  the content.
-- Say what's true, including limitations and rough edges. If something is
-  awkward or incomplete, say so.
-- Code examples should be real and runnable, not pseudocode. If an example
-  requires setup that isn't shown, say what's missing.
-- Use passive voice for system behavior ("requests are routed to..."),
-  active voice for instructing the reader ("run `cargo build`").
+**Do:** state things plainly, say what's true including limitations,
+use real runnable code examples, lead with content not meta-commentary.
 
 ## When this skill applies
-
-This skill is relevant when the task involves writing, drafting, or
-substantially revising a documentation file. It applies to:
 
 - New docs from scratch
 - Major rewrites of existing docs
 - Splitting a mixed-type doc into proper single-type docs
+- Site-level coherence reviews across the doc set
 
-It does not apply to:
-
-- Quick edits to fix a typo or update a version number
+Does not apply to:
+- Quick edits to fix a typo or update a version
 - Inline code comments or docstrings
-- README files (unless they're being treated as proper docs)
+- README files (unless treated as proper docs)
 - PR descriptions, commit messages, or issue write-ups
 
-## Checklist (for self-verification before presenting work)
+## Checklist — individual doc
 
-- [ ] Frontmatter includes title, description, and type
-- [ ] File is in `docs/`, named with lowercase hyphens
+- [ ] Metadata includes title, description, and type
+- [ ] File is in the correct crate's `docs/`, named with lowercase hyphens
 - [ ] Document serves exactly one Diátaxis type
-- [ ] No section belongs to a different type without being flagged
 - [ ] Every technical claim in reference docs is verified against source
-- [ ] No corporate blog openings or forced structure
-- [ ] Introduction was written last (or at minimum, revised last)
-- [ ] User directed the structure and curated section content
+- [ ] Concepts mentioned from other docs are linked on first use
+- [ ] Opening paragraph earns the reader's attention
+- [ ] No filler paragraphs or generated-sounding prose
+- [ ] Fresh-eyes sub-agent review passed clean
+
+## Checklist — site level
+
+- [ ] Every tool has docs in all four Diátaxis quadrants (or gaps tracked)
+- [ ] Cross-links work and land on the right pages
+- [ ] Voice is consistent across docs
+- [ ] A new reader can navigate from index to any topic without dead ends
+- [ ] Same concepts aren't explained differently in different docs
+- [ ] Site-level fresh-eyes review passed clean
