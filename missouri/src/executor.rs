@@ -237,124 +237,147 @@ impl Backend for NixBackend {
     }
 }
 
-/// Microsandbox backend: transitions run inside microVM sandboxes.
+/// Docker backend: transitions run inside Docker containers with hermetic
+/// network isolation (`network_mode: "none"`) and volume mounting via bollard.
 ///
-/// Commands execute inside a microsandbox VM via the SDK, not as local
-/// processes. The `execute` method overrides the default to run commands
-/// inside the VM. The `build_*_command` methods are unused.
+/// Each transition gets a fresh container that is removed after execution.
+/// The `execute` method overrides the default to run commands inside the
+/// container. The `build_*_command` methods are unused.
 #[derive(Debug)]
-pub struct MicrosandboxBackend;
+pub struct DockerBackend;
 
-impl MicrosandboxBackend {
-    /// Run a command inside a microsandbox VM and capture output.
-    fn run_in_sandbox(
+/// Default Docker image for missouri test containers.
+const DOCKER_IMAGE: &str = "debian:bookworm-slim";
+
+impl DockerBackend {
+    /// Run a command inside a Docker container with network isolation and
+    /// volume mounting, then capture stdout/stderr/exit_code.
+    fn run_in_container(
         &self,
         command: &str,
+        work_dir: &Utf8Path,
         env: &BTreeMap<String, String>,
     ) -> Result<CommandOutput, String> {
-        use microsandbox::{BaseSandbox, PythonSandbox, SandboxOptions, StartOptions};
+        use bollard::container::{
+            Config, CreateContainerOptions, RemoveContainerOptions, WaitContainerOptions,
+        };
+        use bollard::exec::{CreateExecOptions, StartExecResults};
+        use bollard::models::HostConfig;
+        use bollard::Docker;
+        use futures_util::StreamExt;
 
         let rt = tokio::runtime::Runtime::new()
             .map_err(|e| format!("failed to create tokio runtime: {e}"))?;
 
         rt.block_on(async {
-            let options = SandboxOptions::builder()
-                .server_url("http://127.0.0.1:5555")
-                .build();
-            let mut sandbox = PythonSandbox::create_with_options(options)
-                .await
-                .map_err(|e| format!("failed to create sandbox: {e}"))?;
-            sandbox
-                .start(Some(StartOptions::default()))
-                .await
-                .map_err(|e| format!("failed to start sandbox: {e}"))?;
+            let docker = Docker::connect_with_local_defaults()
+                .map_err(|e| format!("failed to connect to Docker: {e}"))?;
 
-            // Wait for portal sidecar
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            // Build env vars as "KEY=VALUE" strings
+            let env_vec: Vec<String> = env.iter().map(|(k, v)| format!("{k}={v}")).collect();
 
-            // Build env string for the shell command
-            let env_prefix: String = env
-                .iter()
-                .map(|(k, v)| format!("export {k}={v};"))
-                .collect::<Vec<_>>()
-                .join(" ");
-
-            let full_command = if env_prefix.is_empty() {
-                command.to_string()
-            } else {
-                format!("{env_prefix} {command}")
+            // Create container with network disabled and work_dir mounted
+            let host_config = HostConfig {
+                network_mode: Some("none".to_string()),
+                binds: Some(vec![format!("{}:/work", work_dir)]),
+                ..Default::default()
             };
 
-            // Execute via Python subprocess (command.run has SDK version mismatch issues)
-            let escaped = full_command.replace('\\', "\\\\").replace('"', "\\\"");
-            let code = format!(
-                "import subprocess; r = subprocess.run(['sh', '-c', \"{escaped}\"], capture_output=True, text=True, timeout=300); print('__STDOUT__'); print(r.stdout, end=''); print('__STDERR__'); print(r.stderr, end=''); print('__EXIT__'); print(r.returncode)"
-            );
+            let config = Config {
+                image: Some(DOCKER_IMAGE),
+                cmd: Some(vec!["sleep", "300"]), // keep alive while we exec
+                working_dir: Some("/work"),
+                env: Some(env_vec.iter().map(|s| s.as_str()).collect()),
+                host_config: Some(host_config),
+                ..Default::default()
+            };
 
-            let exec = sandbox
-                .run(&code)
+            let container = docker
+                .create_container(
+                    Some(CreateContainerOptions {
+                        name: "",
+                        platform: None,
+                    }),
+                    config,
+                )
                 .await
-                .map_err(|e| format!("failed to execute in sandbox: {e}"))?;
-            let raw = exec
-                .output()
+                .map_err(|e| format!("failed to create container: {e}"))?;
+
+            let container_id = container.id;
+
+            // Start container
+            docker
+                .start_container::<String>(&container_id, None)
                 .await
-                .map_err(|e| format!("failed to get output: {e}"))?;
+                .map_err(|e| {
+                    format!("failed to start container: {e}")
+                })?;
 
-            sandbox.stop().await.ok(); // best-effort cleanup
+            // Exec the command inside the container
+            let exec = docker
+                .create_exec(
+                    &container_id,
+                    CreateExecOptions {
+                        attach_stdout: Some(true),
+                        attach_stderr: Some(true),
+                        cmd: Some(vec!["sh", "-c", command]),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .map_err(|e| format!("failed to create exec: {e}"))?;
 
-            // Parse the structured output. Use split() instead of lines() to
-            // preserve exact whitespace including trailing newlines.
             let mut stdout = String::new();
             let mut stderr = String::new();
-            let mut exit_code = -1i32;
-            let mut section = "";
-            let mut in_section = false;
 
-            for line in raw.split('\n') {
-                match line {
-                    "__STDOUT__" => {
-                        section = "stdout";
-                        in_section = true;
-                    }
-                    "__STDERR__" => {
-                        section = "stderr";
-                        in_section = true;
-                    }
-                    "__EXIT__" => {
-                        section = "exit";
-                        in_section = true;
-                    }
-                    _ if in_section => match section {
-                        "stdout" => {
-                            if !stdout.is_empty() {
-                                stdout.push('\n');
-                            }
-                            stdout.push_str(line);
+            if let StartExecResults::Attached { mut output, .. } = docker
+                .start_exec(&exec.id, None)
+                .await
+                .map_err(|e| format!("failed to start exec: {e}"))?
+            {
+                while let Some(msg) = output.next().await {
+                    match msg {
+                        Ok(bollard::container::LogOutput::StdOut { message }) => {
+                            stdout.push_str(&String::from_utf8_lossy(&message));
                         }
-                        "stderr" => {
-                            if !stderr.is_empty() {
-                                stderr.push('\n');
-                            }
-                            stderr.push_str(line);
+                        Ok(bollard::container::LogOutput::StdErr { message }) => {
+                            stderr.push_str(&String::from_utf8_lossy(&message));
                         }
-                        "exit" => {
-                            exit_code = line.trim().parse().unwrap_or(-1);
+                        Err(e) => {
+                            stderr.push_str(&format!("exec stream error: {e}"));
                         }
                         _ => {}
-                    },
-                    _ => {}
+                    }
                 }
             }
 
-            // The Python print() adds a trailing newline after each section marker,
-            // which gets consumed as a delimiter during parsing. Restore the trailing
-            // newline that the subprocess stdout/stderr originally had.
-            if !stdout.is_empty() && !stdout.ends_with('\n') {
-                stdout.push('\n');
-            }
-            if !stderr.is_empty() && !stderr.ends_with('\n') {
-                stderr.push('\n');
-            }
+            // Get exit code from the exec
+            let exec_inspect = docker
+                .inspect_exec(&exec.id)
+                .await
+                .map_err(|e| format!("failed to inspect exec: {e}"))?;
+
+            let exit_code = exec_inspect
+                .exit_code
+                .map(|c| c as i32)
+                .unwrap_or(-1);
+
+            // Stop and remove container
+            let _ = docker
+                .stop_container(&container_id, None)
+                .await;
+            let _ = docker
+                .remove_container(
+                    &container_id,
+                    Some(RemoveContainerOptions {
+                        force: true,
+                        ..Default::default()
+                    }),
+                )
+                .await;
+
+            // Suppress unused import warnings for wait options
+            let _ = WaitContainerOptions::<String>::default;
 
             Ok(CommandOutput {
                 stdout,
@@ -365,7 +388,7 @@ impl MicrosandboxBackend {
     }
 }
 
-impl Backend for MicrosandboxBackend {
+impl Backend for DockerBackend {
     fn build_shell_command(
         &self,
         _command: &str,
@@ -373,7 +396,7 @@ impl Backend for MicrosandboxBackend {
         _env: &BTreeMap<String, String>,
         _path_env: &str,
     ) -> Command {
-        unreachable!("MicrosandboxBackend uses execute() instead of build_shell_command()")
+        unreachable!("DockerBackend uses execute() instead of build_shell_command()")
     }
 
     fn build_direct_command(
@@ -383,22 +406,22 @@ impl Backend for MicrosandboxBackend {
         _env: &BTreeMap<String, String>,
         _path_env: &str,
     ) -> Command {
-        unreachable!("MicrosandboxBackend uses execute() instead of build_direct_command()")
+        unreachable!("DockerBackend uses execute() instead of build_direct_command()")
     }
 
     fn execute(
         &self,
         command: &str,
         _shell: bool,
-        _work_dir: &Utf8Path,
+        work_dir: &Utf8Path,
         env: &BTreeMap<String, String>,
         _path_env: &str,
     ) -> Result<CommandOutput, String> {
-        self.run_in_sandbox(command, env)
+        self.run_in_container(command, work_dir, env)
     }
 
     fn is_microsandbox(&self) -> bool {
-        true
+        true // reuses the same execute_transition path
     }
 }
 
@@ -407,7 +430,7 @@ impl Backend for MicrosandboxBackend {
 /// Reads `graph.sandbox_config` to determine the backend:
 /// - `SandboxConfig::None` → `BareBackend`
 /// - `SandboxConfig::Packages(pkgs)` → `NixBackend` (or `BareBackend` if preinstalled)
-/// - `SandboxConfig::Microsandbox` → `MicrosandboxBackend`
+/// - `SandboxConfig::Microsandbox` → `DockerBackend`
 ///
 /// When `MISSOURI_SANDBOX=preinstalled` is set, packages config resolves to
 /// `BareBackend` — tools are assumed to already be on PATH (e.g., inside a
@@ -434,7 +457,7 @@ pub fn detect_sandbox(graph: &StateGraph) -> error::Result<Box<dyn Backend>> {
                 .map_err(|msg| error::Error::SandboxWarm { message: msg })?;
             Ok(Box::new(backend))
         }
-        SandboxConfig::Microsandbox => Ok(Box::new(MicrosandboxBackend)),
+        SandboxConfig::Microsandbox => Ok(Box::new(DockerBackend)),
     }
 }
 
@@ -2112,8 +2135,8 @@ transitions:
         let backend = detect_sandbox(&graph).unwrap();
         let debug = format!("{backend:?}");
         assert!(
-            debug.starts_with("MicrosandboxBackend"),
-            "expected MicrosandboxBackend, got {debug}"
+            debug.starts_with("DockerBackend"),
+            "expected DockerBackend, got {debug}"
         );
     }
 
@@ -2164,7 +2187,7 @@ transitions:
             return;
         }
 
-        let backend = MicrosandboxBackend;
+        let backend = DockerBackend;
         let env = BTreeMap::new();
         let work_dir = Utf8Path::new("/tmp");
         let result = backend
@@ -2181,7 +2204,7 @@ transitions:
             return;
         }
 
-        let backend = MicrosandboxBackend;
+        let backend = DockerBackend;
         let env = BTreeMap::new();
         let work_dir = Utf8Path::new("/tmp");
         let result = backend
@@ -2197,7 +2220,7 @@ transitions:
             return;
         }
 
-        let backend = MicrosandboxBackend;
+        let backend = DockerBackend;
         let env = BTreeMap::new();
         let work_dir = Utf8Path::new("/tmp");
         let result = backend
@@ -2214,7 +2237,7 @@ transitions:
             return;
         }
 
-        let backend = MicrosandboxBackend;
+        let backend = DockerBackend;
         let mut env = BTreeMap::new();
         env.insert("MISSOURI_TEST_VAR".into(), "sandbox-value".into());
         let work_dir = Utf8Path::new("/tmp");
@@ -2231,7 +2254,7 @@ transitions:
             return;
         }
 
-        let backend = MicrosandboxBackend;
+        let backend = DockerBackend;
         let env = BTreeMap::new();
         let work_dir = Utf8Path::new("/tmp");
         let result = backend

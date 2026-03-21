@@ -1,0 +1,5 @@
+transitions:
+  - name: "file written in mounted work_dir visible on host"
+    command: "echo from-container > /work/container-output.txt && cat /work/container-output.txt"
+    target: ../file-created
+    stdout: "from-container\n"

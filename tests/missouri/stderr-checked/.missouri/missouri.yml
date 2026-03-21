@@ -1,1 +1,5 @@
-{}
+transitions:
+  - name: "network blocked by docker network:none"
+    command: "bash -c 'echo test > /dev/tcp/1.1.1.1/53 2>/dev/null && echo connected || echo blocked'"
+    target: ../network-blocked
+    stdout: "blocked\n"
