@@ -1,0 +1,173 @@
+@import 'tailwindcss';
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,700;0,9..144,900;1,9..144,400&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=DM+Mono:wght@300;400;500&display=swap');
+@source "./src/**/*.rs";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-sans: 'DM Sans', system-ui, sans-serif;
+  --font-mono: 'DM Mono', ui-monospace, monospace;
+
+  /* Light mode surfaces */
+  --color-surface: #faf9f6;
+  --color-surface-card: #ffffff;
+  --color-surface-raised: #f0eeea;
+  --color-border: #e0ddd6;
+  --color-border-subtle: #ece9e3;
+
+  /* Light mode text */
+  --color-text: #1a1a1a;
+  --color-text-secondary: #5c5c5c;
+  --color-text-muted: #8a8780;
+
+  /* Accent */
+  --color-accent: #1a6b5a;
+  --color-accent-hover: #14564a;
+
+  /* Dark mode surfaces */
+  --color-dark-bg: #161618;
+  --color-dark-card: #1c1c1f;
+  --color-dark-raised: #232327;
+  --color-dark-border: #2c2c31;
+  --color-dark-border-subtle: #242428;
+}
+
+@layer base {
+  body {
+    @apply bg-surface text-text font-sans antialiased;
+    font-feature-settings: "kern" 1, "liga" 1;
+  }
+
+  a {
+    @apply text-accent no-underline;
+  }
+
+  a:hover {
+    @apply text-accent-hover underline;
+  }
+
+  a:focus-visible, button:focus-visible {
+    @apply outline-2 outline-accent outline-offset-2;
+  }
+
+  .dark body {
+    background-color: var(--color-dark-bg);
+    color: #e0e0e0;
+  }
+
+  .dark a {
+    color: #60a5fa;
+  }
+
+  .dark a:hover {
+    color: #93c5fd;
+  }
+
+  ::selection {
+    background-color: #1a6b5a22;
+  }
+
+  .dark ::selection {
+    background-color: #60a5fa22;
+  }
+
+  /* Markdown content styling */
+  .doc-content h1 {
+    @apply font-display text-3xl font-700 mb-6 mt-0;
+  }
+
+  .doc-content h2 {
+    @apply font-display text-2xl font-500 mb-4 mt-10 pb-2 border-b border-border;
+  }
+
+  .doc-content h3 {
+    @apply font-display text-xl font-500 mb-3 mt-8;
+  }
+
+  .doc-content h4 {
+    @apply font-sans text-lg font-600 mb-2 mt-6;
+  }
+
+  .doc-content p {
+    @apply mb-4 leading-7;
+  }
+
+  .doc-content ul, .doc-content ol {
+    @apply mb-4 pl-6;
+  }
+
+  .doc-content li {
+    @apply mb-1 leading-7;
+  }
+
+  .doc-content ul li {
+    list-style-type: disc;
+  }
+
+  .doc-content ol li {
+    list-style-type: decimal;
+  }
+
+  .doc-content code {
+    @apply font-mono text-[0.875em] bg-surface-raised px-1.5 py-0.5 rounded;
+  }
+
+  .doc-content pre {
+    @apply mb-4 p-4 bg-surface-raised rounded-lg overflow-x-auto;
+  }
+
+  .doc-content pre code {
+    @apply bg-transparent p-0 text-sm;
+  }
+
+  .doc-content blockquote {
+    @apply mb-4 pl-4 border-l-4 border-border text-text-secondary italic;
+  }
+
+  .doc-content table {
+    @apply mb-4 w-full border-collapse;
+  }
+
+  .doc-content th {
+    @apply bg-surface-raised px-3 py-2 text-left font-600 border border-border text-sm;
+  }
+
+  .doc-content td {
+    @apply px-3 py-2 border border-border text-sm;
+  }
+
+  .doc-content a {
+    @apply text-accent underline;
+  }
+
+  .doc-content hr {
+    @apply my-8 border-border;
+  }
+
+  /* Dark mode overrides for doc content */
+  .dark .doc-content code {
+    background-color: var(--color-dark-raised);
+  }
+
+  .dark .doc-content pre {
+    background-color: var(--color-dark-raised);
+  }
+
+  .dark .doc-content th {
+    background-color: var(--color-dark-raised);
+    border-color: var(--color-dark-border);
+  }
+
+  .dark .doc-content td {
+    border-color: var(--color-dark-border);
+  }
+
+  .dark .doc-content h2 {
+    border-color: var(--color-dark-border);
+  }
+
+  .dark .doc-content blockquote {
+    border-color: var(--color-dark-border);
+  }
+}

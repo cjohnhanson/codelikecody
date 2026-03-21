@@ -1,0 +1,10 @@
+[build]
+target = "index.html"
+dist = "dist"
+
+[tools]
+tailwindcss = "4.1.10"
+
+[serve]
+address = "127.0.0.1"
+port = 8081
