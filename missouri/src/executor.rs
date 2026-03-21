@@ -348,35 +348,46 @@ impl DockerBackend {
                 .await
                 .map_err(|e| format!("failed to start container: {e}"))?;
 
+
             // If replay mode, set up transparent interception inside the container:
             // 1. Write /etc/hosts entries so hostnames resolve to 127.0.0.1
             // 2. iptables redirect outbound 80/443 → mitmdump (excluding mitmuser)
-            // 3. Start mitmdump in transparent replay mode
+            // 3. Start mitmdump in transparent replay mode (detached exec)
             if replay_flow.is_some() {
-                let hosts_entries: String = replay_hosts
+                // Step 1+2: /etc/hosts and iptables (returns immediately)
+                let mut setup_parts: Vec<String> = replay_hosts
                     .iter()
                     .map(|h| format!("echo '127.0.0.1 {h}' >> /etc/hosts"))
-                    .collect::<Vec<_>>()
-                    .join(" && ");
-
-                let setup_script = format!(
-                    "{hosts_entries}{hosts_sep}\
-                    MITMUSER_UID=$(id -u mitmuser) && \
+                    .collect();
+                setup_parts.push(
+                    "MITMUSER_UID=$(id -u mitmuser) && \
                     iptables -t nat -A OUTPUT -p tcp --dport 80 -m owner ! --uid-owner $MITMUSER_UID -j REDIRECT --to-port 18080 && \
-                    iptables -t nat -A OUTPUT -p tcp --dport 443 -m owner ! --uid-owner $MITMUSER_UID -j REDIRECT --to-port 18080 && \
-                    su -s /bin/bash mitmuser -c 'HOME=/home/mitmuser nohup mitmdump --mode transparent -p 18080 \
-                        --server-replay /replay.flow \
-                        --set connection_strategy=lazy \
-                        --set upstream_cert=false \
-                        --set server_replay_reuse=true \
-                        --set server_replay_extra=kill \
-                        --set confdir=/home/mitmuser/.mitmproxy \
-                        -q > /dev/null 2>&1 &' && \
-                    sleep 2",
-                    hosts_sep = if hosts_entries.is_empty() { "" } else { " && " },
+                    iptables -t nat -A OUTPUT -p tcp --dport 443 -m owner ! --uid-owner $MITMUSER_UID -j REDIRECT --to-port 18080"
+                        .to_string(),
                 );
+                self.exec_in_container(&docker, &container_id, &setup_parts.join(" && "))
+                    .await?;
 
-                self.exec_in_container(&docker, &container_id, &setup_script).await?;
+                // Step 3: start mitmdump as a detached exec (doesn't block)
+                self.exec_detached(
+                    &docker,
+                    &container_id,
+                    "mitmuser",
+                    &[
+                        "mitmdump", "--mode", "transparent", "-p", "18080",
+                        "--server-replay", "/replay.flow",
+                        "--set", "connection_strategy=lazy",
+                        "--set", "upstream_cert=false",
+                        "--set", "server_replay_reuse=true",
+                        "--set", "server_replay_extra=kill",
+                        "--set", "confdir=/home/mitmuser/.mitmproxy",
+                        "-q",
+                    ],
+                )
+                .await?;
+
+                // Wait for mitmdump to bind port
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             }
 
             // Run the actual command
@@ -445,6 +456,38 @@ impl DockerBackend {
                 inspect.exit_code
             ));
         }
+        Ok(())
+    }
+
+    /// Start a long-running process inside a container without waiting for it.
+    /// Used for background services like mitmdump.
+    /// Start a long-running process inside a container without waiting for it.
+    async fn exec_detached(
+        &self,
+        docker: &bollard::Docker,
+        container_id: &str,
+        user: &str,
+        cmd: &[&str],
+    ) -> Result<(), String> {
+        use bollard::exec::{CreateExecOptions, StartExecOptions};
+
+        let exec = docker
+            .create_exec(
+                container_id,
+                CreateExecOptions {
+                    cmd: Some(cmd.to_vec()),
+                    user: Some(user),
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(|e| format!("failed to create detached exec: {e}"))?;
+
+        docker
+            .start_exec(&exec.id, Some(StartExecOptions { detach: true, ..Default::default() }))
+            .await
+            .map_err(|e| format!("failed to start detached exec: {e}"))?;
+
         Ok(())
     }
 
@@ -1158,6 +1201,7 @@ pub fn run_all_paths(
     opts: &RunOptions,
     on_progress: Option<&(dyn Fn(ProgressEvent) + Sync)>,
 ) -> Vec<PathResult> {
+
     let total = paths.len();
 
     let results: Vec<PathResult> = paths
@@ -1333,6 +1377,7 @@ fn run_path_transitions(
     let mut current_dir: Option<(TempDir, Utf8PathBuf)> = None;
 
     for (step_idx, &transition_idx) in path.steps.iter().enumerate() {
+
         if crate::signal::is_interrupted() {
             passed = false;
             break;
@@ -1762,8 +1807,10 @@ fn execute_transition(
     let _mitmdump_handle: Option<MitmdumpHandle>;
     let mut cmd_env: std::borrow::Cow<'_, BTreeMap<String, String>>;
 
-    match &transition.network {
-        Some(crate::config::NetworkConfig::Replay { replay, .. }) => {
+    // Host-side network interception: start mitmdump on the host for non-Docker backends.
+    // Docker backend handles network replay inside the container instead.
+    match (&transition.network, sandbox.is_docker()) {
+        (Some(crate::config::NetworkConfig::Replay { replay, .. }), false) => {
             // Resolve flow file path relative to source state's config dir
             let flow_path = source_state.path.join(&graph.config_dir).join(replay);
             match start_mitmdump_replay(flow_path.as_ref(), &path_env) {
@@ -1790,7 +1837,7 @@ fn execute_transition(
                 }
             }
         }
-        Some(crate::config::NetworkConfig::Record { .. }) => {
+        (Some(crate::config::NetworkConfig::Record { .. }), false) => {
             // Record mode: start mitmdump writing to a flow file in the source state's
             // .missouri/recordings/ directory, named after the transition.
             let recordings_dir = source_state
@@ -1840,7 +1887,8 @@ fn execute_transition(
                 }
             }
         }
-        None => {
+        _ => {
+            // No host-side network config (either no network config, or Docker handles it)
             _mitmdump_handle = None;
             cmd_env = std::borrow::Cow::Borrowed(source_env);
         }
