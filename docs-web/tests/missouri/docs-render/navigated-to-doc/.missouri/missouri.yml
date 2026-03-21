@@ -1,0 +1,6 @@
+assertions:
+  - name: "doc page renders markdown content"
+    command: "browser-test doc-page"
+    services:
+      - command: "serve-docs"
+        port_pattern: "port (\\d+)"

@@ -1,0 +1,11 @@
+transitions:
+  - name: "landing page renders"
+    command: "browser-test landing"
+    target: "../navigated-to-doc"
+    services:
+      - command: "serve-docs"
+        port_pattern: "port (\\d+)"
+    comparators:
+      files:
+        - path: "browser/"
+          ignore: true

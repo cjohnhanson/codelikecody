@@ -1,0 +1,18 @@
+#!/bin/sh
+# Serve docs-web dist/ as static files.
+# Derives dist dir from the workspace binary location on PATH.
+CLCBIN=$(command -v clc)
+if [ -z "$CLCBIN" ]; then
+    echo "clc not found on PATH" >&2
+    exit 1
+fi
+# cargo build puts binary at <project>/target/debug/clc
+PROJECT=$(dirname "$(dirname "$(dirname "$CLCBIN")")")
+DIST="$PROJECT/docs-web/dist"
+if [ ! -d "$DIST" ]; then
+    echo "dist not found at $DIST — run 'trunk build' in docs-web/ first" >&2
+    exit 1
+fi
+# Use Python's built-in HTTP server for static files.
+# python http.server prints "Serving HTTP on :: port XXXXX" to stderr.
+exec python3 -m http.server 0 --directory "$DIST"
