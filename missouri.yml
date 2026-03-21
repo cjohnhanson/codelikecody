@@ -3,3 +3,4 @@ members:
   - clc/tests/missouri
   - tisket/tests/missouri
   - missouri/tests/missouri
+  - zettel/tests/missouri
