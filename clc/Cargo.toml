@@ -33,6 +33,7 @@ serde_yml = "0.0.12"
 toml = "0.8"
 missouri = { path = "../missouri", default-features = false }
 tisket = { path = "../tisket", default-features = false }
+zettel = { path = "../zettel", default-features = false }
 thiserror = "2"
 nix = { version = "0.31.2", features = ["signal", "fs"] }
 

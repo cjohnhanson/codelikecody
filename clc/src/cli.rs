@@ -135,6 +135,11 @@ pub enum Command {
         #[command(subcommand)]
         command: ::missouri::cli::Command,
     },
+    /// Run zettel commands.
+    Zettel {
+        #[command(subcommand)]
+        command: ::zettel::cli::Command,
+    },
     /// Manage worker permissions (request, grant, list).
     Permissions {
         #[command(subcommand)]

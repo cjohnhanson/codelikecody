@@ -15,6 +15,7 @@ use crate::guard;
 use crate::missouri;
 use crate::phase;
 use crate::tisket;
+use crate::zettel;
 
 use clc_sdk::ClcTool;
 
@@ -247,6 +248,21 @@ fn assemble_prime(cwd: &Path, git: Option<&git::GitState>, phase: Option<phase::
         }
     }
 
+    // --- zettel section ---
+    match zettel::detect(cwd) {
+        Ok(zettel_state) if zettel_state.has_repo => {
+            let section = zettel_state.prime(&ctx);
+            if !section.is_empty() {
+                out.push_str(&section);
+                out.push('\n');
+            }
+        }
+        Ok(_) => {} // not initialized — omit silently
+        Err(e) => {
+            let _ = write!(out, "## Zettel\n\nzettel error: {e}\n\n");
+        }
+    }
+
     out
 }
 
@@ -279,6 +295,14 @@ fn assemble_reinforcement(
     if let Ok(missouri_state) = missouri::detect(cwd) {
         let line = missouri_state.status_basic();
         if !line.is_empty() {
+            out.push_str(&line);
+            out.push('\n');
+        }
+    }
+
+    if let Ok(zettel_state) = zettel::detect(cwd) {
+        if zettel_state.has_repo {
+            let line = zettel_state.status_basic();
             out.push_str(&line);
             out.push('\n');
         }
