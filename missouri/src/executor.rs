@@ -67,9 +67,9 @@ pub trait Backend: std::fmt::Debug + Send + Sync {
         })
     }
 
-    /// Whether this backend executes commands inside a microsandbox VM.
+    /// Whether this backend executes commands inside a docker VM.
     /// When true, execute_transition uses execute() instead of build_*_command().
-    fn is_microsandbox(&self) -> bool {
+    fn is_docker(&self) -> bool {
         false
     }
 
@@ -244,10 +244,12 @@ impl Backend for NixBackend {
 /// The `execute` method overrides the default to run commands inside the
 /// container. The `build_*_command` methods are unused.
 #[derive(Debug)]
-pub struct DockerBackend;
+pub struct DockerBackend {
+    image: String,
+}
 
 /// Default Docker image for missouri test containers.
-const DOCKER_IMAGE: &str = "debian:bookworm-slim";
+const DEFAULT_DOCKER_IMAGE: &str = "debian:bookworm-slim";
 
 impl DockerBackend {
     /// Run a command inside a Docker container with network isolation and
@@ -284,7 +286,7 @@ impl DockerBackend {
             };
 
             let config = Config {
-                image: Some(DOCKER_IMAGE),
+                image: Some(self.image.as_str()),
                 cmd: Some(vec!["sleep", "300"]), // keep alive while we exec
                 working_dir: Some("/work"),
                 env: Some(env_vec.iter().map(|s| s.as_str()).collect()),
@@ -420,7 +422,7 @@ impl Backend for DockerBackend {
         self.run_in_container(command, work_dir, env)
     }
 
-    fn is_microsandbox(&self) -> bool {
+    fn is_docker(&self) -> bool {
         true // reuses the same execute_transition path
     }
 }
@@ -430,7 +432,7 @@ impl Backend for DockerBackend {
 /// Reads `graph.sandbox_config` to determine the backend:
 /// - `SandboxConfig::None` → `BareBackend`
 /// - `SandboxConfig::Packages(pkgs)` → `NixBackend` (or `BareBackend` if preinstalled)
-/// - `SandboxConfig::Microsandbox` → `DockerBackend`
+/// - `SandboxConfig::Docker` → `DockerBackend`
 ///
 /// When `MISSOURI_SANDBOX=preinstalled` is set, packages config resolves to
 /// `BareBackend` — tools are assumed to already be on PATH (e.g., inside a
@@ -457,7 +459,9 @@ pub fn detect_sandbox(graph: &StateGraph) -> error::Result<Box<dyn Backend>> {
                 .map_err(|msg| error::Error::SandboxWarm { message: msg })?;
             Ok(Box::new(backend))
         }
-        SandboxConfig::Microsandbox => Ok(Box::new(DockerBackend)),
+        SandboxConfig::Docker { image } => Ok(Box::new(DockerBackend {
+            image: image.as_deref().unwrap_or(DEFAULT_DOCKER_IMAGE).to_string(),
+        })),
     }
 }
 
@@ -1758,7 +1762,7 @@ fn execute_transition(
 
     // Run the command. Microsandbox backend uses execute() which runs inside
     // a VM. Other backends build a local Command and run it with signal tracking.
-    let (exit_code, stdout, stderr) = if sandbox.is_microsandbox() {
+    let (exit_code, stdout, stderr) = if sandbox.is_docker() {
         match sandbox.execute(
             &transition.command,
             transition.shell,
@@ -1774,7 +1778,7 @@ fn execute_transition(
                     target_name,
                     exit_code: None,
                     stdout: String::new(),
-                    stderr: format!("microsandbox execution failed: {e}"),
+                    stderr: format!("docker execution failed: {e}"),
                     comparison: None,
                     output_diffs: Vec::new(),
                     assertion_results: Vec::new(),
@@ -2102,7 +2106,7 @@ transitions:
     }
 
     #[test]
-    fn detect_sandbox_microsandbox_from_config() {
+    fn detect_sandbox_docker_from_config() {
         let tmp = tempfile::tempdir().unwrap();
         let root = Utf8Path::from_path(tmp.path()).unwrap();
 
@@ -2110,7 +2114,7 @@ transitions:
         fs::create_dir_all(&root_missouri).unwrap();
         fs::write(
             root_missouri.join("missouri.yml"),
-            "microsandbox: true\n",
+            "docker: true\n",
         )
         .unwrap();
 
@@ -2127,7 +2131,7 @@ transitions:
 
         let graph = StateGraph::discover(root, ".missouri").unwrap();
         assert!(
-            matches!(graph.sandbox_config, SandboxConfig::Microsandbox),
+            matches!(graph.sandbox_config, SandboxConfig::Docker { .. }),
             "expected Microsandbox, got {:?}",
             graph.sandbox_config
         );
@@ -2141,7 +2145,7 @@ transitions:
     }
 
     #[test]
-    fn detect_sandbox_microsandbox_overrides_packages() {
+    fn detect_sandbox_docker_overrides_packages() {
         let tmp = tempfile::tempdir().unwrap();
         let root = Utf8Path::from_path(tmp.path()).unwrap();
 
@@ -2149,7 +2153,7 @@ transitions:
         fs::create_dir_all(&root_missouri).unwrap();
         fs::write(
             root_missouri.join("missouri.yml"),
-            "microsandbox: true\npackages:\n  - python3\n",
+            "docker: true\npackages:\n  - python3\n",
         )
         .unwrap();
 
@@ -2166,28 +2170,24 @@ transitions:
 
         let graph = StateGraph::discover(root, ".missouri").unwrap();
         assert!(
-            matches!(graph.sandbox_config, SandboxConfig::Microsandbox),
-            "microsandbox: true should take precedence over packages"
+            matches!(graph.sandbox_config, SandboxConfig::Docker { .. }),
+            "docker: true should take precedence over packages"
         );
     }
 
-    /// Check if the microsandbox server is reachable at the default address.
-    fn msb_server_available() -> bool {
-        std::net::TcpStream::connect_timeout(
-            &"127.0.0.1:5555".parse().unwrap(),
-            std::time::Duration::from_millis(100),
-        )
-        .is_ok()
+    /// Check if Docker is available.
+    fn docker_available() -> bool {
+        bollard::Docker::connect_with_local_defaults().is_ok()
     }
 
     #[test]
-    fn microsandbox_backend_executes_command_in_vm() {
-        if !msb_server_available() {
-            eprintln!("skipping microsandbox_backend_executes_command_in_vm: msb server not running");
+    fn docker_backend_executes_command_in_vm() {
+        if !docker_available() {
+            eprintln!("skipping docker_backend_executes_command_in_vm: docker not available");
             return;
         }
 
-        let backend = DockerBackend;
+        let backend = DockerBackend { image: DEFAULT_DOCKER_IMAGE.to_string() };
         let env = BTreeMap::new();
         let work_dir = Utf8Path::new("/tmp");
         let result = backend
@@ -2198,13 +2198,13 @@ transitions:
     }
 
     #[test]
-    fn microsandbox_backend_captures_exit_code() {
-        if !msb_server_available() {
-            eprintln!("skipping microsandbox_backend_captures_exit_code: msb server not running");
+    fn docker_backend_captures_exit_code() {
+        if !docker_available() {
+            eprintln!("skipping docker_backend_captures_exit_code: docker not available");
             return;
         }
 
-        let backend = DockerBackend;
+        let backend = DockerBackend { image: DEFAULT_DOCKER_IMAGE.to_string() };
         let env = BTreeMap::new();
         let work_dir = Utf8Path::new("/tmp");
         let result = backend
@@ -2214,13 +2214,13 @@ transitions:
     }
 
     #[test]
-    fn microsandbox_backend_captures_stderr() {
-        if !msb_server_available() {
-            eprintln!("skipping microsandbox_backend_captures_stderr: msb server not running");
+    fn docker_backend_captures_stderr() {
+        if !docker_available() {
+            eprintln!("skipping docker_backend_captures_stderr: docker not available");
             return;
         }
 
-        let backend = DockerBackend;
+        let backend = DockerBackend { image: DEFAULT_DOCKER_IMAGE.to_string() };
         let env = BTreeMap::new();
         let work_dir = Utf8Path::new("/tmp");
         let result = backend
@@ -2231,13 +2231,13 @@ transitions:
     }
 
     #[test]
-    fn microsandbox_backend_injects_env() {
-        if !msb_server_available() {
-            eprintln!("skipping microsandbox_backend_injects_env: msb server not running");
+    fn docker_backend_injects_env() {
+        if !docker_available() {
+            eprintln!("skipping docker_backend_injects_env: docker not available");
             return;
         }
 
-        let backend = DockerBackend;
+        let backend = DockerBackend { image: DEFAULT_DOCKER_IMAGE.to_string() };
         let mut env = BTreeMap::new();
         env.insert("MISSOURI_TEST_VAR".into(), "sandbox-value".into());
         let work_dir = Utf8Path::new("/tmp");
@@ -2248,13 +2248,13 @@ transitions:
     }
 
     #[test]
-    fn microsandbox_backend_runs_in_linux_vm() {
-        if !msb_server_available() {
-            eprintln!("skipping microsandbox_backend_runs_in_linux_vm: msb server not running");
+    fn docker_backend_runs_in_linux_vm() {
+        if !docker_available() {
+            eprintln!("skipping docker_backend_runs_in_linux_vm: docker not available");
             return;
         }
 
-        let backend = DockerBackend;
+        let backend = DockerBackend { image: DEFAULT_DOCKER_IMAGE.to_string() };
         let env = BTreeMap::new();
         let work_dir = Utf8Path::new("/tmp");
         let result = backend

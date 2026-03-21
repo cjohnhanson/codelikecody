@@ -204,9 +204,13 @@ pub struct ProjectConfig {
     #[serde(default)]
     pub members: Vec<Utf8PathBuf>,
 
-    /// Run transitions inside microsandbox microVMs for hermetic isolation.
+    /// Run transitions inside Docker containers for hermetic isolation.
     #[serde(default)]
-    pub microsandbox: bool,
+    pub docker: bool,
+
+    /// Docker image to use for container-based execution.
+    /// Default: "debian:bookworm-slim"
+    pub docker_image: Option<String>,
 }
 
 /// A setup command that runs before test execution.
@@ -464,24 +468,24 @@ packages:
     }
 
     #[test]
-    fn parse_project_config_microsandbox() {
-        let yaml = "microsandbox: true\n";
+    fn parse_project_config_docker() {
+        let yaml = "docker: true\n";
         let config = parse_project_config(yaml).unwrap();
-        assert!(config.microsandbox);
+        assert!(config.docker);
     }
 
     #[test]
-    fn parse_project_config_microsandbox_default_false() {
+    fn parse_project_config_docker_default_false() {
         let yaml = "{}";
         let config = parse_project_config(yaml).unwrap();
-        assert!(!config.microsandbox);
+        assert!(!config.docker);
     }
 
     #[test]
-    fn parse_project_config_microsandbox_with_packages() {
-        let yaml = "microsandbox: true\npackages:\n  - python3\n";
+    fn parse_project_config_docker_with_packages() {
+        let yaml = "docker: true\npackages:\n  - python3\n";
         let config = parse_project_config(yaml).unwrap();
-        assert!(config.microsandbox);
+        assert!(config.docker);
         assert_eq!(config.packages, vec!["python3"]);
     }
 

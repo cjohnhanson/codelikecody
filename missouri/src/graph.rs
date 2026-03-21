@@ -98,8 +98,8 @@ pub enum SandboxConfig {
     None,
     /// Packages to make available via `nix shell`.
     Packages(Vec<String>),
-    /// Run transitions inside microsandbox microVMs.
-    Microsandbox,
+    /// Run transitions inside Docker containers with hermetic isolation.
+    Docker { image: Option<String> },
 }
 
 /// The complete state graph.
@@ -433,8 +433,8 @@ fn load_project_config(root: &Utf8Path, config_dir: &str) -> Result<ProjectConfi
             })
             .collect();
 
-        let sandbox = if cfg.microsandbox {
-            SandboxConfig::Microsandbox
+        let sandbox = if cfg.docker {
+            SandboxConfig::Docker { image: cfg.docker_image }
         } else if !cfg.packages.is_empty() {
             SandboxConfig::Packages(cfg.packages)
         } else {
