@@ -1,12 +1,12 @@
 ---
 title: "Use microsandbox for hermetic network isolation in missouri tests"
-status: in_progress
+status: discovery
 priority: 3
 assignee:
 labels: [missouri, network]
 depends_on: []
 created: 2026-03-19T02:16:09Z
-updated: "2026-03-20T04:58:24Z"
+updated: "2026-03-21T18:23:06Z"
 ---
 
 microsandbox.dev provides microVM-based isolation via libkrun. Each sandbox
@@ -216,3 +216,59 @@ missouri binary (with microsandbox-core linked in).
 
 **Runtime deps:** missouri binary (with microsandbox-core linked in). That's it.
 microsandbox server managed by missouri on demand.
+
+### Session 2026-03-21 — Shelved: microsandbox not mature enough for library use
+
+**What was attempted:**
+- Rewrote MicrosandboxBackend to talk directly to the server via JSON-RPC
+  (bypassing the thin SDK) with `scope: "none"` and volume mounts
+- Added `microsandbox-core` v0.2.6 as a direct dependency
+- Added missouri tests for network isolation and volume mounting
+
+**What blocked:**
+1. **`scope: "none"` via server JSON-RPC is ignored.** The `sandbox.start`
+   RPC accepts the field but doesn't pass it to the VM. Network remains open.
+   The CLI applies scope correctly because it goes through `microsandbox-core`'s
+   `run_temp()` → `prepare_run()` which passes `--scope` to the `msbrun`
+   supervisor binary. The server doesn't do this.
+
+2. **`microsandbox-core` is a CLI library, not an embedding library.** The
+   `run()` / `run_temp()` functions spawn a supervisor process and write
+   stdout/stderr directly to the terminal. No API for capturing output
+   programmatically. Would need to pipe stdout/stderr on the prepared
+   `tokio::process::Command` from `prepare_run()`, which is possible but
+   fragile (parsing console output, managing supervisor lifecycle).
+
+3. **The thin SDK (v0.1.2) is too far behind the server (v0.2.6).** Missing
+   scope, volumes don't work, `command.run` returns 5002 errors.
+
+4. **Volume mounting was untested.** The spike showed virtiofs file contents
+   appearing empty via CLI. Never validated that volume mounts work correctly
+   for file I/O (create file in VM, read on host).
+
+**What works (merged to main):**
+- `microsandbox: true` config → `SandboxConfig::Microsandbox` → `MicrosandboxBackend`
+- `Backend::execute()` method for remote command execution
+- Command execution inside Linux microVM via Python REPL (stdout, stderr, exit code, env injection)
+- `execute_transition` microsandbox path (bypasses local Command build)
+- Setup commands always use BareBackend
+- 4 missouri test transitions passing (echo, uname, env, stderr)
+- `uname -s` returns "Linux" proving microVM execution on macOS
+
+**What to watch for:**
+- microsandbox server API adding scope support (check releases/changelog)
+- microsandbox SDK v0.2.x matching server capabilities
+- A proper library API for programmatic sandbox creation with output capture
+- Alternative: could contribute scope support to the server upstream
+
+**Child tiskets created (all todo, dependent on this becoming viable):**
+- 8jyy: clc builder persistent nix sandbox management
+- 1e0n: clc builder config in clc.yaml
+- 6851: missouri microsandbox backend for hermetic test execution
+- kdfw: missouri builds OCI images from flake.nix devShell
+- kkh1: network mocking with mitmdump inside microsandbox
+
+**Status:** Shelved. The concept is validated (microVMs solve the scoping
+problem, nix runs inside them, OCI images can be built). The tooling isn't
+mature enough for library embedding. Revisit when microsandbox has a
+programmatic API with scope and output capture.
