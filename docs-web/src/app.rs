@@ -4,7 +4,7 @@ use leptos_router::{
     path,
 };
 
-use crate::components::nav::Sidebar;
+use crate::components::nav::{Header, Sidebar};
 use crate::pages::doc_page::{DocPage, LandingPage};
 use crate::pages::not_found::NotFound;
 
@@ -13,9 +13,9 @@ pub fn App() -> impl IntoView {
     view! {
         <Router>
             <Sidebar />
+            <Header />
 
-            // Main content area — offset by sidebar width on desktop
-            <main class="md:ml-64 min-h-screen p-8 max-w-4xl">
+            <main class="md:ml-60 px-8 py-8 max-w-3xl">
                 <Routes fallback=NotFound>
                     <Route path=path!("/") view=LandingPage />
                     <Route path=path!("/:page") view=DocPage />

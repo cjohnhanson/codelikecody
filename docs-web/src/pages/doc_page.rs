@@ -9,10 +9,11 @@ pub fn DocPage() -> impl IntoView {
 
     let page_html = move || {
         let params = params.read();
-        // Build slug from path segments
         let slug = match (params.get("section"), params.get("page")) {
             (Some(section), Some(page)) => format!("{section}/{page}"),
-            _ => String::new(),
+            (None, Some(page)) => page.to_string(),
+            (Some(section), None) => section.to_string(),
+            (None, None) => String::new(),
         };
 
         let slug_ref = if slug.is_empty() { "" } else { slug.as_str() };

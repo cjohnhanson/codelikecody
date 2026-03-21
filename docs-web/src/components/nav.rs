@@ -4,9 +4,34 @@ use leptos_router::components::A;
 use crate::content;
 
 #[component]
+pub fn Header() -> impl IntoView {
+    let toggle_dark = move |_| {
+        if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
+            if let Some(el) = doc.document_element() {
+                let _ = el.class_list().toggle("dark");
+            }
+        }
+    };
+
+    view! {
+        <header class="header-bar md:ml-60">
+            <div class="px-8 py-3 flex items-baseline justify-between">
+                <span class="font-mono text-[11px] text-text-muted">"docs"</span>
+                <button
+                    on:click=toggle_dark
+                    aria-label="Toggle dark mode"
+                    class="px-2 py-1 text-[11px] font-mono text-text-muted hover:text-text hover:bg-surface-raised rounded transition-all cursor-pointer"
+                >
+                    "◐"
+                </button>
+            </div>
+        </header>
+    }
+}
+
+#[component]
 pub fn Sidebar() -> impl IntoView {
     let (menu_open, set_menu_open) = signal(false);
-
     let toggle_menu = move |_| set_menu_open.update(|v| *v = !*v);
 
     view! {
@@ -18,59 +43,49 @@ pub fn Sidebar() -> impl IntoView {
             <span class="font-mono text-sm">"☰"</span>
         </button>
 
-        // Sidebar
         <nav class={move || {
-            let base = "fixed top-0 left-0 h-full w-64 bg-surface-card border-r border-border overflow-y-auto z-40 transition-transform duration-200 md:translate-x-0";
+            let base = "sidebar md:translate-x-0";
             if menu_open.get() {
                 format!("{base} translate-x-0")
             } else {
                 format!("{base} -translate-x-full")
             }
         }}>
-            <div class="p-6">
-                // Title
-                <A href="/" attr:class="block mb-6 no-underline">
-                    <span class="font-display text-xl font-700 text-text">"codelikecody"</span>
+            <div class="px-5 py-5">
+                <A href="/" attr:class="block mb-1 no-underline">
+                    <span class="sidebar-brand">"codelikecody"</span>
                 </A>
 
                 // Top-level pages
-                <ul class="list-none pl-0 mb-6 space-y-1">
+                <div class="mt-4">
                     {content::top_level_pages().into_iter().map(|page| {
                         view! {
-                            <li>
-                                <A
-                                    href={format!("/{}", page.slug)}
-                                    attr:class="block py-1 font-mono text-sm text-text-secondary hover:text-accent no-underline"
-                                >
-                                    {page.title}
-                                </A>
-                            </li>
+                            <A
+                                href={format!("/{}", page.slug)}
+                                attr:class="sidebar-link"
+                            >
+                                {page.title}
+                            </A>
                         }
                     }).collect_view()}
-                </ul>
+                </div>
 
                 // Sections
                 {["clc", "missouri", "tisket"].into_iter().map(|section| {
                     let pages = content::section_pages(section);
                     view! {
-                        <div class="mb-6">
-                            <h3 class="font-mono text-xs font-500 uppercase tracking-wider text-text-muted mb-2">
-                                {section}
-                            </h3>
-                            <ul class="list-none pl-0 space-y-1">
-                                {pages.into_iter().map(|page| {
-                                    view! {
-                                        <li>
-                                            <A
-                                                href={format!("/{}", page.slug)}
-                                                attr:class="block py-1 font-mono text-sm text-text-secondary hover:text-accent no-underline"
-                                            >
-                                                {page.title}
-                                            </A>
-                                        </li>
-                                    }
-                                }).collect_view()}
-                            </ul>
+                        <div>
+                            <p class="sidebar-section-label">{section}</p>
+                            {pages.into_iter().map(|page| {
+                                view! {
+                                    <A
+                                        href={format!("/{}", page.slug)}
+                                        attr:class="sidebar-link"
+                                    >
+                                        {page.title}
+                                    </A>
+                                }
+                            }).collect_view()}
                         </div>
                     }
                 }).collect_view()}

@@ -9,6 +9,13 @@
   --font-sans: 'DM Sans', system-ui, sans-serif;
   --font-mono: 'DM Mono', ui-monospace, monospace;
 
+  --font-weight-300: 300;
+  --font-weight-400: 400;
+  --font-weight-500: 500;
+  --font-weight-600: 600;
+  --font-weight-700: 700;
+  --font-weight-900: 900;
+
   /* Light mode surfaces */
   --color-surface: #faf9f6;
   --color-surface-card: #ffffff;
@@ -39,14 +46,6 @@
     font-feature-settings: "kern" 1, "liga" 1;
   }
 
-  a {
-    @apply text-accent no-underline;
-  }
-
-  a:hover {
-    @apply text-accent-hover underline;
-  }
-
   a:focus-visible, button:focus-visible {
     @apply outline-2 outline-accent outline-offset-2;
   }
@@ -54,14 +53,6 @@
   .dark body {
     background-color: var(--color-dark-bg);
     color: #e0e0e0;
-  }
-
-  .dark a {
-    color: #60a5fa;
-  }
-
-  .dark a:hover {
-    color: #93c5fd;
   }
 
   ::selection {
@@ -72,25 +63,81 @@
     background-color: #60a5fa22;
   }
 
-  /* Markdown content styling */
+  /* ── Sidebar ────────────────────────────────────── */
+
+  .sidebar {
+    @apply fixed top-0 left-0 h-full w-60 bg-surface-card border-r border-border overflow-y-auto z-40;
+    @apply transition-transform duration-200;
+  }
+
+  .sidebar-brand {
+    @apply font-display text-lg font-700 tracking-tight text-text;
+  }
+
+  .sidebar-section-label {
+    @apply font-mono text-[10px] font-500 uppercase tracking-widest text-text-muted mb-2 mt-6;
+  }
+
+  .sidebar-link {
+    @apply block py-1 text-[13px] text-text-secondary no-underline transition-colors;
+  }
+
+  .sidebar-link:hover {
+    @apply text-accent;
+  }
+
+  .dark .sidebar {
+    background-color: var(--color-dark-card);
+    border-color: var(--color-dark-border);
+  }
+
+  .dark .sidebar-brand {
+    color: #e0e0e0;
+  }
+
+  .dark .sidebar-link {
+    color: #999;
+  }
+
+  .dark .sidebar-link:hover {
+    color: #60a5fa;
+  }
+
+  /* ── Header bar ─────────────────────────────────── */
+
+  .header-bar {
+    @apply border-b border-border bg-surface-card;
+  }
+
+  .dark .header-bar {
+    background-color: var(--color-dark-card);
+    border-color: var(--color-dark-border);
+  }
+
+  /* ── Doc content ────────────────────────────────── */
+
+  .doc-content {
+    @apply text-[15px] leading-relaxed;
+  }
+
   .doc-content h1 {
-    @apply font-display text-3xl font-700 mb-6 mt-0;
+    @apply font-display text-[26px] font-700 mb-6 mt-0 tracking-tight text-text;
   }
 
   .doc-content h2 {
-    @apply font-display text-2xl font-500 mb-4 mt-10 pb-2 border-b border-border;
+    @apply font-display text-[20px] font-500 mb-4 mt-10 pb-2 border-b border-border-subtle text-text;
   }
 
   .doc-content h3 {
-    @apply font-display text-xl font-500 mb-3 mt-8;
+    @apply font-display text-[17px] font-500 mb-3 mt-8 text-text;
   }
 
   .doc-content h4 {
-    @apply font-sans text-lg font-600 mb-2 mt-6;
+    @apply font-mono text-[13px] font-500 uppercase tracking-wider mb-2 mt-6 text-text-secondary;
   }
 
   .doc-content p {
-    @apply mb-4 leading-7;
+    @apply mb-4;
   }
 
   .doc-content ul, .doc-content ol {
@@ -98,76 +145,123 @@
   }
 
   .doc-content li {
-    @apply mb-1 leading-7;
+    @apply mb-1;
   }
 
-  .doc-content ul li {
+  .doc-content ul > li {
     list-style-type: disc;
   }
 
-  .doc-content ol li {
+  .doc-content ol > li {
     list-style-type: decimal;
   }
 
   .doc-content code {
-    @apply font-mono text-[0.875em] bg-surface-raised px-1.5 py-0.5 rounded;
+    @apply font-mono text-[0.85em] bg-surface-raised px-1.5 py-0.5 rounded text-text;
   }
 
   .doc-content pre {
-    @apply mb-4 p-4 bg-surface-raised rounded-lg overflow-x-auto;
+    @apply mb-4 px-4 py-3 bg-surface-raised rounded border border-border-subtle overflow-x-auto;
+    @apply text-[13px] leading-relaxed;
   }
 
   .doc-content pre code {
-    @apply bg-transparent p-0 text-sm;
+    @apply bg-transparent p-0 text-[13px] border-0;
   }
 
   .doc-content blockquote {
-    @apply mb-4 pl-4 border-l-4 border-border text-text-secondary italic;
+    @apply mb-4 pl-4 border-l-[3px] border-accent/30 text-text-secondary;
   }
 
   .doc-content table {
-    @apply mb-4 w-full border-collapse;
+    @apply mb-6 w-full text-[13px];
+    border-collapse: separate;
+    border-spacing: 0;
   }
 
-  .doc-content th {
-    @apply bg-surface-raised px-3 py-2 text-left font-600 border border-border text-sm;
+  .doc-content thead th {
+    @apply bg-surface-raised px-3 py-2 text-left font-mono font-500 text-text-muted uppercase text-[11px] tracking-wider;
+    @apply border-b border-border;
   }
 
-  .doc-content td {
-    @apply px-3 py-2 border border-border text-sm;
+  .doc-content thead th:first-child {
+    @apply rounded-tl;
+  }
+
+  .doc-content thead th:last-child {
+    @apply rounded-tr;
+  }
+
+  .doc-content tbody td {
+    @apply px-3 py-2 border-b border-border-subtle;
+  }
+
+  .doc-content tbody tr:last-child td {
+    @apply border-b-0;
   }
 
   .doc-content a {
-    @apply text-accent underline;
+    @apply text-accent no-underline;
+  }
+
+  .doc-content a:hover {
+    @apply text-accent-hover underline;
   }
 
   .doc-content hr {
-    @apply my-8 border-border;
+    @apply my-8 border-border-subtle;
   }
 
-  /* Dark mode overrides for doc content */
+  .doc-content strong {
+    @apply font-600;
+  }
+
+  /* ── Dark mode overrides ────────────────────────── */
+
+  .dark .doc-content h1,
+  .dark .doc-content h2,
+  .dark .doc-content h3 {
+    color: #e0e0e0;
+  }
+
+  .dark .doc-content h4 {
+    color: #888;
+  }
+
   .dark .doc-content code {
     background-color: var(--color-dark-raised);
+    color: #e0e0e0;
   }
 
   .dark .doc-content pre {
     background-color: var(--color-dark-raised);
+    border-color: var(--color-dark-border-subtle);
   }
 
-  .dark .doc-content th {
+  .dark .doc-content thead th {
     background-color: var(--color-dark-raised);
     border-color: var(--color-dark-border);
+    color: #888;
   }
 
-  .dark .doc-content td {
-    border-color: var(--color-dark-border);
+  .dark .doc-content tbody td {
+    border-color: var(--color-dark-border-subtle);
   }
 
   .dark .doc-content h2 {
-    border-color: var(--color-dark-border);
+    border-color: var(--color-dark-border-subtle);
   }
 
   .dark .doc-content blockquote {
-    border-color: var(--color-dark-border);
+    border-color: #60a5fa44;
+    color: #999;
+  }
+
+  .dark .doc-content a {
+    color: #60a5fa;
+  }
+
+  .dark .doc-content a:hover {
+    color: #93c5fd;
   }
 }
