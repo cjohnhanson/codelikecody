@@ -8,32 +8,34 @@ type: guide
 
 Codelikecody is three tools for managing coding agent workflows. They work together or independently.
 
-## The tools
+- [What is codelikecody?](what-is-codelikecody.md) — the philosophy and how the pieces connect
+- [Getting started with clc](getting-started.md) — set up workflow enforcement on a project
+- [Getting started with missouri](missouri/getting-started.md) — build a test suite from scratch
+- [Tisket workflow](tisket/workflow.md) — create and manage issues
 
-### clc — workflow enforcement
+## clc — workflow enforcement
 
 clc hooks into Claude Code and enforces a phase-gated TDD cycle: write tests, see them fail, implement, get green. Agents work in isolated git worktrees, and the hook system blocks actions that violate the current phase. It also handles worker orchestration — dispatching, monitoring, and landing multiple agent processes.
 
-[Getting started](getting-started.md) -- [CLI reference](clc/cli-reference.md)
+- [Getting started](getting-started.md)
+- [The phase system](clc/phase-system.md)
+- [Multi-agent orchestration](clc/orchestration.md)
+- [CLI reference](clc/cli-reference.md)
 
-### tisket — plaintext issue tracking
+## tisket — plaintext issue tracking
 
 Issues as markdown files with YAML frontmatter, stored in `.tisket/` and versioned in git. No database, no server. Git-aware divergence detection, full-text search, scratch notes for agent working memory. Works fine without clc — it's a standalone issue tracker.
 
-[CLI reference](tisket/cli-reference.md)
+- [Workflow guide](tisket/workflow.md)
+- [CLI reference](tisket/cli-reference.md)
 
-### missouri — filesystem state graph testing
+## missouri — filesystem state graph testing
 
 Define expected filesystem states as directories, connect them with shell commands as transitions, and missouri walks every path through the graph, running commands in sandboxed temp directories and diffing the results. Built for testing CLI tools and workflow systems. No dependency on clc or tisket.
 
-[Getting started](missouri/getting-started.md) -- [CLI reference](missouri/cli-reference.md)
-
-## If you want to...
-
-- **...understand the philosophy** — [What is codelikecody?](what-is-codelikecody.md)
-- **...set up clc on a project** — [Getting started](getting-started.md)
-- **...use missouri for testing** — [Getting started with missouri](missouri/getting-started.md)
-- **...track issues with tisket** — [tisket CLI reference](tisket/cli-reference.md)
+- [Getting started](missouri/getting-started.md)
+- [Writing tests](missouri/writing-tests.md)
+- [CLI reference](missouri/cli-reference.md)
 
 ## Install
 

@@ -18,13 +18,15 @@ clc is the orchestrator. It runs as a hook system inside Claude Code, intercepti
 
 The core mechanism is a phase system. Work progresses through an ordered sequence:
 
-`tests-unwritten` → `tests-written` → `red` → `implementing` → `green` → `review-requested` → `reviewed` → `done`
+`tests-unwritten` → `tests-written` → `red` → `implementing` → `green` → `review-requested` → `in-review` → `reviewed` → `done`
 
-Phases aren't advisory. In `tests-unwritten`, the hook will reject edits to source files. The agent can only write tests. Once tests exist and fail (`red`), the phase advances to `implementing` and source edits are unlocked. The agent can't stop the session until it reaches `review-requested` or later (stop is blocked at `green` — the agent has to advance past it).
+Phases aren't advisory. In `tests-unwritten`, the hook will reject edits to source files — only files under `tests/missouri/` are allowed. Once tests exist and fail (`red`), the phase advances to `implementing` and all edits are unlocked. Source edits lock again after `green`: the `review-requested` and `reviewed` phases restrict edits back to test paths, while `in-review` reopens everything (like `implementing`) so review feedback can be addressed.
+
+The stop hook follows a different logic. An agent can stop at `review-requested`, `reviewed`, or `done` — these are natural pause points. Every other phase blocks the stop event. The agent can't bail at `green`; it has to advance to `review-requested` first. And `in-review` blocks stop too — once review changes are underway, they have to be finished.
 
 This is TDD enforced mechanically, not by asking nicely.
 
-clc also manages worktree isolation. All implementation happens in git worktrees, never on trunk. Trunk is read-only — the hooks block file writes and restrict Bash to a conservative allowlist. An agent that wants to change code has to pick up a tisket first, which creates a worktree and sets the initial phase.
+clc also manages worktree isolation. All implementation happens in git worktrees, never on trunk. Trunk is read-only — the hooks block Edit, Write, and NotebookEdit entirely, and restrict Bash to a conservative allowlist (git, cargo, clc, missouri, tisket queries, and a handful of read-only utilities like ls, cat, find). An agent that wants to change code has to pick up a tisket first, which creates a worktree and sets the initial phase.
 
 ### tisket — plaintext issue tracking
 
@@ -52,13 +54,50 @@ The three tools form a loop:
 
 3. **Missouri** is where the tests live. clc's test infrastructure for its own workflow commands is built on missouri — states represent project configurations (a repo with a tisket, a repo in the `implementing` phase, etc.) and transitions are the CLI commands being tested.
 
-4. When tests pass and the phase reaches `green`, the agent finalizes with `clc done`, which handles the bookkeeping of marking the tisket complete and cleaning up.
+4. When tests pass and the phase reaches `green`, the agent advances through `review-requested`. The `clc done` command handles the bookkeeping of marking the tisket complete and cleaning up.
 
 clc detects the presence of both tisket and missouri in the working directory and injects their status into the agent's context at session start and on every prompt. The agent always knows which tisket it's working on, what phase it's in, and whether missouri tests exist.
 
 ## What it looks like in practice
 
-The short version: trunk is read-only. An agent picks up a tisket, which creates an isolated worktree and locks the phase to test-writing. Tests first, then implementation, then finalization. Every tool call passes through clc's hooks — the agent doesn't need to remember the rules.
+When an agent session starts, clc fires a `SessionStart` hook and injects a block of prime text. This text isn't a suggestion — it's the agent's operating context. It includes the current branch name, whether the branch is trunk or a worktree, the current phase (if any), the full workflow loop description, TDD mandates, commit discipline rules, and instructions for capturing discovered work as new tiskets. If a tisket matches the current branch, its title, body, and scratch notes are included. If missouri tests exist, their state is injected too.
+
+On trunk, the prime text explains that the branch is read-only and tells the agent how to begin work. The agent can read code, run tests, query tiskets, and use clc commands — but any attempt to edit a file or run an unapproved Bash command gets blocked with an explanation.
+
+Once the agent picks up a tisket, it lands in a worktree with phase `tests-unwritten`. From here, every tool call passes through the guard. Edit a source file? Blocked — write tests first. Try to stop? Blocked — work isn't done. The phase system releases constraints as work progresses: `implementing` unlocks all edits, `green` re-locks source files, `review-requested` is the first point where the agent can stop.
+
+Between prompts, the `UserPromptSubmit` hook fires a lightweight reinforcement: the current tisket, missouri status, and phase, in a few lines. This keeps the agent oriented after long tool-use sequences. After every file-modifying tool call in `implementing`, a `PostToolUse` nudge reminds the agent to run tests.
+
+The phase bootstrapping handles worktrees that were created outside `clc pickup` — if an agent session starts on a feature branch with no phase and a matching tisket exists, the hook auto-sets `tests-unwritten` and advances the tisket to `in_progress`.
 
 The [getting started tutorial](getting-started.md) walks through the full cycle end-to-end.
 
+## Multi-agent orchestration
+
+clc supports a coordinator-worker model for running multiple agents in parallel.
+
+The coordinator is an agent that runs on trunk. It doesn't write code — it manages workers that do. A coordinator is launched with `clc coordinate`, which scans for pickable tiskets (status `todo`, all dependencies resolved), builds a prompt listing them, and spawns a coordinator agent process. The coordinator gets a system prompt explaining its role: dispatch workers, monitor their progress, land completed work, dispatch more.
+
+Workers are individual agent sessions, each in its own worktree. The coordinator dispatches them with `clc dispatch <tisket-id>`, which runs the same pickup-and-worktree-creation flow as interactive use, then spawns a detached Claude process. Each worker gets a named FIFO for stdin (so the coordinator can send follow-up messages), a JSONL file for stdout, and a PID file for process management. All worker state lives in `.clc/worker/` inside the worktree.
+
+The coordinator monitors workers with `clc workers` (overview) and `clc worker <id> check` (detail). When a worker reaches `done`, the coordinator lands it with `clc land`, which rebases and merges the worktree branch back to trunk. After landing, the coordinator checks for more todo tiskets and dispatches again. The loop is autonomous — the coordinator doesn't ask permission to dispatch or land.
+
+Workers have limited permissions. When a worker needs a tool that isn't pre-approved, it files a request with `clc permissions request` and stops. The coordinator can grant the request directly or escalate it to the user. Permission policy is configurable: patterns can be auto-granted, always-escalated, or left to the coordinator's judgment. The policy is passed into the coordinator's system prompt so it knows the rules without consulting external state.
+
+Tisket filtering controls what the coordinator sees. The coordinator can be scoped to a specific project, label, dependency chain, or individual tisket. An `--exclude-label` flag allows marking tiskets that shouldn't be auto-dispatched. These filters are evaluated at launch time to build the pickable list.
+
+## What it's not
+
+clc is not a general-purpose CI/CD system. It doesn't build artifacts, manage deployments, or interact with external services. The hook system only runs inside Claude Code sessions — it has no daemon, no server, no background process beyond the coordinator and its workers.
+
+The phase system is strictly linear and single-step. Phases advance forward one step at a time; skipping from `green` to `done` is rejected. Backward transitions are allowed to any earlier phase (so review feedback can send work back to `implementing`), but forward movement is always sequential.
+
+clc does not manage the agent's model, context window, or token budget. It injects text and blocks tool calls — it doesn't control what the agent thinks or how much it costs. The coordinator can pass a model name to workers, but clc doesn't enforce it.
+
+Trunk protection is absolute but coarse. The Bash allowlist on trunk is prefix-based — if a command starts with an allowed prefix, it passes. There's no argument parsing or path analysis. The guard's own documentation notes that "false positives are better than accidental writes on trunk."
+
+The test path restriction in phase-gated modes checks for `tests/missouri/` in the file path. Files outside that directory tree are treated as source files regardless of whether they're actually test code. Test files in other locations (like inline `#[cfg(test)]` modules in Rust source) are not distinguished from implementation code by the guard.
+
+Missouri is the only test framework clc has built-in awareness of. The phase system doesn't know about cargo test, pytest, or any other test runner. An agent can run any test command via Bash, but the hooks don't parse test output or auto-advance phases based on pass/fail results. Phase transitions are explicit commands.
+
+The admin branch is fully permissive — no phase enforcement, no tool restrictions, no stop blocking. It exists for triage, planning, and review work that doesn't follow the TDD cycle. It is not audited or guarded in any way beyond basic git branch detection.

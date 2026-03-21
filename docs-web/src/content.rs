@@ -55,6 +55,18 @@ pub static PAGES: &[DocPage] = &[
         section: None,
     },
     DocPage {
+        slug: "clc/phase-system",
+        title: "The Phase System",
+        raw: include_str!("../../docs/clc/phase-system.md"),
+        section: Some("clc"),
+    },
+    DocPage {
+        slug: "clc/orchestration",
+        title: "Multi-Agent Orchestration",
+        raw: include_str!("../../docs/clc/orchestration.md"),
+        section: Some("clc"),
+    },
+    DocPage {
         slug: "clc/cli-reference",
         title: "clc CLI Reference",
         raw: include_str!("../../docs/clc/cli-reference.md"),
@@ -67,10 +79,22 @@ pub static PAGES: &[DocPage] = &[
         section: Some("missouri"),
     },
     DocPage {
+        slug: "missouri/writing-tests",
+        title: "Writing Tests",
+        raw: include_str!("../../docs/missouri/writing-tests.md"),
+        section: Some("missouri"),
+    },
+    DocPage {
         slug: "missouri/cli-reference",
         title: "missouri CLI Reference",
         raw: include_str!("../../docs/missouri/cli-reference.md"),
         section: Some("missouri"),
+    },
+    DocPage {
+        slug: "tisket/workflow",
+        title: "Workflow",
+        raw: include_str!("../../docs/tisket/workflow.md"),
+        section: Some("tisket"),
     },
     DocPage {
         slug: "tisket/cli-reference",

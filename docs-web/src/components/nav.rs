@@ -15,7 +15,7 @@ pub fn Header() -> impl IntoView {
 
     view! {
         <header class="header-bar md:ml-60">
-            <div class="px-8 py-3 flex items-baseline justify-between">
+            <div class="px-8 py-3 flex items-baseline justify-between pl-14 md:pl-8">
                 <span class="font-mono text-[11px] text-text-muted">"docs"</span>
                 <button
                     on:click=toggle_dark
