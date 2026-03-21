@@ -1,12 +1,12 @@
 ---
 title: "Extract mdstore crate from tisket for generic frontmattered markdown storage"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: [refactor]
 depends_on: []
 created: 2026-03-21T19:31:14Z
-updated: "2026-03-21T19:32:26Z"
+updated: "2026-03-21T19:52:23Z"
 ---
 
 Extract the domain-agnostic parts of tisket into a shared mdstore crate that both tisket and future tools (zettel) can depend on.
@@ -37,5 +37,3 @@ Extract the domain-agnostic parts of tisket into a shared mdstore crate that bot
 3. Make tisket depend on mdstore
 4. Missouri tests green throughout
 5. zettel can then depend on mdstore directly
-
-## Scratch Notes
