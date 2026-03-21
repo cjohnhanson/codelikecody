@@ -81,7 +81,7 @@ members:
   - tisket/tests/missouri
 ```
 
-**Important:** Missouri clears the environment before running commands. Only variables declared in `env` (project-level and state-level) and `PATH` are available. Your system environment is not inherited. If a command needs `HOME`, `TMPDIR`, or any other variable, declare it explicitly.
+> **Missouri clears the environment.** Commands run with only `PATH` and whatever is declared in `env` blocks — nothing else. No `HOME`, no `TMPDIR`, no `SHELL`. If a command fails mysteriously, check whether it depends on a variable that wasn't declared.
 
 ### Field reference (ProjectConfig)
 

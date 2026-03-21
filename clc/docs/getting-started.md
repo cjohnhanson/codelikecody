@@ -258,13 +258,9 @@ git commit -m "feat: add greeting function"
 
 ## Review and finalize
 
-Three review phases sit between `green` and `done`. In a real workflow, these coordinate handoff:
+Between `green` and `done`, three review phases handle handoff between the agent and a reviewer. They won't matter in this walkthrough — there's no reviewer — but they're worth seeing in passing because they're where the [phase system](/clc/phase-system)'s permission locking gets interesting in real use.
 
-- **`review-requested`** — the agent signals it's ready for review. Source file edits lock again (only test edits allowed). This is the first point where the agent is allowed to stop — it's a natural handoff point.
-- **`in-review`** — a reviewer (human or coordinator) is looking at the work. All edits unlock again so review feedback can be addressed.
-- **`reviewed`** — review is done. Edits lock, and the agent can stop or advance to `done`.
-
-For this walkthrough, there's no reviewer, so advance through them:
+Advance through them:
 
 ```sh
 clc status set review-requested
@@ -272,6 +268,8 @@ clc status set in-review
 clc status set reviewed
 clc status set done
 ```
+
+In a real workflow, `review-requested` is the first point where an agent is *allowed to stop* — everything before that, the stop hook rejects. During `in-review`, edits unlock so review feedback can be addressed. After `reviewed`, edits lock again. The [phase system docs](/clc/phase-system) cover the full permission matrix.
 
 Now finalize:
 

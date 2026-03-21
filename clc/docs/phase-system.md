@@ -191,14 +191,12 @@ to interfere with its own development.
 
 ## Phase bootstrap
 
-One edge case worth noting: worktrees created outside of `clc pickup`
-(for example, via plain `git worktree add`) won't have a phase set. On
-session start, the hook checks for this situation — if it's a feature
-branch with no phase and a matching tisket issue exists, it automatically
-sets the phase to tests-unwritten. This prevents the agent from being
-stuck in a state where the guard is restrictive (no phase defaults to
-tests-unwritten restrictions) but there's no phase to advance from.
+Worktrees created outside of `clc pickup` — via plain `git worktree add`, for example — start with no phase set. Without intervention, this creates a dead state: the guard enforces `tests-unwritten` restrictions (the most restrictive edit policy), but there's no phase record in `.clc/state` to advance from. The agent can't edit production files and can't transition forward.
+
+The session-start hook resolves this automatically. When it detects a feature branch with no phase, it looks for a [tisket](/tisket/what-is-tisket) issue whose ID matches the branch name. If one exists, it sets the phase to `tests-unwritten` and advances the tisket to `in_progress`, giving the agent a valid starting point. If no matching issue is found, the agent stays in the restricted-but-phaseless state — which effectively means the worktree needs to be created properly via `clc pickup`.
 
 ## Further reading
 
-- [CLI Reference](/clc/cli-reference) — the `clc status` and `clc status set` commands
+- [CLI Reference](/clc/cli-reference) — `clc status` and `clc status set` commands
+- [Getting Started](/getting-started) — full walkthrough of the pickup-to-done cycle
+- [What is codelikecody?](/what-is-codelikecody) — how phases fit into the broader system

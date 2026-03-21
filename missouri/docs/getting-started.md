@@ -6,7 +6,7 @@ type: tutorial
 
 # Getting Started with Missouri
 
-This tutorial walks through creating a missouri test suite from scratch. By the end, there will be two states connected by a transition, a passing test, a failing test, and an assertion.
+Missouri tests CLI tools by modeling their behavior as a graph of filesystem states. A transition says "run this command on these files and the result should look like that." This tutorial builds a two-state graph, watches it pass, watches it fail, and adds an assertion — enough to see whether the model fits your use case. For the concepts behind the model, see [What is Missouri?](/missouri/what-is-missouri).
 
 ## Install missouri
 

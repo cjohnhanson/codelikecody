@@ -73,6 +73,12 @@ pub static PAGES: &[DocPage] = &[
         section: Some("clc"),
     },
     DocPage {
+        slug: "missouri/what-is-missouri",
+        title: "What is Missouri?",
+        raw: include_str!("../../missouri/docs/what-is-missouri.md"),
+        section: Some("missouri"),
+    },
+    DocPage {
         slug: "missouri/getting-started",
         title: "Getting Started with Missouri",
         raw: include_str!("../../missouri/docs/getting-started.md"),
@@ -89,6 +95,18 @@ pub static PAGES: &[DocPage] = &[
         title: "missouri CLI Reference",
         raw: include_str!("../../missouri/docs/cli-reference.md"),
         section: Some("missouri"),
+    },
+    DocPage {
+        slug: "tisket/what-is-tisket",
+        title: "What is Tisket?",
+        raw: include_str!("../../tisket/docs/what-is-tisket.md"),
+        section: Some("tisket"),
+    },
+    DocPage {
+        slug: "tisket/getting-started",
+        title: "Getting Started with Tisket",
+        raw: include_str!("../../tisket/docs/getting-started.md"),
+        section: Some("tisket"),
     },
     DocPage {
         slug: "tisket/workflow",
