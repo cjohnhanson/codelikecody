@@ -2132,11 +2132,20 @@ transitions:
         let graph = StateGraph::discover(root, ".missouri").unwrap();
         assert!(
             matches!(graph.sandbox_config, SandboxConfig::Docker { .. }),
-            "expected Microsandbox, got {:?}",
+            "expected Docker, got {:?}",
             graph.sandbox_config
         );
 
+        // Clear MISSOURI_SANDBOX in case it's set (e.g., inside nix build)
+        let saved = std::env::var("MISSOURI_SANDBOX").ok();
+        unsafe { std::env::remove_var("MISSOURI_SANDBOX") };
+
         let backend = detect_sandbox(&graph).unwrap();
+
+        if let Some(val) = saved {
+            unsafe { std::env::set_var("MISSOURI_SANDBOX", val) };
+        }
+
         let debug = format!("{backend:?}");
         assert!(
             debug.starts_with("DockerBackend"),
