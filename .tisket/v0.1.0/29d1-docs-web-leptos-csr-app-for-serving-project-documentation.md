@@ -1,12 +1,12 @@
 ---
 title: "docs-web: Leptos CSR app for serving project documentation"
-status: todo
+status: in_progress
 priority: 2
 assignee:
 labels: [docs, clc-web]
 depends_on: []
 created: 2026-03-21T18:23:33Z
-updated: "2026-03-21T18:23:52Z"
+updated: "2026-03-21T18:24:14Z"
 ---
 
 Leptos CSR app that renders project documentation from markdown baked into the binary at compile time.
@@ -27,3 +27,5 @@ Approach:
 - Search (client-side, full-text over the baked content)
 
 Separate crate: docs-web/ in the workspace. Not part of clc-web.
+
+## Scratch Notes
