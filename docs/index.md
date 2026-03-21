@@ -6,50 +6,41 @@ type: guide
 
 # codelikecody
 
-Codelikecody is three tools for managing coding agent workflows. They work together or independently.
+AI coding agents are good at writing code. They're less good at writing code *the way you'd want it written* — with tests first, in isolated branches, with clean commit histories and verifiable output. Left to their own devices, agents skip tests, edit trunk directly, and produce work that's hard to review because it happened in one big shot.
 
-- [What is codelikecody?](what-is-codelikecody.md) — the philosophy and how the pieces connect
-- [Getting started with clc](getting-started.md) — set up workflow enforcement on a project
-- [Getting started with missouri](missouri/getting-started.md) — build a test suite from scratch
-- [Tisket workflow](tisket/workflow.md) — create and manage issues
+codelikecody is a set of tools that mechanically enforce the workflow you'd use if you were pair-programming with an infinitely patient but occasionally reckless junior developer. The agent can't skip tests because the hook system won't let it edit source files until tests exist. It can't touch trunk because trunk is read-only. It can't stop working because the stop hook blocks until the phase reaches a natural pause point.
 
-## clc — workflow enforcement
+Three tools, each independently useful:
 
-clc hooks into Claude Code and enforces a phase-gated TDD cycle: write tests, see them fail, implement, get green. Agents work in isolated git worktrees, and the hook system blocks actions that violate the current phase. It also handles worker orchestration — dispatching, monitoring, and landing multiple agent processes.
+**[clc](what-is-codelikecody.md)** enforces workflow. It hooks into Claude Code and intercepts every tool call. In `tests-unwritten`, the agent can't edit source files. In `implementing`, everything's unlocked. In `green`, source files lock again. The agent doesn't choose to follow TDD — the hook system makes it the only option.
 
-- [Getting started](getting-started.md)
-- [The phase system](clc/phase-system.md)
-- [Multi-agent orchestration](clc/orchestration.md)
-- [CLI reference](clc/cli-reference.md)
+**[tisket](tisket/workflow.md)** tracks issues. Issues are markdown files with YAML frontmatter, stored in `.tisket/` and versioned in git. No server, no database. When an agent picks up a tisket, clc creates an isolated worktree and wires the issue's context — title, body, scratch notes — into the agent's session. Scratch notes are the agent's working memory across context boundaries.
 
-## tisket — plaintext issue tracking
+**[missouri](missouri/getting-started.md)** runs tests. You put the files you expect to exist in a directory, write a command that should produce them, and missouri checks that the output matches. It handles the scaffolding — temp directories, file comparison, parallel execution — so tests are just directories of expected output. Built for CLI tools and workflow systems where the interesting question is "run this command, check what happened to the files."
 
-Issues as markdown files with YAML frontmatter, stored in `.tisket/` and versioned in git. No database, no server. Git-aware divergence detection, full-text search, scratch notes for agent working memory. Works fine without clc — it's a standalone issue tracker.
+## Start here
 
-- [Workflow guide](tisket/workflow.md)
-- [CLI reference](tisket/cli-reference.md)
-
-## missouri — filesystem state graph testing
-
-Define expected filesystem states as directories, connect them with shell commands as transitions, and missouri walks every path through the graph, running commands in sandboxed temp directories and diffing the results. Built for testing CLI tools and workflow systems. No dependency on clc or tisket.
-
-- [Getting started](missouri/getting-started.md)
-- [Writing tests](missouri/writing-tests.md)
-- [CLI reference](missouri/cli-reference.md)
+| If you want to... | Go to |
+|---|---|
+| Understand the design and philosophy | [What is codelikecody?](what-is-codelikecody.md) |
+| Set up clc on a project | [Getting Started](getting-started.md) |
+| Write tests with missouri | [Getting Started with Missouri](missouri/getting-started.md) |
+| Track issues with tisket | [Tisket Workflow](tisket/workflow.md) |
+| Look up a specific command | [clc](clc/cli-reference.md), [tisket](tisket/cli-reference.md), or [missouri](missouri/cli-reference.md) CLI reference |
+| Understand the phase system | [The Phase System](clc/phase-system.md) |
+| Run multiple agents in parallel | [Multi-Agent Orchestration](clc/orchestration.md) |
+| Write complex missouri test suites | [Writing Tests](missouri/writing-tests.md) |
 
 ## Install
-
-Build from source (requires Rust stable toolchain):
 
 ```sh
 git clone https://github.com/codelikecody/codelikecody.git
 cd codelikecody
-cargo install --path clc
-cargo install --path tisket
-cargo install --path missouri
+cargo build --workspace
+export PATH="$PWD/target/debug:$PATH"
 ```
 
-Install only what you need. `tisket` and `missouri` have no dependency on `clc` or each other.
+This builds all three tools. Use whichever ones you need — `tisket` and `missouri` have no dependency on `clc` or each other.
 
 ## License
 

@@ -6,6 +6,8 @@ type: tutorial
 
 # Getting Started
 
+By the end of this, you'll have clc managing a real project: an agent that can't edit source files until tests exist, can't stop until work is done, and produces reviewable branches that merge cleanly.
+
 ## Prerequisites
 
 - Rust stable toolchain
@@ -14,100 +16,114 @@ type: tutorial
 
 ## Install from source
 
-Clone the repository and build the workspace:
-
 ```sh
 git clone https://github.com/codelikecody/codelikecody.git
 cd codelikecody
 cargo build --workspace
 ```
 
-This produces three binaries in `target/debug/`: `clc`, `tisket`, and `missouri`. Add them to your PATH or use full paths in the commands below.
+This produces three binaries in `target/debug/`: `clc`, `tisket`, and `missouri`. Add them to your PATH:
 
 ```sh
 export PATH="$PWD/target/debug:$PATH"
 ```
 
-Verify the install:
+Verify:
 
 ```sh
 clc --help
 tisket --help
 ```
 
+Both should print their help text. If they don't, the build didn't produce the binaries — check `cargo build` output for errors.
+
 ## Initialize a project
 
-Start with an existing git repository. The repo needs to be on the `main` branch (or whichever branch you configure as trunk).
+Start in an existing git repository on its main branch.
 
 ```sh
 cd /path/to/your-project
 ```
 
-### Set up tisket (issue tracker)
+### Set up tisket
 
 ```sh
 tisket init
 ```
 
-This creates `tisket.yml` at the repo root and a `.tisket/default/` directory for issues. Commit these:
+This creates `tisket.yml` at the repo root and a `.tisket/default/` directory. Commit them — tisket's state lives in git, and clc expects it to be committed before branching.
 
 ```sh
 git add tisket.yml .tisket/
 git commit -m "tisket: init"
 ```
 
-### Set up clc (workflow engine)
+### Set up clc
 
 ```sh
 clc init
 ```
 
-This creates:
+This does two things:
 
-- `.clc/` — state directory for clc
-- `.claude/settings.local.json` — Claude Code hook configuration pointing at `clc hook`
+1. Creates `.clc/` — clc's state directory (phase tracking, worker state)
+2. Creates `.claude/settings.local.json` — hooks that wire every Claude Code event through `clc hook`
 
-The hooks are what make clc work. Every Claude Code event (session start, tool use, stop) passes through `clc hook`, which injects context and enforces constraints.
+The hooks are what make everything work. Without them, clc is just a CLI. With them, every tool call the agent makes passes through clc's guard before it executes.
 
-If you don't want clc files tracked by git, use `--untracked` instead — it writes exclusion patterns to `.git/info/exclude`:
-
-```sh
-clc init --untracked
-```
-
-Check that everything is wired up:
+Check the wiring:
 
 ```sh
 clc status
 ```
 
-You should see `initialized: true`, your branch name, and `is_main: true`.
+You should see output like:
 
-## Create a tisket project
-
-Tisket organizes issues into projects. The `default` project was created by `tisket init`. For this walkthrough, create a named project:
-
-```sh
-tisket project create v1
+```
+initialized: true
+untracked: false
+main_branch: main
+branch: main
+is_main: true
+is_worktree: false
 ```
 
-## Create an issue
+If `initialized: false`, the `.clc/` directory wasn't created. Run `clc init` again.
 
-Create an issue that describes a unit of work:
+If you want clc invisible to version control (no `.clc/` or `.claude/` in the repo), use `--untracked`:
 
 ```sh
-tisket issue create -p v1 "Add greeting function"
+clc init --untracked
 ```
 
-This writes a markdown file under `.tisket/v1/` with YAML frontmatter. The issue ID is a random 4-character prefix plus a slug of the title — something like `ab12-add-greeting-function`. The exact prefix will differ on your machine.
+This writes exclusion patterns to `.git/info/exclude` instead.
 
-List issues to see it:
+## Create work
+
+Tisket organizes issues into projects. `tisket init` created a `default` project. For this walkthrough, create a project to group your work under:
+
+```sh
+tisket project create myproject
+```
+
+Now create an issue:
+
+```sh
+tisket issue create -p myproject "Add greeting function"
+```
+
+Tisket generates a short random prefix and slugifies the title. The output is the issue ID — something like `ab12-add-greeting-function`. Your prefix will be different.
 
 ```sh
 tisket issue list
 ```
 
-The issue starts in `todo` status by default. Commit the new issue to trunk:
+```
+ID                         STATUS  TITLE
+ab12-add-greeting-function todo    Add greeting function
+```
+
+The issue starts at `todo` — ready for an agent (or you) to pick up. Commit it to trunk:
 
 ```sh
 git add .tisket/
@@ -116,49 +132,58 @@ git commit -m "tisket: add greeting function issue"
 
 ## Pick up the issue
 
-From the main branch, pick up the issue by its ID:
+This is where clc takes over. From the main branch:
 
 ```sh
 clc pickup <issue-id>
 ```
 
-This does several things:
+Replace `<issue-id>` with your actual ID (e.g., `ab12-add-greeting-function`, or just `ab12` — tisket resolves short prefixes).
 
-1. Verifies the issue is in a pickable status (`todo`, `blocked`, or `paused`)
-2. Sets the issue status to `in_progress` and commits that change on trunk
-3. Creates a git worktree at `.worktrees/<issue-id>/`
-4. Initializes clc in the worktree (hooks, state directory)
-5. Sets the phase to `tests-unwritten`
+What happens:
 
-Change into the worktree to start working:
+1. clc checks that the issue is pickable (`todo`, `blocked`, or `paused`)
+2. The issue status changes to `in_progress` and that change gets committed on trunk
+3. A git worktree appears at `.worktrees/<issue-id>/` with a new branch
+4. clc initializes itself inside the worktree — hooks, state directory, phase set to `tests-unwritten`
+
+Move into the worktree:
 
 ```sh
 cd .worktrees/<issue-id>/
 ```
 
-Check the state:
+Check where you are:
 
 ```sh
 clc status
 ```
 
-You should see `phase: tests-unwritten` and `is_worktree: true`.
-
-## The phase system
-
-Phases enforce a test-driven workflow. They advance forward one step at a time:
-
 ```
-tests-unwritten → tests-written → red → implementing → green → review-requested → in-review → reviewed → done
+initialized: true
+untracked: false
+main_branch: main
+phase: tests-unwritten
+branch: ab12-add-greeting-function
+is_main: false
+is_worktree: true
+tisket: ab12-add-greeting-function (in_progress) — 1 open
 ```
 
-Hooks block actions that violate the current phase — you can't write implementation files during `tests-unwritten`, and you can't stop the session before reaching `review-requested`. For the full phase semantics, see [What is codelikecody?](what-is-codelikecody.md).
+The phase is `tests-unwritten`. This means:
 
-### Write the test
+- **You can** read any file, run read-only commands, edit files under `tests/missouri/`
+- **You cannot** edit source files, and the hooks will block any attempt with an explanation
+- **You cannot** stop the session — the stop hook rejects until you reach `review-requested`
 
-With the phase at `tests-unwritten`, write a failing test for the greeting function. The specifics depend on your project's language and test framework. As an example in a Rust project:
+## Write a failing test
+
+The phase system exists to enforce one thing: tests come before implementation. Right now, source file edits are blocked. Write the test first.
+
+The specifics depend on your project. In a Rust project, you might write:
 
 ```rust
+// tests/greeting_test.rs (or wherever your tests live)
 #[test]
 fn greeting_includes_name() {
     let result = greet("world");
@@ -172,27 +197,33 @@ Once the test file exists, advance the phase:
 clc status set tests-written
 ```
 
-### See it fail (red)
+No output means success. Check with `clc status` — the phase should now say `tests-written`.
 
-Run the test suite. The test should fail — the function doesn't exist yet.
+## Watch it fail
 
-Advance to red:
+Run your test suite. The test should fail — the `greet` function doesn't exist yet. This is the "red" in red-green-refactor: a test that fails for the right reason.
+
+```sh
+cargo test  # or your project's test command
+```
+
+The test fails. Good. Advance to red:
 
 ```sh
 clc status set red
 ```
 
-The `red` phase means "tests exist and fail." This is the expected state before implementation.
+This confirms that you've verified the test actually fails. Without this step, you could write a test that passes trivially and skip straight to implementation — the phase system won't let you.
 
-### Implement
+## Implement
 
-Advance to the implementing phase:
+Now advance to `implementing`:
 
 ```sh
 clc status set implementing
 ```
 
-Now write the implementation — the minimum code to make the test pass:
+This is the phase where everything unlocks. All file edits are allowed. Write the minimum code to make the test pass:
 
 ```rust
 pub fn greet(name: &str) -> String {
@@ -200,28 +231,40 @@ pub fn greet(name: &str) -> String {
 }
 ```
 
-### See it pass (green)
+## Get green
 
-Run the test suite again. The test should pass.
+Run the test suite again:
 
-Advance to green:
+```sh
+cargo test
+```
+
+The test passes. Advance to green:
 
 ```sh
 clc status set green
 ```
 
-### Commit your work
+At `green`, source file edits lock again. Only test files are editable. This is intentional — if you need to change implementation after getting green, go back to `implementing` first (backward phase transitions are always allowed).
 
-Commit frequently throughout the process — commits are checkpoints, not milestones. Before finalizing, make sure everything is committed:
+## Commit
+
+Commit frequently throughout the process — don't wait until the end. But before finalizing, make sure everything is committed:
 
 ```sh
-git add src/lib.rs src/tests.rs  # or whatever files you changed
+git add src/lib.rs tests/greeting_test.rs
 git commit -m "feat: add greeting function"
 ```
 
-## Complete the work
+## Review and finalize
 
-The review phases (`review-requested`, `in-review`, `reviewed`) sit between `green` and `done`. For this walkthrough, advance through them:
+Three review phases sit between `green` and `done`. In a real workflow, these coordinate handoff:
+
+- **`review-requested`** — the agent signals it's ready for review. Source file edits lock again (only test edits allowed). This is the first point where the agent is allowed to stop — it's a natural handoff point.
+- **`in-review`** — a reviewer (human or coordinator) is looking at the work. All edits unlock again so review feedback can be addressed.
+- **`reviewed`** — review is done. Edits lock, and the agent can stop or advance to `done`.
+
+For this walkthrough, there's no reviewer, so advance through them:
 
 ```sh
 clc status set review-requested
@@ -236,26 +279,33 @@ Now finalize:
 clc done
 ```
 
-This closes the tisket issue (setting its status to `done` and moving it to `.tisket/v1/.closed/`) and commits that change.
+This closes the tisket issue (status → `done`, file moved to `.tisket/myproject/.closed/`) and commits that change. The working tree must be clean — uncommitted changes cause `clc done` to fail.
 
-## Merge back to trunk
+## Merge to trunk
 
-Switch back to the main branch:
+Go back to the main branch:
 
 ```sh
 cd /path/to/your-project
 ```
 
-Merge the completed branch:
+Merge the completed work:
 
 ```sh
 clc merge <issue-id>
 ```
 
-This fast-forward merges the feature branch into trunk, removes the worktree, and deletes the branch. The issue's closed status is now on trunk.
+This fast-forward merges the feature branch into trunk, deletes the branch, and removes the worktree. The closed tisket is now on trunk. The work is done.
 
-## What's next
+## What you just did
 
-- [clc CLI Reference](clc/cli-reference.md) — full command and flag documentation
-- [tisket CLI Reference](tisket/cli-reference.md) — issue tracker commands and schema
-- [What is codelikecody?](what-is-codelikecody.md) — the reasoning behind the phase system and trunk-protection model
+You created an issue, picked it up, wrote a test before implementation (because the hooks wouldn't let you do it the other way), implemented the feature, and merged a clean branch. The phase system enforced the workflow mechanically — not through prompts or instructions, but through tool-call interception.
+
+In practice, an agent does this autonomously. The agent receives a tisket, enters the worktree, and the hook system constrains its behavior at each phase. The agent doesn't need to know the rules — the guard enforces them.
+
+## Next
+
+- [The Phase System](clc/phase-system.md) — deeper explanation of phases, restrictions, and the guard
+- [Multi-Agent Orchestration](clc/orchestration.md) — dispatch multiple agents to work in parallel
+- [clc CLI Reference](clc/cli-reference.md) — every command and flag
+- [tisket CLI Reference](tisket/cli-reference.md) — issue management commands and schema
