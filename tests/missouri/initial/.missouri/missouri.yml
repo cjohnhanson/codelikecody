@@ -1,5 +1,5 @@
 transitions:
-  - name: "echo runs inside linux VM"
-    command: "echo hello-from-microsandbox"
+  - name: "echo runs inside linux container"
+    command: "echo hello-from-container"
     target: ../echoed
-    stdout: "hello-from-microsandbox\n"
+    stdout: "hello-from-container\n"
