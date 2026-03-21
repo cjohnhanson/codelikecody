@@ -2175,18 +2175,9 @@ transitions:
         );
     }
 
-    /// Check if Docker is available.
-    fn docker_available() -> bool {
-        bollard::Docker::connect_with_local_defaults().is_ok()
-    }
-
     #[test]
+    #[ignore = "requires Docker"]
     fn docker_backend_executes_command_in_vm() {
-        if !docker_available() {
-            eprintln!("skipping docker_backend_executes_command_in_vm: docker not available");
-            return;
-        }
-
         let backend = DockerBackend { image: DEFAULT_DOCKER_IMAGE.to_string() };
         let env = BTreeMap::new();
         let work_dir = Utf8Path::new("/tmp");
@@ -2198,12 +2189,8 @@ transitions:
     }
 
     #[test]
+    #[ignore = "requires Docker"]
     fn docker_backend_captures_exit_code() {
-        if !docker_available() {
-            eprintln!("skipping docker_backend_captures_exit_code: docker not available");
-            return;
-        }
-
         let backend = DockerBackend { image: DEFAULT_DOCKER_IMAGE.to_string() };
         let env = BTreeMap::new();
         let work_dir = Utf8Path::new("/tmp");
@@ -2214,12 +2201,8 @@ transitions:
     }
 
     #[test]
+    #[ignore = "requires Docker"]
     fn docker_backend_captures_stderr() {
-        if !docker_available() {
-            eprintln!("skipping docker_backend_captures_stderr: docker not available");
-            return;
-        }
-
         let backend = DockerBackend { image: DEFAULT_DOCKER_IMAGE.to_string() };
         let env = BTreeMap::new();
         let work_dir = Utf8Path::new("/tmp");
@@ -2231,12 +2214,8 @@ transitions:
     }
 
     #[test]
+    #[ignore = "requires Docker"]
     fn docker_backend_injects_env() {
-        if !docker_available() {
-            eprintln!("skipping docker_backend_injects_env: docker not available");
-            return;
-        }
-
         let backend = DockerBackend { image: DEFAULT_DOCKER_IMAGE.to_string() };
         let mut env = BTreeMap::new();
         env.insert("MISSOURI_TEST_VAR".into(), "sandbox-value".into());
@@ -2248,12 +2227,8 @@ transitions:
     }
 
     #[test]
+    #[ignore = "requires Docker"]
     fn docker_backend_runs_in_linux_vm() {
-        if !docker_available() {
-            eprintln!("skipping docker_backend_runs_in_linux_vm: docker not available");
-            return;
-        }
-
         let backend = DockerBackend { image: DEFAULT_DOCKER_IMAGE.to_string() };
         let env = BTreeMap::new();
         let work_dir = Utf8Path::new("/tmp");
