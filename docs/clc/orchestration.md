@@ -6,6 +6,12 @@ type: guide
 
 # Multi-Agent Orchestration
 
+A single agent works one tisket at a time: pick up, write tests, implement, done. That's fine for interactive use. But if you have a backlog of scoped tiskets, you can dispatch multiple agents to work in parallel — each in its own worktree, each constrained by the phase system, each producing a mergeable branch.
+
+The model is a coordinator-worker hierarchy. The coordinator runs on trunk, scans for pickable tiskets, dispatches workers, monitors their progress, and lands completed branches. Workers are individual agent sessions, each isolated in a worktree. The coordinator doesn't write code — it manages the agents that do.
+
+You can also dispatch workers manually without a coordinator, which is useful for one-off tasks or debugging.
+
 ## Dispatch a Single Worker
 
 Run from the main branch. The tisket must exist and have `todo` status with
@@ -18,7 +24,7 @@ clc dispatch <tisket-id>
 This creates a worktree at `.worktrees/<tisket-id>/`, picks up the tisket,
 seeds baseline permissions, and spawns a background Claude process.
 
-To use a specific model (default is `sonnet`):
+To use a specific model (default is `sonnet` — a cheaper model for individual tasks):
 
 ```
 clc dispatch <tisket-id> --model opus
@@ -97,7 +103,7 @@ clc coordinate --id coord-backend --label backend
 
 ### Model Selection
 
-Workers spawned by the coordinator default to `opus`. Override with:
+The coordinator itself runs as `opus` (it needs reasoning for dispatch decisions). Workers it spawns default to `sonnet`. Override with:
 
 ```
 clc coordinate --model sonnet
@@ -438,19 +444,30 @@ outbox, or coordinator, produces an error.
 
 ## Integration Branches
 
-For coordinated multi-worker merges, use integration branches:
+When multiple workers complete around the same time, merging each one individually creates a noisy git history — one merge commit per worker, each potentially requiring a rebase. Integration branches collect multiple worker branches into a single squash-merge.
+
+The workflow:
 
 ```
 clc integrate create release-batch
+```
+
+This creates a branch `integrate/release-batch` at the current main HEAD.
+
+```
 clc integrate merge <worker-branch>
 clc integrate merge <another-worker-branch>
+```
+
+Each merge applies a worker's changes to the integration branch via three-way merge. If there are conflicts between workers, they surface here rather than on main.
+
+```
 clc integrate land
 ```
 
-`land` squash-merges the integration branch onto main.
+This squash-merges the integration branch onto main as a single commit, then cleans up the integration branch and all merged worker branches.
 
-Coordinators can also be landed, which squash-merges their integration
-branch:
+Coordinators use this pattern automatically. Landing a coordinator squash-merges its integration branch:
 
 ```
 clc coordinator <id> land
