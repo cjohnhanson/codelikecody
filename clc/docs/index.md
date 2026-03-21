@@ -24,8 +24,10 @@ Three tools, each independently useful:
 |---|---|
 | Understand the design and philosophy | [What is codelikecody?](/what-is-codelikecody) |
 | Set up clc on a project | [Getting Started](/getting-started) |
+| Understand missouri's testing model | [What is Missouri?](/missouri/what-is-missouri) |
 | Write tests with missouri | [Getting Started with Missouri](/missouri/getting-started) |
-| Track issues with tisket | [Tisket Workflow](/tisket/workflow) |
+| Understand tisket's design | [What is Tisket?](/tisket/what-is-tisket) |
+| Track issues with tisket | [Getting Started with Tisket](/tisket/getting-started) |
 | Look up a specific command | [clc](/clc/cli-reference), [tisket](/tisket/cli-reference), or [missouri](/missouri/cli-reference) CLI reference |
 | Understand the phase system | [The Phase System](/clc/phase-system) |
 | Run multiple agents in parallel | [Multi-Agent Orchestration](/clc/orchestration) |

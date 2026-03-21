@@ -740,3 +740,9 @@ assertions:
     should_fail: true
     stderr: "error: issue 'foo' not found\n"
 ```
+
+## Further reading
+
+- [What is Missouri?](/missouri/what-is-missouri) — the design philosophy behind filesystem state graphs
+- [CLI Reference](/missouri/cli-reference) — full command and config schema reference
+- [Getting Started](/missouri/getting-started) — build your first test suite from scratch

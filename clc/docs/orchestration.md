@@ -472,3 +472,9 @@ Coordinators use this pattern automatically. Landing a coordinator squash-merges
 ```
 clc coordinator <id> land
 ```
+
+## Further reading
+
+- [The Phase System](/clc/phase-system) — how phases constrain what workers can do
+- [CLI Reference](/clc/cli-reference) — full command and flag documentation for dispatch, workers, coordinators
+- [Getting Started](/getting-started) — the single-agent workflow that orchestration scales up

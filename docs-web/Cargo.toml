@@ -21,4 +21,5 @@ leptos = { version = "0.8", features = ["csr"] }
 leptos_router = "0.8"
 console_error_panic_hook = "0.1"
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
-web-sys = "0.3"
+wasm-bindgen = "0.2"
+web-sys = { version = "0.3", features = ["Element", "MouseEvent", "EventTarget", "HtmlElement"] }
