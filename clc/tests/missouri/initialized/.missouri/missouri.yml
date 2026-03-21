@@ -1,3 +1,5 @@
+entrypoint: true
+
 assertions:
   - name: ".clc directory exists"
     command: "test -d .clc"

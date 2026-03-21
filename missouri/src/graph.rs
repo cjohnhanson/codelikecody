@@ -20,6 +20,8 @@ pub struct State {
     pub name: String,
     /// Environment variables defined for this state.
     pub env: BTreeMap<String, String>,
+    /// When true, this state is a valid subgraph entrypoint.
+    pub entrypoint: bool,
 }
 
 /// A resolved file comparator override.
@@ -215,6 +217,7 @@ impl StateGraph {
                 path: path.clone(),
                 name,
                 env: merged_env,
+                entrypoint: cfg.entrypoint,
             });
             configs.push(cfg);
         }
@@ -322,6 +325,15 @@ impl StateGraph {
         self.states
             .iter()
             .filter(|s| !has_inbound.contains(&s.id))
+            .map(|s| s.id)
+            .collect()
+    }
+
+    /// States explicitly marked as `entrypoint: true` in their config.
+    pub fn entrypoints(&self) -> Vec<StateId> {
+        self.states
+            .iter()
+            .filter(|s| s.entrypoint)
             .map(|s| s.id)
             .collect()
     }

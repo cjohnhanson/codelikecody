@@ -17,6 +17,11 @@ pub struct StateConfig {
     /// Assertions to verify properties of this state.
     #[serde(default)]
     pub assertions: Vec<AssertionConfig>,
+
+    /// When true, this state's fixture is a complete starting point.
+    /// Paths can begin here without traversing upstream transitions.
+    #[serde(default)]
+    pub entrypoint: bool,
 }
 
 /// Network interception config for a transition.

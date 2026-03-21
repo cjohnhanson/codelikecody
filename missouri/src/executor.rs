@@ -1321,6 +1321,10 @@ fn run_path_transitions(
 }
 
 /// Copy a state's files (excluding .missouri/) to a temp directory.
+///
+/// Directories in the config directory named `dot-<name>/` are restored as
+/// `.<name>/` in the temp dir. This allows fixtures to carry dotfile state
+/// (`.git/`, `.clc/`, etc.) that can't be tracked directly by git.
 fn copy_state_to_temp(
     state_id: StateId,
     graph: &StateGraph,
@@ -1333,17 +1337,49 @@ fn copy_state_to_temp(
     copy_dir_recursive(&state.path, &temp_path, &graph.config_dir)
         .map_err(|e| format!("failed to copy state to temp dir: {e}"))?;
 
+    // Restore dot-<name>/ → .<name>/ for each matching directory in config dir.
+    let config_path = state.path.join(&graph.config_dir);
+    if config_path.exists() {
+        if let Ok(entries) = std::fs::read_dir(&config_path) {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy();
+                if name_str.starts_with("dot-") && entry.file_type().map_or(false, |ft| ft.is_dir()) {
+                    let real_name = format!(".{}", &name_str[4..]);
+                    let dst = temp_path.join(&real_name);
+                    std::fs::create_dir_all(&dst)
+                        .map_err(|e| format!("failed to create {real_name} dir: {e}"))?;
+                    let src = Utf8PathBuf::try_from(entry.path())
+                        .map_err(|e| format!("dot-dir path not UTF-8: {e}"))?;
+                    copy_dir_recursive_inner(&src, &dst, &graph.config_dir, true)
+                        .map_err(|e| format!("failed to copy {name_str} to {real_name}: {e}"))?;
+                }
+            }
+        }
+    }
+
     Ok((temp_dir, temp_path))
 }
 
 /// Recursively copy directory contents, skipping the config directory.
+/// When `skip_gitkeep` is true, `.gitkeep` files are also skipped (used
+/// for dot-dir restoration where `.gitkeep` is git plumbing, not content).
 fn copy_dir_recursive(src: &Utf8Path, dst: &Utf8Path, config_dir: &str) -> std::io::Result<()> {
+    copy_dir_recursive_inner(src, dst, config_dir, false)
+}
+
+fn copy_dir_recursive_inner(
+    src: &Utf8Path,
+    dst: &Utf8Path,
+    config_dir: &str,
+    skip_gitkeep: bool,
+) -> std::io::Result<()> {
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
 
-        if name_str == config_dir {
+        if name_str == config_dir || (skip_gitkeep && name_str == ".gitkeep") {
             continue;
         }
 
@@ -1354,7 +1390,7 @@ fn copy_dir_recursive(src: &Utf8Path, dst: &Utf8Path, config_dir: &str) -> std::
         let ft = entry.file_type()?;
         if ft.is_dir() {
             std::fs::create_dir_all(&dst_path)?;
-            copy_dir_recursive(&src_path, &dst_path, config_dir)?;
+            copy_dir_recursive_inner(&src_path, &dst_path, config_dir, skip_gitkeep)?;
         } else if ft.is_symlink() {
             let target = std::fs::read_link(&src_path)?;
             #[cfg(unix)]
@@ -2783,5 +2819,54 @@ transitions:
             "PORT should be injected as a valid port number, got stdout: '{}'",
             result.stdout,
         );
+    }
+
+    #[test]
+    fn copy_state_to_temp_restores_dot_dirs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        // Create a state with .missouri/dot-git/ and .missouri/dot-clc/
+        let state_dir = root.join("a");
+        let missouri_dir = state_dir.join(".missouri");
+
+        let dot_git_dir = missouri_dir.join("dot-git");
+        fs::create_dir_all(&dot_git_dir).unwrap();
+        fs::write(dot_git_dir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+
+        let dot_clc_dir = missouri_dir.join("dot-clc");
+        fs::create_dir_all(&dot_clc_dir).unwrap();
+
+        fs::write(
+            missouri_dir.join("missouri.yml"),
+            "transitions:\n  - command: \"echo\"\n    target: \"../b\"\n",
+        )
+        .unwrap();
+        fs::write(state_dir.join("README.md"), "hello").unwrap();
+
+        make_state(root, "b", "{}");
+
+        let graph = StateGraph::discover(root, ".missouri").unwrap();
+        let state_id = graph
+            .states
+            .iter()
+            .find(|s| s.name == "a")
+            .unwrap()
+            .id;
+
+        let (_temp_dir, work_dir) = copy_state_to_temp(state_id, &graph).unwrap();
+
+        // .git/ restored from dot-git/
+        assert!(work_dir.join(".git").exists());
+        assert_eq!(
+            fs::read_to_string(work_dir.join(".git/HEAD")).unwrap(),
+            "ref: refs/heads/main\n"
+        );
+        // .clc/ restored from dot-clc/
+        assert!(work_dir.join(".clc").exists());
+        // Regular files copied
+        assert!(work_dir.join("README.md").exists());
+        // .missouri/ not copied
+        assert!(!work_dir.join(".missouri").exists());
     }
 }

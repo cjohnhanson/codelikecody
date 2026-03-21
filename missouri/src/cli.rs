@@ -205,7 +205,7 @@ pub fn run_command(config_dir: &str, command: Command) -> miette::Result<bool> {
                 return Err(crate::error::Error::NoRoots.into());
             }
 
-            let paths = crate::paths::enumerate_paths(&graph);
+            let paths = crate::paths::enumerate_subgraph_paths(&graph);
             if paths.is_empty() {
                 eprintln!("no test paths found");
                 return Ok(true);
@@ -311,7 +311,7 @@ pub fn run_command(config_dir: &str, command: Command) -> miette::Result<bool> {
                 ListKind::States => crate::report::print_states(&graph),
                 ListKind::Transitions => crate::report::print_transitions(&graph),
                 ListKind::Paths | ListKind::Graph => {
-                    let paths = crate::paths::enumerate_paths(&graph);
+                    let paths = crate::paths::enumerate_subgraph_paths(&graph);
                     crate::report::print_paths(&paths, &graph);
                 }
             }
@@ -429,7 +429,7 @@ fn run_workspace_members(
             return Err(crate::error::Error::NoRoots.into());
         }
 
-        let paths = crate::paths::enumerate_paths(&graph);
+        let paths = crate::paths::enumerate_subgraph_paths(&graph);
         if paths.is_empty() {
             eprintln!("no test paths found in {label}");
             continue;
@@ -501,7 +501,7 @@ fn list_workspace_members(
             ListKind::States => crate::report::print_states(&graph),
             ListKind::Transitions => crate::report::print_transitions(&graph),
             ListKind::Paths | ListKind::Graph => {
-                let paths = crate::paths::enumerate_paths(&graph);
+                let paths = crate::paths::enumerate_subgraph_paths(&graph);
                 crate::report::print_paths(&paths, &graph);
             }
         }
