@@ -19,8 +19,19 @@ pub struct CommandOutput {
     pub exit_code: i32,
 }
 
+/// Helper trait for downcasting trait objects.
+pub trait AsAny {
+    fn as_any(&self) -> &dyn std::any::Any;
+}
+
+impl<T: 'static> AsAny for T {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
 /// Backend for building commands in a specific execution environment.
-pub trait Backend: std::fmt::Debug + Send + Sync {
+pub trait Backend: std::fmt::Debug + Send + Sync + AsAny {
     /// Build a Command for a shell command (sh -c "...").
     fn build_shell_command(
         &self,
@@ -251,22 +262,29 @@ pub struct DockerBackend {
 /// Default Docker image for missouri test containers.
 const DEFAULT_DOCKER_IMAGE: &str = "debian:bookworm-slim";
 
+/// Image used when network replay is configured. Must have mitmdump, iptables,
+/// and the mitmproxy CA installed in the system trust store.
+const MITM_DOCKER_IMAGE: &str = "mitm-test";
+
 impl DockerBackend {
     /// Run a command inside a Docker container with network isolation and
     /// volume mounting, then capture stdout/stderr/exit_code.
+    ///
+    /// When `replay_flow` is set, the container uses the mitmproxy image with
+    /// transparent interception: iptables redirects outbound 80/443 to mitmdump,
+    /// which serves pre-recorded responses from the flow file. The process under
+    /// test has no idea it's being intercepted — no proxy env vars, no application
+    /// configuration.
     fn run_in_container(
         &self,
         command: &str,
         work_dir: &Utf8Path,
         env: &BTreeMap<String, String>,
+        replay_flow: Option<&Utf8Path>,
     ) -> Result<CommandOutput, String> {
-        use bollard::container::{
-            Config, CreateContainerOptions, RemoveContainerOptions, WaitContainerOptions,
-        };
-        use bollard::exec::{CreateExecOptions, StartExecResults};
+        use bollard::container::{Config, CreateContainerOptions, RemoveContainerOptions};
         use bollard::models::HostConfig;
         use bollard::Docker;
-        use futures_util::StreamExt;
 
         let rt = tokio::runtime::Runtime::new()
             .map_err(|e| format!("failed to create tokio runtime: {e}"))?;
@@ -278,16 +296,33 @@ impl DockerBackend {
             // Build env vars as "KEY=VALUE" strings
             let env_vec: Vec<String> = env.iter().map(|(k, v)| format!("{k}={v}")).collect();
 
-            // Create container with network disabled and work_dir mounted
+            // When replay is active, use the mitmproxy image and mount the flow file.
+            // Also need CAP_NET_ADMIN for iptables.
+            let image = if replay_flow.is_some() {
+                MITM_DOCKER_IMAGE
+            } else {
+                self.image.as_str()
+            };
+
+            let mut binds = vec![format!("{}:/work", work_dir)];
+            if let Some(flow) = replay_flow {
+                binds.push(format!("{}:/replay.flow:ro", flow));
+            }
+
             let host_config = HostConfig {
                 network_mode: Some("none".to_string()),
-                binds: Some(vec![format!("{}:/work", work_dir)]),
+                binds: Some(binds),
+                cap_add: if replay_flow.is_some() {
+                    Some(vec!["NET_ADMIN".to_string()])
+                } else {
+                    None
+                },
                 ..Default::default()
             };
 
             let config = Config {
-                image: Some(self.image.as_str()),
-                cmd: Some(vec!["sleep", "300"]), // keep alive while we exec
+                image: Some(image),
+                cmd: Some(vec!["sleep", "300"]),
                 working_dir: Some("/work"),
                 env: Some(env_vec.iter().map(|s| s.as_str()).collect()),
                 host_config: Some(host_config),
@@ -307,67 +342,37 @@ impl DockerBackend {
 
             let container_id = container.id;
 
-            // Start container
             docker
                 .start_container::<String>(&container_id, None)
                 .await
-                .map_err(|e| {
-                    format!("failed to start container: {e}")
-                })?;
+                .map_err(|e| format!("failed to start container: {e}"))?;
 
-            // Exec the command inside the container
-            let exec = docker
-                .create_exec(
-                    &container_id,
-                    CreateExecOptions {
-                        attach_stdout: Some(true),
-                        attach_stderr: Some(true),
-                        cmd: Some(vec!["sh", "-c", command]),
-                        ..Default::default()
-                    },
-                )
-                .await
-                .map_err(|e| format!("failed to create exec: {e}"))?;
+            // If replay mode, set up transparent interception inside the container
+            if replay_flow.is_some() {
+                // Set up iptables + start mitmdump
+                let setup_script = "\
+                    MITMUSER_UID=$(id -u mitmuser) && \
+                    iptables -t nat -A OUTPUT -p tcp --dport 80 -m owner ! --uid-owner $MITMUSER_UID -j REDIRECT --to-port 18080 && \
+                    iptables -t nat -A OUTPUT -p tcp --dport 443 -m owner ! --uid-owner $MITMUSER_UID -j REDIRECT --to-port 18080 && \
+                    su -s /bin/bash mitmuser -c 'HOME=/home/mitmuser mitmdump --mode transparent -p 18080 \
+                        --server-replay /replay.flow \
+                        --set connection_strategy=lazy \
+                        --set upstream_cert=false \
+                        --set server_replay_reuse=true \
+                        --set server_replay_nopop=true \
+                        --set confdir=/home/mitmuser/.mitmproxy \
+                        -q' &\
+                    sleep 2";
 
-            let mut stdout = String::new();
-            let mut stderr = String::new();
-
-            if let StartExecResults::Attached { mut output, .. } = docker
-                .start_exec(&exec.id, None)
-                .await
-                .map_err(|e| format!("failed to start exec: {e}"))?
-            {
-                while let Some(msg) = output.next().await {
-                    match msg {
-                        Ok(bollard::container::LogOutput::StdOut { message }) => {
-                            stdout.push_str(&String::from_utf8_lossy(&message));
-                        }
-                        Ok(bollard::container::LogOutput::StdErr { message }) => {
-                            stderr.push_str(&String::from_utf8_lossy(&message));
-                        }
-                        Err(e) => {
-                            stderr.push_str(&format!("exec stream error: {e}"));
-                        }
-                        _ => {}
-                    }
-                }
+                self.exec_in_container(&docker, &container_id, setup_script).await?;
             }
 
-            // Get exit code from the exec
-            let exec_inspect = docker
-                .inspect_exec(&exec.id)
-                .await
-                .map_err(|e| format!("failed to inspect exec: {e}"))?;
-
-            let exit_code = exec_inspect
-                .exit_code
-                .map(|c| c as i32)
-                .unwrap_or(-1);
+            // Run the actual command
+            let (stdout, stderr, exit_code) =
+                self.exec_capture(&docker, &container_id, command).await?;
 
             // Stop and remove container
-            let _ = docker
-                .stop_container(&container_id, None)
-                .await;
+            let _ = docker.stop_container(&container_id, None).await;
             let _ = docker
                 .remove_container(
                     &container_id,
@@ -378,15 +383,114 @@ impl DockerBackend {
                 )
                 .await;
 
-            // Suppress unused import warnings for wait options
-            let _ = WaitContainerOptions::<String>::default;
-
             Ok(CommandOutput {
                 stdout,
                 stderr,
                 exit_code,
             })
         })
+    }
+
+    /// Execute a command inside a container without capturing output (for setup).
+    async fn exec_in_container(
+        &self,
+        docker: &bollard::Docker,
+        container_id: &str,
+        command: &str,
+    ) -> Result<(), String> {
+        use bollard::exec::{CreateExecOptions, StartExecResults};
+        use futures_util::StreamExt;
+
+        let exec = docker
+            .create_exec(
+                container_id,
+                CreateExecOptions {
+                    attach_stdout: Some(true),
+                    attach_stderr: Some(true),
+                    cmd: Some(vec!["sh", "-c", command]),
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(|e| format!("failed to create exec: {e}"))?;
+
+        if let StartExecResults::Attached { mut output, .. } = docker
+            .start_exec(&exec.id, None)
+            .await
+            .map_err(|e| format!("failed to start exec: {e}"))?
+        {
+            while output.next().await.is_some() {} // drain
+        }
+
+        let inspect = docker
+            .inspect_exec(&exec.id)
+            .await
+            .map_err(|e| format!("failed to inspect exec: {e}"))?;
+
+        if inspect.exit_code != Some(0) {
+            return Err(format!(
+                "setup command failed with exit code {:?}",
+                inspect.exit_code
+            ));
+        }
+        Ok(())
+    }
+
+    /// Execute a command inside a container and capture stdout/stderr/exit_code.
+    async fn exec_capture(
+        &self,
+        docker: &bollard::Docker,
+        container_id: &str,
+        command: &str,
+    ) -> Result<(String, String, i32), String> {
+        use bollard::exec::{CreateExecOptions, StartExecResults};
+        use futures_util::StreamExt;
+
+        let exec = docker
+            .create_exec(
+                container_id,
+                CreateExecOptions {
+                    attach_stdout: Some(true),
+                    attach_stderr: Some(true),
+                    cmd: Some(vec!["sh", "-c", command]),
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(|e| format!("failed to create exec: {e}"))?;
+
+        let mut stdout = String::new();
+        let mut stderr = String::new();
+
+        if let StartExecResults::Attached { mut output, .. } = docker
+            .start_exec(&exec.id, None)
+            .await
+            .map_err(|e| format!("failed to start exec: {e}"))?
+        {
+            while let Some(msg) = output.next().await {
+                match msg {
+                    Ok(bollard::container::LogOutput::StdOut { message }) => {
+                        stdout.push_str(&String::from_utf8_lossy(&message));
+                    }
+                    Ok(bollard::container::LogOutput::StdErr { message }) => {
+                        stderr.push_str(&String::from_utf8_lossy(&message));
+                    }
+                    Err(e) => {
+                        stderr.push_str(&format!("exec stream error: {e}"));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let exec_inspect = docker
+            .inspect_exec(&exec.id)
+            .await
+            .map_err(|e| format!("failed to inspect exec: {e}"))?;
+
+        let exit_code = exec_inspect.exit_code.map(|c| c as i32).unwrap_or(-1);
+
+        Ok((stdout, stderr, exit_code))
     }
 }
 
@@ -419,7 +523,7 @@ impl Backend for DockerBackend {
         env: &BTreeMap<String, String>,
         _path_env: &str,
     ) -> Result<CommandOutput, String> {
-        self.run_in_container(command, work_dir, env)
+        self.run_in_container(command, work_dir, env, None)
     }
 
     fn is_docker(&self) -> bool {
@@ -1760,15 +1864,29 @@ fn execute_transition(
         _service_handles = Vec::new();
     }
 
-    // Run the command. Microsandbox backend uses execute() which runs inside
-    // a VM. Other backends build a local Command and run it with signal tracking.
+    // Run the command. Docker backend handles everything inside a container,
+    // including network replay if configured. Other backends use local Commands.
     let (exit_code, stdout, stderr) = if sandbox.is_docker() {
-        match sandbox.execute(
+        // Resolve replay flow path for Docker backend (network interception
+        // happens inside the container, not on the host)
+        let replay_flow = match &transition.network {
+            Some(crate::config::NetworkConfig::Replay { replay }) => {
+                Some(source_state.path.join(&graph.config_dir).join(replay))
+            }
+            _ => None,
+        };
+
+        // Downcast to DockerBackend to access run_in_container with replay
+        let docker = sandbox
+            .as_any()
+            .downcast_ref::<DockerBackend>()
+            .expect("is_docker() returned true but backend is not DockerBackend");
+
+        match docker.run_in_container(
             &transition.command,
-            transition.shell,
             work_dir,
             &cmd_env,
-            &path_env,
+            replay_flow.as_deref(),
         ) {
             Ok(out) => (Some(out.exit_code), out.stdout, out.stderr),
             Err(e) => {
