@@ -359,7 +359,6 @@ impl DockerBackend {
                         --set connection_strategy=lazy \
                         --set upstream_cert=false \
                         --set server_replay_reuse=true \
-                        --set server_replay_nopop=true \
                         --set confdir=/home/mitmuser/.mitmproxy \
                         -q' &\
                     sleep 2";
