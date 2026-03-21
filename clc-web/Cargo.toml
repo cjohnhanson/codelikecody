@@ -23,4 +23,5 @@ console_error_panic_hook = "0.1"
 gloo-net = { version = "0.6", features = ["http", "json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-web-sys = "0.3"
+web-sys = { version = "0.3", features = ["Storage"] }
+pulldown-cmark = { version = "0.12", default-features = false, features = ["html"] }
