@@ -40,8 +40,8 @@ fn status_label(status: &str) -> &'static str {
 }
 
 fn group_by_status(issues: &[Issue]) -> Vec<(&'static str, Vec<Issue>)> {
-    // Active work first, then ready, then intake/blocked/paused
-    let columns = ["in_progress", "todo", "blocked", "discovery", "paused"];
+    // Left to right: pipeline flow from intake to active
+    let columns = ["discovery", "todo", "in_progress", "blocked", "paused"];
     columns
         .iter()
         .map(|&status| {
