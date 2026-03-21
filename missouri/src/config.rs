@@ -27,13 +27,19 @@ pub struct StateConfig {
 /// Network interception config for a transition.
 ///
 /// Exactly one variant applies per transition:
-/// - `Replay { replay }` — start mitmdump in replay mode with the given flow file
+/// - `Replay { replay, hosts }` — replay recorded responses via mitmdump
 /// - `Record` — start mitmdump in record mode and stash the captured flow
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum NetworkConfig {
     /// Replay from a previously recorded flow file.
-    Replay { replay: Utf8PathBuf },
+    /// `hosts` lists the hostnames to intercept — each gets an /etc/hosts entry
+    /// pointing to 127.0.0.1 inside the container so the process can resolve them.
+    Replay {
+        replay: Utf8PathBuf,
+        #[serde(default)]
+        hosts: Vec<String>,
+    },
     /// Record traffic during this transition.
     Record { record: bool },
 }
@@ -547,7 +553,7 @@ transitions:
         let config = parse_config(yaml).unwrap();
         let t = &config.transitions[0];
         match t.network.as_ref().unwrap() {
-            NetworkConfig::Replay { replay } => {
+            NetworkConfig::Replay { replay, .. } => {
                 assert_eq!(replay.as_str(), "recordings/worker.flow");
             }
             other => panic!("expected Replay, got {other:?}"),

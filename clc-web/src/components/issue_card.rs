@@ -62,7 +62,7 @@ pub fn IssueCard(issue: Issue) -> impl IntoView {
         }
     });
 
-    let date = relative_age(&issue.frontmatter.created);
+    let _date = relative_age(&issue.frontmatter.created);
 
     view! {
         <A href=format!("/issues/{}", issue.id) attr:class="block group">

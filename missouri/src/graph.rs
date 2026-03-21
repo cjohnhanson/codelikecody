@@ -1196,7 +1196,7 @@ transitions:
         assert_eq!(graph.transitions.len(), 1);
         let t = &graph.transitions[0];
         match t.network.as_ref().unwrap() {
-            crate::config::NetworkConfig::Replay { replay } => {
+            crate::config::NetworkConfig::Replay { replay, .. } => {
                 assert_eq!(replay.as_str(), ".missouri/recordings/worker.flow");
             }
             other => panic!("expected Replay, got {other:?}"),

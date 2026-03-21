@@ -60,7 +60,7 @@ fn group_by_status(issues: &[Issue]) -> Vec<(&'static str, Vec<Issue>)> {
 fn StatusColumn(status: &'static str, issues: Vec<Issue>) -> impl IntoView {
     let count = issues.len();
     let border = status_border(status);
-    let accent = status_accent(status);
+    let _accent = status_accent(status);
     let label = status_label(status);
     let needs_expand = count > INITIAL_SHOW;
 

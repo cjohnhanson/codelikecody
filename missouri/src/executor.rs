@@ -281,6 +281,7 @@ impl DockerBackend {
         work_dir: &Utf8Path,
         env: &BTreeMap<String, String>,
         replay_flow: Option<&Utf8Path>,
+        replay_hosts: &[String],
     ) -> Result<CommandOutput, String> {
         use bollard::container::{Config, CreateContainerOptions, RemoveContainerOptions};
         use bollard::models::HostConfig;
@@ -347,23 +348,35 @@ impl DockerBackend {
                 .await
                 .map_err(|e| format!("failed to start container: {e}"))?;
 
-            // If replay mode, set up transparent interception inside the container
+            // If replay mode, set up transparent interception inside the container:
+            // 1. Write /etc/hosts entries so hostnames resolve to 127.0.0.1
+            // 2. iptables redirect outbound 80/443 → mitmdump (excluding mitmuser)
+            // 3. Start mitmdump in transparent replay mode
             if replay_flow.is_some() {
-                // Set up iptables + start mitmdump
-                let setup_script = "\
+                let hosts_entries: String = replay_hosts
+                    .iter()
+                    .map(|h| format!("echo '127.0.0.1 {h}' >> /etc/hosts"))
+                    .collect::<Vec<_>>()
+                    .join(" && ");
+
+                let setup_script = format!(
+                    "{hosts_entries}{hosts_sep}\
                     MITMUSER_UID=$(id -u mitmuser) && \
                     iptables -t nat -A OUTPUT -p tcp --dport 80 -m owner ! --uid-owner $MITMUSER_UID -j REDIRECT --to-port 18080 && \
                     iptables -t nat -A OUTPUT -p tcp --dport 443 -m owner ! --uid-owner $MITMUSER_UID -j REDIRECT --to-port 18080 && \
-                    su -s /bin/bash mitmuser -c 'HOME=/home/mitmuser mitmdump --mode transparent -p 18080 \
+                    su -s /bin/bash mitmuser -c 'HOME=/home/mitmuser nohup mitmdump --mode transparent -p 18080 \
                         --server-replay /replay.flow \
                         --set connection_strategy=lazy \
                         --set upstream_cert=false \
                         --set server_replay_reuse=true \
+                        --set server_replay_extra=kill \
                         --set confdir=/home/mitmuser/.mitmproxy \
-                        -q' &\
-                    sleep 2";
+                        -q > /dev/null 2>&1 &' && \
+                    sleep 2",
+                    hosts_sep = if hosts_entries.is_empty() { "" } else { " && " },
+                );
 
-                self.exec_in_container(&docker, &container_id, setup_script).await?;
+                self.exec_in_container(&docker, &container_id, &setup_script).await?;
             }
 
             // Run the actual command
@@ -522,7 +535,7 @@ impl Backend for DockerBackend {
         env: &BTreeMap<String, String>,
         _path_env: &str,
     ) -> Result<CommandOutput, String> {
-        self.run_in_container(command, work_dir, env, None)
+        self.run_in_container(command, work_dir, env, None, &[])
     }
 
     fn is_docker(&self) -> bool {
@@ -1750,7 +1763,7 @@ fn execute_transition(
     let mut cmd_env: std::borrow::Cow<'_, BTreeMap<String, String>>;
 
     match &transition.network {
-        Some(crate::config::NetworkConfig::Replay { replay }) => {
+        Some(crate::config::NetworkConfig::Replay { replay, .. }) => {
             // Resolve flow file path relative to source state's config dir
             let flow_path = source_state.path.join(&graph.config_dir).join(replay);
             match start_mitmdump_replay(flow_path.as_ref(), &path_env) {
@@ -1866,13 +1879,13 @@ fn execute_transition(
     // Run the command. Docker backend handles everything inside a container,
     // including network replay if configured. Other backends use local Commands.
     let (exit_code, stdout, stderr) = if sandbox.is_docker() {
-        // Resolve replay flow path for Docker backend (network interception
-        // happens inside the container, not on the host)
-        let replay_flow = match &transition.network {
-            Some(crate::config::NetworkConfig::Replay { replay }) => {
-                Some(source_state.path.join(&graph.config_dir).join(replay))
+        // Resolve replay flow path and hosts for Docker backend
+        let (replay_flow, replay_hosts) = match &transition.network {
+            Some(crate::config::NetworkConfig::Replay { replay, hosts }) => {
+                let flow = source_state.path.join(&graph.config_dir).join(replay);
+                (Some(flow), hosts.as_slice())
             }
-            _ => None,
+            _ => (None, [].as_slice()),
         };
 
         // Downcast to DockerBackend to access run_in_container with replay
@@ -1886,6 +1899,7 @@ fn execute_transition(
             work_dir,
             &cmd_env,
             replay_flow.as_deref(),
+            replay_hosts,
         ) {
             Ok(out) => (Some(out.exit_code), out.stdout, out.stderr),
             Err(e) => {

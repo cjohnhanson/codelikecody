@@ -1,1 +1,9 @@
-{}
+transitions:
+  - name: "network replay serves recorded response"
+    command: "wget -q -O - https://example.com/ | head -c 50"
+    target: ../replayed
+    network:
+      replay: recordings/example.flow
+      hosts:
+        - example.com
+    stdout: "<!doctype html><html lang=\"en\"><head><title>Examp"
