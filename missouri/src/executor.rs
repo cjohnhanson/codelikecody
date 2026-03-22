@@ -267,6 +267,81 @@ const DEFAULT_DOCKER_IMAGE: &str = "debian:bookworm-slim";
 const MITM_DOCKER_IMAGE: &str = "mitm-test";
 
 impl DockerBackend {
+    /// Build a Docker image from a flake.nix devShell. Returns the image tag.
+    ///
+    /// Generates a Dockerfile that uses nixos/nix as a base, copies the flake.nix,
+    /// and builds the devShell packages into a nix profile. The user writes a
+    /// normal flake with a devShell — missouri handles the Docker wrapping.
+    fn build_image_from_flake(
+        &self,
+        flake_path: &Utf8Path,
+        docker: &bollard::Docker,
+        rt: &tokio::runtime::Runtime,
+    ) -> Result<String, String> {
+        use bollard::image::BuildImageOptions;
+        use futures_util::StreamExt;
+
+        let flake_dir = flake_path
+            .parent()
+            .ok_or_else(|| "flake.nix has no parent directory".to_string())?;
+
+        // Hash the flake content for a stable image tag
+        let flake_content = std::fs::read_to_string(flake_path)
+            .map_err(|e| format!("failed to read {flake_path}: {e}"))?;
+        let hash = format!("{:x}", md5_hash(flake_content.as_bytes()));
+        let image_tag = format!("missouri-flake:{hash}");
+
+        // Check if image already exists
+        let exists = rt.block_on(async {
+            docker.inspect_image(&image_tag).await.is_ok()
+        });
+        if exists {
+            return Ok(image_tag);
+        }
+
+        // Generate Dockerfile
+        let dockerfile = "\
+FROM nixos/nix:latest
+RUN echo 'experimental-features = nix-command flakes' >> /etc/nix/nix.conf
+COPY . /build/
+WORKDIR /build
+RUN nix build --impure --expr 'let shell = (builtins.getFlake (toString ./.)).devShells.aarch64-linux.default; pkgs = import (builtins.getFlake \"nixpkgs\").outPath {}; in pkgs.buildEnv { name = \"env\"; paths = shell.buildInputs; }' --out-link /env
+ENV PATH=\"/env/bin:/root/.nix-profile/bin:$PATH\"
+CMD [\"bash\"]
+";
+
+        // Create a tar archive of the flake directory + Dockerfile for docker build
+        let tar_data = create_build_context(flake_dir, dockerfile)
+            .map_err(|e| format!("failed to create build context: {e}"))?;
+
+        rt.block_on(async {
+            let options = BuildImageOptions {
+                t: image_tag.as_str(),
+                rm: true,
+                ..Default::default()
+            };
+
+            let mut stream = docker.build_image(
+                options,
+                None,
+                Some(tar_data.into()),
+            );
+
+            while let Some(result) = stream.next().await {
+                match result {
+                    Ok(info) => {
+                        if let Some(err) = info.error {
+                            return Err(format!("docker build error: {err}"));
+                        }
+                    }
+                    Err(e) => return Err(format!("docker build failed: {e}")),
+                }
+            }
+
+            Ok(image_tag.clone())
+        })
+    }
+
     /// Run a command inside a Docker container with network isolation and
     /// volume mounting, then capture stdout/stderr/exit_code.
     ///
@@ -282,6 +357,7 @@ impl DockerBackend {
         env: &BTreeMap<String, String>,
         replay_flow: Option<&Utf8Path>,
         replay_hosts: &[String],
+        flake_path: Option<&Utf8Path>,
     ) -> Result<CommandOutput, String> {
         use bollard::container::{Config, CreateContainerOptions, RemoveContainerOptions};
         use bollard::models::HostConfig;
@@ -297,10 +373,19 @@ impl DockerBackend {
             // Build env vars as "KEY=VALUE" strings
             let env_vec: Vec<String> = env.iter().map(|(k, v)| format!("{k}={v}")).collect();
 
-            // When replay is active, use the mitmproxy image and mount the flow file.
-            // Also need CAP_NET_ADMIN for iptables.
-            let image = if replay_flow.is_some() {
+            // Determine the Docker image to use:
+            // 1. If replay is active, use the mitmproxy image
+            // 2. If a flake.nix exists, build an image from the devShell
+            // 3. Otherwise, use the configured default image
+            let flake_image: Option<String> = if let Some(fp) = flake_path {
+                Some(self.build_image_from_flake(fp, &docker, &rt)?)
+            } else {
+                None
+            };
+            let image: &str = if replay_flow.is_some() {
                 MITM_DOCKER_IMAGE
+            } else if let Some(ref fi) = flake_image {
+                fi.as_str()
             } else {
                 self.image.as_str()
             };
@@ -578,7 +663,7 @@ impl Backend for DockerBackend {
         env: &BTreeMap<String, String>,
         _path_env: &str,
     ) -> Result<CommandOutput, String> {
-        self.run_in_container(command, work_dir, env, None, &[])
+        self.run_in_container(command, work_dir, env, None, &[], None)
     }
 
     fn is_docker(&self) -> bool {
@@ -1936,6 +2021,16 @@ fn execute_transition(
             _ => (None, [].as_slice()),
         };
 
+        // Check for flake.nix in the source state directory
+        let flake_path = {
+            let candidate = source_state.path.join("flake.nix");
+            if candidate.exists() {
+                Some(candidate)
+            } else {
+                None
+            }
+        };
+
         // Downcast to DockerBackend to access run_in_container with replay
         let docker = sandbox
             .as_any()
@@ -1948,6 +2043,7 @@ fn execute_transition(
             &cmd_env,
             replay_flow.as_deref(),
             replay_hosts,
+            flake_path.as_deref(),
         ) {
             Ok(out) => (Some(out.exit_code), out.stdout, out.stderr),
             Err(e) => {
@@ -2140,6 +2236,48 @@ fn execute_transition(
         passed,
         duration: step_start.elapsed(),
     }
+}
+
+/// Simple hash for generating stable image tags from flake content.
+fn md5_hash(data: &[u8]) -> u64 {
+    // FNV-1a hash — not cryptographic, just for cache keys
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for &byte in data {
+        hash ^= byte as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
+}
+
+/// Create a tar archive from a directory plus an injected Dockerfile.
+fn create_build_context(dir: &Utf8Path, dockerfile: &str) -> std::io::Result<Vec<u8>> {
+    let mut archive = tar::Builder::new(Vec::new());
+
+    // Add Dockerfile
+    let dockerfile_bytes = dockerfile.as_bytes();
+    let mut header = tar::Header::new_gnu();
+    header.set_size(dockerfile_bytes.len() as u64);
+    header.set_mode(0o644);
+    header.set_cksum();
+    archive.append_data(&mut header, "Dockerfile", dockerfile_bytes)?;
+
+    // Add all files from the directory
+    for entry in walkdir::WalkDir::new(dir.as_std_path())
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+    {
+        let path = entry.path();
+        let rel = path.strip_prefix(dir.as_std_path()).unwrap_or(path);
+        let data = std::fs::read(path)?;
+        let mut header = tar::Header::new_gnu();
+        header.set_size(data.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        archive.append_data(&mut header, rel, data.as_slice())?;
+    }
+
+    archive.into_inner()
 }
 
 #[cfg(test)]
