@@ -144,3 +144,39 @@ built separately via `nix develop --command cargo build --release` inside Docker
 - clc dispatch runs inside the container
 - mitmdump captures traffic through HTTPS_PROXY
 - Project binaries (clc, tisket, missouri) work inside the container
+
+### Session 2026-03-22 — Recording attempt #2
+
+**Fixes applied:**
+- Domain filter `~d api.anthropic.com` to reduce flow file size
+- PID-based wait instead of polling (check if worker process is alive)
+- Status check from worktree directory
+- Git state cleanup between attempts (worktree remove, branch delete, tisket reset)
+
+**Result:**
+- Worker dispatched (pid 13), made ~150 API calls over 5 minutes
+- Phase stayed at `tests-unwritten` — worker didn't advance phases
+- Flow file was **0 bytes** — the domain filter as a positional arg
+  prevents mitmdump from writing ANY flows (filter applies to save, not display)
+- Worker timed out at 300s
+
+**Root cause of empty flow file:**
+The `~d api.anthropic.com` argument on the mitmdump command line acts as a
+filter on what flows are processed, not just displayed. With HTTPS_PROXY mode,
+all traffic through the proxy IS the target traffic — no filter needed.
+Remove the filter expression entirely.
+
+**Root cause of worker not advancing:**
+Unknown. The worker was making API calls (visible in mitmdump connection logs)
+but never left `tests-unwritten` phase. Possibly:
+- The tisket body didn't have enough context for Claude to act on
+- The phase gate blocked something and the worker got stuck in a loop
+- The `clc dispatch` environment inside Docker is missing something
+  (no .claude/CLAUDE.md, no skills, etc.)
+
+**Next attempt should:**
+1. Remove the domain filter — just `mitmdump --mode regular -p 18080 -w file.flow -q`
+2. Give the tisket more detailed instructions
+3. Check worker stdout.jsonl for what the worker actually did
+4. Consider longer timeout (worker might need >5 min for a real task)
+5. Ensure the test project has a CLAUDE.md with minimal instructions
