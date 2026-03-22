@@ -1,5 +1,3 @@
-#![allow(dead_code)] // Wired into hook.rs in next phase.
-
 use std::path::Path;
 
 use crate::config::SkillSource;
@@ -19,6 +17,7 @@ pub enum SkillLocation {
     /// On-disk path to the SKILL.md file.
     File(String),
     /// Built into the binary; use `clc skills show <name>`.
+    #[allow(dead_code)] // Populated when built-in skill content is authored.
     BuiltIn,
 }
 

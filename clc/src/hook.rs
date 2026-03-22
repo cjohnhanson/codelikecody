@@ -7,13 +7,14 @@ use serde_json::Value;
 
 use crate::adapter::Adapter;
 use crate::adapter::claude_code::ClaudeCodeAdapter;
-use crate::config;
+use crate::config::{self, Config};
 use crate::error::Error;
 use crate::event::{Event, Response};
 use crate::git;
 use crate::guard;
 use crate::missouri;
 use crate::phase;
+use crate::skills;
 use crate::tisket;
 use crate::zettel;
 
@@ -47,7 +48,7 @@ pub fn run() -> Result<i32, Error> {
 
     let response = match event {
         Event::SessionStart { .. } => {
-            let prime = assemble_prime(cwd, git_state.as_ref(), current_phase);
+            let prime = assemble_prime(cwd, git_state.as_ref(), current_phase, &cfg);
             Response::Allow {
                 context: Some(prime),
             }
@@ -82,9 +83,9 @@ pub fn run() -> Result<i32, Error> {
     Ok(exit_code)
 }
 
-/// Assemble the full prime text from clc header + tisket + missouri.
+/// Assemble the full prime text from clc header + tisket + missouri + skills.
 #[allow(clippy::too_many_lines)]
-fn assemble_prime(cwd: &Path, git: Option<&git::GitState>, phase: Option<phase::Phase>) -> String {
+fn assemble_prime(cwd: &Path, git: Option<&git::GitState>, phase: Option<phase::Phase>, cfg: &Config) -> String {
     let ctx = clc_sdk::PrimeContext {
         phase: phase.map(|p| p.to_string()),
     };
@@ -263,6 +264,13 @@ fn assemble_prime(cwd: &Path, git: Option<&git::GitState>, phase: Option<phase::
         }
     }
 
+    // --- skills section ---
+    let skill_entries = skills::index(cwd, &cfg.skills);
+    let skill_index = skills::format_index(&skill_entries);
+    if !skill_index.is_empty() {
+        out.push_str(&skill_index);
+    }
+
     out
 }
 
@@ -272,7 +280,7 @@ pub fn prime_text() -> Result<String, Error> {
     let cfg = config::load(&cwd).unwrap_or_default();
     let git_state = git::detect(&cwd, &cfg.main_branch, &cfg.admin_branch);
     let current_phase = phase::load(&cwd).unwrap_or(None);
-    Ok(assemble_prime(&cwd, git_state.as_ref(), current_phase))
+    Ok(assemble_prime(&cwd, git_state.as_ref(), current_phase, &cfg))
 }
 
 /// Assemble lean status reinforcement for `UserPromptSubmit`.
