@@ -117,3 +117,30 @@ project binaries. The Dockerfile is committed to the repo.
   file. Need to check if this is manageable in the repo.
 - How to update recordings when prompts change — recorded responses
   are specific to the conversation flow. Prompt changes mean re-recording.
+
+### Session 2026-03-22 — Recording attempt
+
+**Recording image built:** `missouri-record` — nixos/nix base with claude-code
+2.1.77, mitmproxy 12.2.1, iptables. Project binaries (clc, tisket, missouri)
+built separately via `nix develop --command cargo build --release` inside Docker
+(64 seconds) and mounted as a volume.
+
+**First recording attempt:**
+- Used HTTPS_PROXY mode (not transparent iptables — `su` not in nixos/nix image)
+- Worker dispatched (pid 18), ran for 10 minutes
+- Status polling returned "unknown" — was running from project root, not worktree
+- Flow file was 11GB — captured ALL HTTPS traffic, not just Anthropic API
+- Worker never reached "done" status
+
+**Issues to fix for next attempt:**
+1. Filter recording to only Anthropic API: `mitmdump --set flow_detail=0 -w file.flow ~d api.anthropic.com` (domain filter)
+2. Status polling: run `clc status` from the worker's worktree directory
+3. Worker completion: need to detect when claude process exits, not poll forever
+4. The HTTPS_PROXY approach requires NODE_EXTRA_CA_CERTS for claude-code's Node.js — which is application-level config. For recording this is acceptable but should be documented.
+5. nixos/nix image lacks `su`/`adduser` — mitmuser created via /etc/passwd hack, UID 1000
+
+**What works:**
+- missouri-record Docker image builds (claude-code + mitmproxy + iptables + project binaries)
+- clc dispatch runs inside the container
+- mitmdump captures traffic through HTTPS_PROXY
+- Project binaries (clc, tisket, missouri) work inside the container
