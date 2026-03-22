@@ -54,7 +54,7 @@ pub fn run() -> Result<i32, Error> {
             }
         }
         Event::UserPromptSubmit { .. } => {
-            let reinforcement = assemble_reinforcement(cwd, git_state.as_ref(), current_phase);
+            let reinforcement = assemble_reinforcement(cwd, git_state.as_ref(), current_phase, &cfg);
             Response::Allow {
                 context: Some(reinforcement),
             }
@@ -264,10 +264,11 @@ fn assemble_prime(cwd: &Path, git: Option<&git::GitState>, phase: Option<phase::
         }
     }
 
-    // --- skills section ---
-    let skill_index = skills::format_prime_section(cwd, &cfg.skills);
-    if !skill_index.is_empty() {
-        out.push_str(&skill_index);
+    // --- almanac (skills) section ---
+    let almanac_state = skills::detect(cwd, &cfg.skills);
+    let section = almanac_state.prime(&ctx);
+    if !section.is_empty() {
+        out.push_str(&section);
     }
 
     out
@@ -287,6 +288,7 @@ fn assemble_reinforcement(
     cwd: &Path,
     git: Option<&git::GitState>,
     phase: Option<phase::Phase>,
+    cfg: &Config,
 ) -> String {
     let mut out = String::new();
 
@@ -310,6 +312,15 @@ fn assemble_reinforcement(
     if let Ok(zettel_state) = zettel::detect(cwd) {
         if zettel_state.has_repo {
             let line = zettel_state.status_basic();
+            out.push_str(&line);
+            out.push('\n');
+        }
+    }
+
+    if !cfg.skills.is_empty() {
+        let almanac_state = skills::detect(cwd, &cfg.skills);
+        let line = almanac_state.status_basic();
+        if !line.is_empty() {
             out.push_str(&line);
             out.push('\n');
         }

@@ -72,6 +72,11 @@ pub fn list() {
     for page in tisket::docs::PAGES {
         println!("  {:<25} {}", page.title, page.description);
     }
+    println!();
+    println!("almanac");
+    for page in almanac::docs::PAGES {
+        println!("  {:<25} {}", page.title, page.description);
+    }
 }
 
 /// Print a doc by slug. Searches clc docs first, then missouri, then tisket.
@@ -86,7 +91,10 @@ pub fn show(slug: &str) -> bool {
     if missouri::docs::show(slug) {
         return true;
     }
-    tisket::docs::show(slug)
+    if tisket::docs::show(slug) {
+        return true;
+    }
+    almanac::docs::show(slug)
 }
 
 /// Search docs for a query string across all tools.
@@ -102,4 +110,5 @@ pub fn search(query: &str) {
     }
     missouri::docs::search(query);
     tisket::docs::search(query);
+    almanac::docs::search(query);
 }
