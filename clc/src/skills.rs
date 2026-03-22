@@ -124,10 +124,68 @@ fn resolve_path(project_dir: &Path, path: &str) -> std::path::PathBuf {
     }
 }
 
+/// A built-in skill: name, description, and full content compiled into the binary.
+struct BuiltInSkill {
+    name: &'static str,
+    description: &'static str,
+    content: &'static str,
+}
+
+/// All built-in skills. Content will be added as skills are authored.
+const BUILTIN_SKILLS: &[BuiltInSkill] = &[];
+
 /// Return built-in skills compiled into the binary.
 fn builtin_skills() -> Vec<SkillEntry> {
-    // Placeholder — built-in skills will be added as content is authored.
-    Vec::new()
+    BUILTIN_SKILLS
+        .iter()
+        .map(|s| SkillEntry {
+            name: s.name.to_string(),
+            description: s.description.to_string(),
+            source: SkillLocation::BuiltIn,
+        })
+        .collect()
+}
+
+/// Print a formatted list of all available skills.
+pub fn list(project_dir: &Path, sources: &[SkillSource]) {
+    let entries = index(project_dir, sources);
+    if entries.is_empty() {
+        println!("No skills configured.");
+        return;
+    }
+    for entry in &entries {
+        let source_label = match &entry.source {
+            SkillLocation::File(_) => "file",
+            SkillLocation::BuiltIn => "built-in",
+        };
+        println!("{:<30} {} [{}]", entry.name, entry.description, source_label);
+    }
+}
+
+/// Print the full content of a named skill. Returns Ok(true) if found, Ok(false) if not.
+pub fn show(name: &str, project_dir: &Path, sources: &[SkillSource]) -> Result<bool, Error> {
+    // Check built-in skills first.
+    for skill in BUILTIN_SKILLS {
+        if skill.name == name {
+            print!("{}", skill.content);
+            return Ok(true);
+        }
+    }
+
+    // Check file-based skills.
+    let entries = index(project_dir, sources);
+    for entry in &entries {
+        if entry.name == name {
+            if let SkillLocation::File(path) = &entry.source {
+                let content = std::fs::read_to_string(path)
+                    .map_err(|e| Error::NonBlocking(format!("failed to read {path}: {e}")))?;
+                print!("{content}");
+                return Ok(true);
+            }
+        }
+    }
+
+    Ok(false)
 }
 
 /// Format the skill index for injection into prime text.
@@ -363,5 +421,50 @@ mod tests {
         let project = Path::new("/home/user/project");
         let resolved = resolve_path(project, "/opt/skills/");
         assert_eq!(resolved, Path::new("/opt/skills/"));
+    }
+
+    #[test]
+    fn show_returns_false_for_unknown_skill() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = show("nonexistent", dir.path(), &[]).unwrap();
+        assert!(!result);
+    }
+
+    #[test]
+    fn show_returns_true_and_prints_file_skill() {
+        let dir = tempfile::tempdir().unwrap();
+        let skill = dir.path().join("skills").join("my-skill");
+        std::fs::create_dir_all(&skill).unwrap();
+        std::fs::write(
+            skill.join("SKILL.md"),
+            "---\nname: my-skill\ndescription: test\n---\n\n# My Skill\n\nFull content here.\n",
+        )
+        .unwrap();
+
+        let sources = vec![SkillSource::Path {
+            path: dir.path().join("skills").to_string_lossy().into_owned(),
+        }];
+
+        let result = show("my-skill", dir.path(), &sources).unwrap();
+        assert!(result);
+    }
+
+    #[test]
+    fn show_does_not_match_partial_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let skill = dir.path().join("skills").join("my-skill");
+        std::fs::create_dir_all(&skill).unwrap();
+        std::fs::write(
+            skill.join("SKILL.md"),
+            "---\nname: my-skill\ndescription: test\n---\nContent\n",
+        )
+        .unwrap();
+
+        let sources = vec![SkillSource::Path {
+            path: dir.path().join("skills").to_string_lossy().into_owned(),
+        }];
+
+        let result = show("my", dir.path(), &sources).unwrap();
+        assert!(!result);
     }
 }

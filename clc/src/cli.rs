@@ -51,6 +51,11 @@ pub enum Command {
         #[command(subcommand)]
         action: ConfigAction,
     },
+    /// List and retrieve agent skills from configured sources.
+    Skills {
+        #[command(subcommand)]
+        action: SkillsAction,
+    },
     /// Browse bundled documentation.
     Docs {
         /// Topic slug to display, or "search" to search.
@@ -317,4 +322,15 @@ pub enum StatusAction {
 pub enum ConfigAction {
     /// Print the effective configuration.
     Show,
+}
+
+#[derive(Subcommand)]
+pub enum SkillsAction {
+    /// List all available skills (name + description).
+    List,
+    /// Print the full content of a named skill.
+    Show {
+        /// The skill name to display.
+        name: String,
+    },
 }

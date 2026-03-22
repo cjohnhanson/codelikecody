@@ -96,6 +96,7 @@ fn main() {
         cli::Command::Done => cmd_done(),
         cli::Command::Prime => cmd_prime(),
         cli::Command::Config { ref action } => cmd_config(action),
+        cli::Command::Skills { ref action } => cmd_skills(action),
         cli::Command::Dispatch {
             ref id,
             ref model,
@@ -245,6 +246,24 @@ fn cmd_config(action: &cli::ConfigAction) -> Result<(), Error> {
     let project_dir = std::env::current_dir()?;
     match action {
         cli::ConfigAction::Show => config::show(&project_dir),
+    }
+}
+
+fn cmd_skills(action: &cli::SkillsAction) -> Result<(), Error> {
+    let project_dir = std::env::current_dir()?;
+    let cfg = config::load(&project_dir).unwrap_or_default();
+    match action {
+        cli::SkillsAction::List => {
+            skills::list(&project_dir, &cfg.skills);
+            Ok(())
+        }
+        cli::SkillsAction::Show { name } => {
+            if skills::show(name, &project_dir, &cfg.skills)? {
+                Ok(())
+            } else {
+                Err(Error::NonBlocking(format!("skill '{name}' not found")))
+            }
+        }
     }
 }
 
