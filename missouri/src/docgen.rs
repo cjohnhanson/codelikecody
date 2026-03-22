@@ -112,7 +112,7 @@ pub fn render_json(graph: &StateGraph, path: &TestPath) -> Value {
         let t = &graph.transitions[step_idx];
         let state = &graph.states[t.source.0];
 
-        let files = walk_state_files(&state.path, &graph.config_dir, &graph.ignore);
+        let files = walk_state_files_with_content(&state.path, &graph.config_dir, &graph.ignore);
 
         let state_obj = json!({
             "name": state.name,
@@ -136,7 +136,7 @@ pub fn render_json(graph: &StateGraph, path: &TestPath) -> Value {
     // Include the final state (no outgoing transition)
     let last_t = &graph.transitions[*path.steps.last().unwrap()];
     let final_state = &graph.states[last_t.target.0];
-    let final_files = walk_state_files(&final_state.path, &graph.config_dir, &graph.ignore);
+    let final_files = walk_state_files_with_content(&final_state.path, &graph.config_dir, &graph.ignore);
 
     json!({
         "steps": steps,
@@ -155,6 +155,26 @@ pub fn walk_state_files(state_path: &Utf8Path, config_dir: &str, ignore: &Gitign
     collect_files(state_path, state_path, config_dir, ignore, &mut files);
     files.sort();
     files
+}
+
+/// Walk a state directory and return file entries with path and content.
+pub fn walk_state_files_with_content(
+    state_path: &Utf8Path,
+    config_dir: &str,
+    ignore: &Gitignore,
+) -> Vec<Value> {
+    let paths = walk_state_files(state_path, config_dir, ignore);
+    paths
+        .into_iter()
+        .map(|rel| {
+            let full = state_path.join(&rel);
+            let content = std::fs::read_to_string(&full).ok();
+            json!({
+                "path": rel,
+                "content": content,
+            })
+        })
+        .collect()
 }
 
 fn collect_files(
