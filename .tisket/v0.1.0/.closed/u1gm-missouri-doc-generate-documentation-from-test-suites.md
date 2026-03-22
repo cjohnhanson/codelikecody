@@ -1,12 +1,12 @@
 ---
 title: "missouri doc: generate documentation from test suites"
-status: in_progress
+status: done
 priority: 2
 assignee: coord-docs
 labels: [missouri, docs]
 depends_on: []
 created: 2026-03-22T13:56:52Z
-updated: "2026-03-22T14:02:23Z"
+updated: "2026-03-22T14:13:31Z"
 ---
 
 Generate documentation from missouri test suites. Tests are the source
