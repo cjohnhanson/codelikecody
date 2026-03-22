@@ -218,10 +218,22 @@ impl Backend for NixBackend {
         env: &BTreeMap<String, String>,
         path_env: &str,
     ) -> Command {
-        // nix shell overrides PATH for the inner command, so we inject
-        // our PATH at the start of the shell command to ensure project
-        // bin/ wrappers take precedence over nix-provided binaries.
-        let wrapped = format!("export PATH=\"{path_env}:$PATH\"; {command}");
+        // nix shell sets PATH to include nix packages. We prepend only the
+        // project/state bin dirs (not system PATH) so nix packages take
+        // priority over system binaries, but project wrappers still win.
+        // Extract just the non-system prefix from path_env.
+        let system_path =
+            std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin:/usr/bin:/bin".into());
+        let project_dirs: String = path_env
+            .split(':')
+            .filter(|dir| !system_path.split(':').any(|sys| sys == *dir))
+            .collect::<Vec<_>>()
+            .join(":");
+        let wrapped = if project_dirs.is_empty() {
+            command.to_string()
+        } else {
+            format!("export PATH=\"{project_dirs}:$PATH\"; {command}")
+        };
         let mut args = self.nix_prefix_args();
         args.extend(["sh".into(), "-c".into(), wrapped]);
         let mut cmd = Command::new(self.nix_bin.as_str());
