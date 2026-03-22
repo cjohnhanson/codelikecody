@@ -265,8 +265,7 @@ fn assemble_prime(cwd: &Path, git: Option<&git::GitState>, phase: Option<phase::
     }
 
     // --- skills section ---
-    let skill_entries = skills::index(cwd, &cfg.skills);
-    let skill_index = skills::format_index(&skill_entries);
+    let skill_index = skills::format_prime_section(cwd, &cfg.skills);
     if !skill_index.is_empty() {
         out.push_str(&skill_index);
     }

@@ -1,7 +1,8 @@
 [package]
-name = "clc"
+name = "almanac"
 version = "0.1.0"
 edition = "2024"
+description = "Agent skill aggregator — index and retrieve SKILL.md from pluggable sources"
 
 [lints.rust]
 unsafe_code = "forbid"
@@ -16,27 +17,12 @@ missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 
 [dependencies]
-almanac = { path = "../almanac", default-features = false }
-camino = "1"
 clap = { version = "4", features = ["derive"] }
-claude-code = { path = "../claude-code" }
-clc-sdk = { path = "../clc-sdk" }
-gix = { version = "0.80.0", default-features = false, features = [
-    "index",
-    "merge",
-    "tree-editor",
-    "status",
-    "worktree-mutation",
-] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yml = "0.0.12"
-toml = "0.8"
-missouri = { path = "../missouri", default-features = false }
-tisket = { path = "../tisket", default-features = false }
-zettel = { path = "../zettel", default-features = false }
+dirs = "6"
 thiserror = "2"
-nix = { version = "0.31.2", features = ["signal", "fs"] }
 sigpipe = "0.1.3"
 
 [dev-dependencies]

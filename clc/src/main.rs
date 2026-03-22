@@ -96,7 +96,7 @@ fn main() {
         cli::Command::Done => cmd_done(),
         cli::Command::Prime => cmd_prime(),
         cli::Command::Config { ref action } => cmd_config(action),
-        cli::Command::Skills { ref action } => cmd_skills(action),
+        cli::Command::Almanac { command } => cmd_almanac(command),
         cli::Command::Dispatch {
             ref id,
             ref model,
@@ -249,22 +249,11 @@ fn cmd_config(action: &cli::ConfigAction) -> Result<(), Error> {
     }
 }
 
-fn cmd_skills(action: &cli::SkillsAction) -> Result<(), Error> {
+fn cmd_almanac(command: ::almanac::cli::Command) -> Result<(), Error> {
     let project_dir = std::env::current_dir()?;
     let cfg = config::load(&project_dir).unwrap_or_default();
-    match action {
-        cli::SkillsAction::List => {
-            skills::list(&project_dir, &cfg.skills);
-            Ok(())
-        }
-        cli::SkillsAction::Show { name } => {
-            if skills::show(name, &project_dir, &cfg.skills)? {
-                Ok(())
-            } else {
-                Err(Error::NonBlocking(format!("skill '{name}' not found")))
-            }
-        }
-    }
+    ::almanac::cli::run_command(&project_dir, &cfg.skills, command)
+        .map_err(|e: ::almanac::Error| Error::NonBlocking(e.to_string()))
 }
 
 fn cmd_merge(id: &str) -> Result<(), Error> {

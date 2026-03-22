@@ -131,19 +131,7 @@ pub struct Config {
     pub skills: Vec<SkillSource>,
 }
 
-/// A source of agent skills: a local directory, a git repo, or built-in.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(untagged)]
-pub enum SkillSource {
-    /// Local directory containing SKILL.md files.
-    Path {
-        path: String,
-    },
-    /// Git repository containing SKILL.md files.
-    Git {
-        git: String,
-    },
-}
+pub use almanac::SkillSource;
 
 impl Config {
     /// Resolve which workflow applies to an issue by evaluating rules in order.
