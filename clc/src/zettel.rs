@@ -33,7 +33,8 @@ pub fn detect(project_dir: &Path) -> Result<ZettelState, Error> {
         }
     };
 
-    let note_count = repo.list_notes(None).map(|n| n.len()).unwrap_or(0);
+    let filter = zettel::ListNotesFilter { tag: None, status: None };
+    let note_count = repo.list_notes(&filter).map(|n| n.len()).unwrap_or(0);
 
     Ok(ZettelState {
         has_repo: true,
