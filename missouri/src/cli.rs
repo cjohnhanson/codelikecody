@@ -49,6 +49,7 @@ pub enum Command {
     Docs(DocsArgs),
 
     /// Generate documentation from test suites
+    #[command(name = "docgen")]
     Doc(DocArgs),
 }
 
