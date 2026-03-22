@@ -685,3 +685,18 @@ transitions:
           ignore: true
         - path: "clc.toml"
           ignore: true
+
+  - name: "create clc.yml with skills sources and skill directories"
+    command: >-
+      mkdir -p skills/test-skill &&
+      printf '%s\n' '---' 'name: test-skill' 'description: A test skill for validation' '---' '' '# Test Skill' '' 'Instructions here.' > skills/test-skill/SKILL.md &&
+      mkdir -p skills/another-skill &&
+      printf '%s\n' '---' 'name: another-skill' 'description: Another skill for testing' '---' '' '# Another' > skills/another-skill/SKILL.md &&
+      printf 'skills:\n  - path: ./skills/\n' > clc.yml
+    target: "../has-skills-config"
+    comparators:
+      files:
+        - path: ".claude/"
+          ignore: true
+        - path: ".clc/"
+          ignore: true
