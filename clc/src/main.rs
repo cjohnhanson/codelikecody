@@ -303,7 +303,7 @@ fn cmd_prime() -> Result<(), Error> {
 
 fn cmd_docs(topic: Option<&str>, query: Option<&str>) -> Result<(), Error> {
     match topic {
-        None => {
+        None | Some("list") => {
             docs::list();
             Ok(())
         }
@@ -317,14 +317,14 @@ fn cmd_docs(topic: Option<&str>, query: Option<&str>) -> Result<(), Error> {
             docs::search(q);
             Ok(())
         }
-        Some(slug) => {
-            if docs::show(slug) {
+        Some(identifier) => {
+            if docs::show(identifier) {
                 Ok(())
             } else {
-                eprintln!("unknown doc: {slug}");
+                eprintln!("unknown doc: {identifier}");
                 eprintln!();
                 docs::list();
-                Err(Error::NonBlocking(format!("doc '{slug}' not found")))
+                Err(Error::NonBlocking(format!("doc '{identifier}' not found")))
             }
         }
     }

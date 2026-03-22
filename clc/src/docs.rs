@@ -56,59 +56,135 @@ static CLC_PAGES: &[DocPage] = &[
     },
 ];
 
-/// Print a listing of all docs to stdout.
+/// Print a listing of all docs to stdout, grouped by tool.
 pub fn list() {
     println!("clc");
-    for page in CLC_PAGES {
-        println!("  {:<25} {}", page.title, page.description);
-    }
+    print!("{}", format_list(CLC_PAGES));
     println!();
     println!("missouri");
-    for page in missouri::docs::PAGES {
-        println!("  {:<25} {}", page.title, page.description);
-    }
+    print!("{}", missouri::docs::format_list(missouri::docs::PAGES));
     println!();
     println!("tisket");
-    for page in tisket::docs::PAGES {
-        println!("  {:<25} {}", page.title, page.description);
-    }
+    print!("{}", tisket::docs::format_list(tisket::docs::PAGES));
     println!();
     println!("almanac");
-    for page in almanac::docs::PAGES {
-        println!("  {:<25} {}", page.title, page.description);
-    }
+    print!("{}", almanac::docs::format_list(almanac::docs::PAGES));
 }
 
-/// Print a doc by slug. Searches clc docs first, then missouri, then tisket.
-/// Returns false if not found.
-pub fn show(slug: &str) -> bool {
-    for page in CLC_PAGES {
-        if page.slug == slug {
-            print!("{}", page.content());
-            return true;
-        }
+/// Find a doc by flexible identifier across all tools.
+/// Searches clc docs first, then missouri, then tisket, then almanac.
+pub fn find(identifier: &str) -> Option<&'static str> {
+    if let Some(page) = find_in(CLC_PAGES, identifier) {
+        return Some(page.content());
     }
-    if missouri::docs::show(slug) {
-        return true;
+    if let Some(page) = missouri::docs::find(identifier) {
+        return Some(page.content());
     }
-    if tisket::docs::show(slug) {
-        return true;
+    if let Some(page) = tisket::docs::find(identifier) {
+        return Some(page.content());
     }
-    almanac::docs::show(slug)
+    if let Some(page) = almanac::docs::find(identifier) {
+        return Some(page.content());
+    }
+    None
+}
+
+/// Print a doc by identifier. Returns false if not found.
+pub fn show(identifier: &str) -> bool {
+    if let Some(content) = find(identifier) {
+        print!("{content}");
+        true
+    } else {
+        false
+    }
 }
 
 /// Search docs for a query string across all tools.
 pub fn search(query: &str) {
-    let q = query.to_lowercase();
-    for page in CLC_PAGES {
-        if page.title.to_lowercase().contains(&q)
-            || page.description.to_lowercase().contains(&q)
-            || page.content().to_lowercase().contains(&q)
-        {
-            println!("{:<25} {}", page.title, page.description);
-        }
+    let mut any = false;
+    let clc_matches = find_matching(CLC_PAGES, query);
+    if !clc_matches.is_empty() {
+        println!("clc");
+        print!("{}", format_list_from_refs(&clc_matches));
+        any = true;
     }
-    missouri::docs::search(query);
-    tisket::docs::search(query);
-    almanac::docs::search(query);
+    let mo_matches = missouri::docs::find_matching(missouri::docs::PAGES, query);
+    if !mo_matches.is_empty() {
+        println!("missouri");
+        print!("{}", missouri::docs::format_list_from_refs(&mo_matches));
+        any = true;
+    }
+    let ti_matches = tisket::docs::find_matching(tisket::docs::PAGES, query);
+    if !ti_matches.is_empty() {
+        println!("tisket");
+        print!("{}", tisket::docs::format_list_from_refs(&ti_matches));
+        any = true;
+    }
+    let al_matches = almanac::docs::find_matching(almanac::docs::PAGES, query);
+    if !al_matches.is_empty() {
+        println!("almanac");
+        print!("{}", almanac::docs::format_list_from_refs(&al_matches));
+        any = true;
+    }
+    if !any {
+        eprintln!("no docs matching '{query}'");
+    }
+}
+
+/// Find a doc page in a given slice by flexible identifier.
+fn find_in<'a>(pages: &'a [DocPage], identifier: &str) -> Option<&'a DocPage> {
+    // 1. Exact slug match
+    if let Some(page) = pages.iter().find(|p| p.slug == identifier) {
+        return Some(page);
+    }
+    // 2. Case-insensitive slug match
+    let lower = identifier.to_lowercase();
+    if let Some(page) = pages.iter().find(|p| p.slug.to_lowercase() == lower) {
+        return Some(page);
+    }
+    // 3. Case-insensitive title match
+    if let Some(page) = pages.iter().find(|p| p.title.to_lowercase() == lower) {
+        return Some(page);
+    }
+    // 4. Unique slug prefix
+    let prefix_matches: Vec<_> = pages
+        .iter()
+        .filter(|p| p.slug.starts_with(identifier) || p.slug.starts_with(&lower))
+        .collect();
+    if prefix_matches.len() == 1 {
+        return Some(prefix_matches[0]);
+    }
+    None
+}
+
+/// Format a listing of doc pages showing slug (what to type) and description.
+fn format_list(pages: &[DocPage]) -> String {
+    let mut out = String::new();
+    for page in pages {
+        out.push_str(&format!("  {:<25} {}\n", page.slug, page.description));
+    }
+    out
+}
+
+/// Format a listing from a vec of page references.
+fn format_list_from_refs(pages: &[&DocPage]) -> String {
+    let mut out = String::new();
+    for page in pages {
+        out.push_str(&format!("  {:<25} {}\n", page.slug, page.description));
+    }
+    out
+}
+
+/// Find all docs matching a query string. Returns matching pages.
+fn find_matching<'a>(pages: &'a [DocPage], query: &str) -> Vec<&'a DocPage> {
+    let q = query.to_lowercase();
+    pages
+        .iter()
+        .filter(|page| {
+            page.slug.to_lowercase().contains(&q)
+                || page.title.to_lowercase().contains(&q)
+                || page.description.to_lowercase().contains(&q)
+                || page.content().to_lowercase().contains(&q)
+        })
+        .collect()
 }

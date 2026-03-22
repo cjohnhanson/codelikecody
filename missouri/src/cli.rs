@@ -429,7 +429,7 @@ pub fn run_command(config_dir: &str, command: Command) -> miette::Result<bool> {
 
         Command::Docs(args) => {
             match args.topic.as_deref() {
-                None => {
+                None | Some("list") => {
                     crate::docs::list();
                     Ok(true)
                 }
@@ -442,12 +442,12 @@ pub fn run_command(config_dir: &str, command: Command) -> miette::Result<bool> {
                     crate::docs::search(query);
                     Ok(true)
                 }
-                Some(slug) => {
-                    if crate::docs::show(slug) {
+                Some(identifier) => {
+                    if crate::docs::show(identifier) {
                         Ok(true)
                     } else {
-                        eprintln!("unknown doc: {slug}");
-                        eprintln!("available docs:");
+                        eprintln!("unknown doc: {identifier}");
+                        eprintln!();
                         crate::docs::list();
                         Ok(false)
                     }
