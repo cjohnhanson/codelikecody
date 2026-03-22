@@ -1,12 +1,12 @@
 ---
 title: "missouri doc: generate documentation from test suites"
-status: todo
+status: in_progress
 priority: 2
-assignee:
+assignee: coord-docs
 labels: [missouri, docs]
 depends_on: []
 created: 2026-03-22T13:56:52Z
-updated: "2026-03-22T13:57:24Z"
+updated: "2026-03-22T14:02:23Z"
 ---
 
 Generate documentation from missouri test suites. Tests are the source
@@ -69,3 +69,5 @@ to drift from reality.
 - File trees rendered with ignore patterns applied
 - At least one existing test suite (tisket or clc) annotated with doc fields
 - Rendered output is usable as a standalone tutorial
+
+## Scratch Notes
