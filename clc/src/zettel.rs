@@ -53,21 +53,63 @@ impl clc_sdk::ClcTool for ZettelState {
         }
 
         out.push_str(
-            "Notes are markdown files with YAML frontmatter in `.zettel/`. \
-             Each note has a title, tags, and forward links to other notes. \
-             Use `[[id]]` syntax in note bodies to reference other notes.\n\n",
+            "Zettel is a zettelkasten-style knowledge base. Notes are atomic — one idea \
+             per note, written in the author's own words. Notes link to each other via \
+             frontmatter `links:` or `[[id]]` references in the body.\n\n",
+        );
+
+        out.push_str(
+            "Notes have a status: `draft` or `permanent`. Drafts are captured ideas \
+             that haven't been processed yet. Permanent notes have been reviewed, \
+             reformulated, and linked by the human. Only the human promotes notes \
+             to permanent — never do this autonomously.\n\n",
         );
 
         let _ = writeln!(out, "{} notes.", self.note_count);
 
-        out.push_str("\n### Commands\n\n");
-        out.push_str("  zettel note create <title> [-t tags] [-l links]  Create a note\n");
-        out.push_str("  zettel note list [--tag <tag>]                   List notes\n");
-        out.push_str("  zettel note show <id>                            Show a note\n");
-        out.push_str("  zettel note edit <id> [--add-tag ...] [...]      Edit a note\n");
-        out.push_str("  zettel note delete <id>                          Delete a note\n");
-        out.push_str("  zettel backlinks <id>                            Show what links here\n");
-        out.push_str("  zettel orphans                                   Find unlinked notes\n");
+        out.push_str(
+            "\n### How to use zettel\n\n\
+             **Reading for context:** Before starting work on a topic, search the \
+             knowledge base. Use `zettel search`, `zettel read --tag`, or \
+             `zettel context <id>` to load relevant knowledge.\n\n\
+             **Creating notes:** Only when the human asks. Create as `draft` (the default). \
+             Include enough context that the note is useful later — what prompted it, \
+             what it connects to.\n\n\
+             **Never** create notes autonomously, promote drafts to permanent, \
+             or delete notes without being asked.\n\n",
+        );
+
+        out.push_str("### Commands\n\n");
+        out.push_str(
+            "  zettel note list [--tag T] [--status S] [--where K:V]  List/filter notes\n",
+        );
+        out.push_str(
+            "  zettel note show <id> [--field F]                      Show a note\n",
+        );
+        out.push_str(
+            "  zettel note create <title> [-t tags] [-s status]       Create a note\n",
+        );
+        out.push_str(
+            "  zettel note edit <id> [--status ...] [--add-tag ...]   Edit a note\n",
+        );
+        out.push_str(
+            "  zettel search <pattern>                                Regex search\n",
+        );
+        out.push_str(
+            "  zettel read [--tag T] [--status S]                     Dump full content\n",
+        );
+        out.push_str(
+            "  zettel context <id> [-d depth]                         Note + neighborhood\n",
+        );
+        out.push_str(
+            "  zettel backlinks <id>                                  What links here\n",
+        );
+        out.push_str(
+            "  zettel orphans                                         Unlinked notes\n",
+        );
+        out.push_str(
+            "  zettel stats                                           Knowledge base health\n",
+        );
 
         out
     }
