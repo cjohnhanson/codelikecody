@@ -218,8 +218,12 @@ impl Backend for NixBackend {
         env: &BTreeMap<String, String>,
         path_env: &str,
     ) -> Command {
+        // nix shell overrides PATH for the inner command, so we inject
+        // our PATH at the start of the shell command to ensure project
+        // bin/ wrappers take precedence over nix-provided binaries.
+        let wrapped = format!("export PATH=\"{path_env}:$PATH\"; {command}");
         let mut args = self.nix_prefix_args();
-        args.extend(["sh".into(), "-c".into(), command.to_string()]);
+        args.extend(["sh".into(), "-c".into(), wrapped]);
         let mut cmd = Command::new(self.nix_bin.as_str());
         cmd.args(&args)
             .current_dir(work_dir.as_std_path())
@@ -236,8 +240,11 @@ impl Backend for NixBackend {
         env: &BTreeMap<String, String>,
         path_env: &str,
     ) -> Command {
+        // nix shell overrides PATH, so wrap in sh with explicit PATH export.
+        let inner = parts.iter().map(|s| shell_escape(s)).collect::<Vec<_>>().join(" ");
+        let wrapped = format!("export PATH=\"{path_env}:$PATH\"; {inner}");
         let mut args = self.nix_prefix_args();
-        args.extend(parts.iter().map(|s| s.to_string()));
+        args.extend(["sh".into(), "-c".into(), wrapped]);
         let mut cmd = Command::new(self.nix_bin.as_str());
         cmd.args(&args)
             .current_dir(work_dir.as_std_path())
@@ -245,6 +252,15 @@ impl Backend for NixBackend {
             .envs(env.iter())
             .env("PATH", path_env);
         cmd
+    }
+}
+
+/// Escape a string for safe inclusion in a shell command.
+fn shell_escape(s: &str) -> String {
+    if s.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '/' || c == '.') {
+        s.to_string()
+    } else {
+        format!("'{}'", s.replace('\'', "'\\''"))
     }
 }
 
