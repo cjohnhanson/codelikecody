@@ -23,5 +23,17 @@ assertions:
   - name: "SessionStart hook output lists both skills"
     command: "echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook | jq -r '.hookSpecificOutput.additionalContext' | grep 'test-skill' && echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook | jq -r '.hookSpecificOutput.additionalContext' | grep 'another-skill'"
 
+  - name: "skills list shows both skills"
+    command: "clc skills list | grep 'test-skill' && clc skills list | grep 'another-skill'"
+
+  - name: "skills list shows source type"
+    command: "clc skills list | grep '\\[file\\]'"
+
+  - name: "skills show prints full SKILL.md content"
+    command: "clc skills show test-skill | grep '# Test Skill'"
+
+  - name: "skills show unknown skill fails"
+    command: "! clc skills show nonexistent 2>/dev/null"
+
   - name: "prime without skills config has no skills section"
     command: "rm clc.yml && ! clc prime | grep -i 'Skills (clc)'"
