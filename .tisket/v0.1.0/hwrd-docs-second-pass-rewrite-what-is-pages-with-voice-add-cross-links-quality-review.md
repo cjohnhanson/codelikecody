@@ -1,12 +1,12 @@
 ---
 title: "docs: second pass — rewrite what-is pages with voice, add cross-links, quality review"
-status: todo
+status: in_progress
 priority: 2
 assignee:
 labels: [docs]
 depends_on: []
 created: 2026-03-22T13:01:05Z
-updated: "2026-03-22T13:01:32Z"
+updated: "2026-03-22T13:03:55Z"
 ---
 
 The first pass docs are factually correct and structurally sound but read
@@ -41,3 +41,5 @@ Use the documentation-writing skill's nested review loops:
 - Fresh-eyes reviewers say the writing sounds human, not generated
 - Every concept mention links to its explanation on first use
 - Site coherence review finds no dead ends or missing links
+
+## Scratch Notes
