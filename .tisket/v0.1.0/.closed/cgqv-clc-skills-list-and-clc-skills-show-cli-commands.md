@@ -1,12 +1,12 @@
 ---
 title: "clc skills list and clc skills show CLI commands"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: []
 depends_on: []
 created: 2026-03-22T03:35:39Z
-updated: "2026-03-22T03:36:28Z"
+updated: "2026-03-22T03:48:16Z"
 ---
 
 ## What
@@ -39,5 +39,3 @@ Content compiled via `include_str!()` from a `skills/` directory in the clc crat
 ## Depends on
 
 - v7g1 (merged) — skill indexing and config infrastructure
-
-## Scratch Notes
