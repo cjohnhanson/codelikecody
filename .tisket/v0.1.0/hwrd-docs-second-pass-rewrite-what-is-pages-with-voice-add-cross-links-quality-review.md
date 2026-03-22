@@ -1,12 +1,12 @@
 ---
 title: "docs: second pass — rewrite what-is pages with voice, add cross-links, quality review"
-status: in_progress
+status: blocked
 priority: 2
 assignee:
 labels: [docs]
-depends_on: []
+depends_on: [u1gm]
 created: 2026-03-22T13:01:05Z
-updated: "2026-03-22T13:03:55Z"
+updated: "2026-03-22T13:59:06Z"
 ---
 
 The first pass docs are factually correct and structurally sound but read
@@ -42,4 +42,16 @@ Use the documentation-writing skill's nested review loops:
 - Every concept mention links to its explanation on first use
 - Site coherence review finds no dead ends or missing links
 
-## Scratch Notes
+
+## Blocked
+
+Blocked on u1gm (missouri doc generation). The docs rewrite should use
+missouri-generated tutorials instead of hand-written prose. No point
+rewriting everything now only to replace it when missouri doc lands.
+
+What to do when unblocked:
+- Annotate existing missouri test suites with doc fields
+- Generate tutorials from the annotated tests
+- Write the what-is pages with real voice (these aren't generated from tests)
+- Cross-linking pass
+- Quality review loops
