@@ -288,11 +288,10 @@ impl DockerBackend {
     /// Generates a Dockerfile that uses nixos/nix as a base, copies the flake.nix,
     /// and builds the devShell packages into a nix profile. The user writes a
     /// normal flake with a devShell — missouri handles the Docker wrapping.
-    fn build_image_from_flake(
+    async fn build_image_from_flake(
         &self,
         flake_path: &Utf8Path,
         docker: &bollard::Docker,
-        rt: &tokio::runtime::Runtime,
     ) -> Result<String, String> {
         use bollard::image::BuildImageOptions;
         use futures_util::StreamExt;
@@ -301,61 +300,80 @@ impl DockerBackend {
             .parent()
             .ok_or_else(|| "flake.nix has no parent directory".to_string())?;
 
-        // Hash the flake content for a stable image tag
+        // Dockerfile + install script. Uses `nix develop` to get the devShell's
+        // PATH, then symlinks all executables into /env/bin/.
+        let dockerfile = "FROM nixos/nix:latest\n\
+RUN echo 'experimental-features = nix-command flakes' >> /etc/nix/nix.conf\n\
+COPY . /build/\n\
+WORKDIR /build\n\
+COPY install-devshell.sh /tmp/\n\
+RUN chmod +x /tmp/install-devshell.sh && /tmp/install-devshell.sh\n\
+ENV PATH=\"/env/bin:$PATH\"\n\
+CMD [\"bash\"]\n";
+
+        let install_script = "#!/bin/sh\n\
+set -ex\n\
+cd /build\n\
+ls -la /build/\n\
+DEVPATH=$(nix develop --impure --command sh -c 'echo $PATH')\n\
+echo \"DEVPATH=$DEVPATH\"\n\
+mkdir -p /env/bin\n\
+IFS=':'\n\
+for dir in $DEVPATH; do\n\
+  if [ -d \"$dir\" ]; then\n\
+    for f in \"$dir\"/*; do\n\
+      [ -x \"$f\" ] && [ -f \"$f\" ] && ln -sf \"$f\" /env/bin/ 2>/dev/null || true\n\
+    done\n\
+  fi\n\
+done\n\
+echo \"Installed: $(ls /env/bin/ | wc -l) executables\"\n\
+ls /env/bin/ | head -10\n";
+
+        // Hash flake + dockerfile content for stable image tag
         let flake_content = std::fs::read_to_string(flake_path)
             .map_err(|e| format!("failed to read {flake_path}: {e}"))?;
-        let hash = format!("{:x}", md5_hash(flake_content.as_bytes()));
+        let hash = format!("{:x}", md5_hash(format!("{flake_content}{dockerfile}").as_bytes()));
         let image_tag = format!("missouri-flake:{hash}");
 
         // Check if image already exists
-        let exists = rt.block_on(async {
-            docker.inspect_image(&image_tag).await.is_ok()
-        });
-        if exists {
+        if docker.inspect_image(&image_tag).await.is_ok() {
             return Ok(image_tag);
         }
 
-        // Generate Dockerfile
-        let dockerfile = "\
-FROM nixos/nix:latest
-RUN echo 'experimental-features = nix-command flakes' >> /etc/nix/nix.conf
-COPY . /build/
-WORKDIR /build
-RUN nix build --impure --expr 'let shell = (builtins.getFlake (toString ./.)).devShells.aarch64-linux.default; pkgs = import (builtins.getFlake \"nixpkgs\").outPath {}; in pkgs.buildEnv { name = \"env\"; paths = shell.buildInputs; }' --out-link /env
-ENV PATH=\"/env/bin:/root/.nix-profile/bin:$PATH\"
-CMD [\"bash\"]
-";
+        eprintln!("missouri: building Docker image from {flake_path} (first build may take several minutes)...");
 
-        // Create a tar archive of the flake directory + Dockerfile for docker build
-        let tar_data = create_build_context(flake_dir, dockerfile)
-            .map_err(|e| format!("failed to create build context: {e}"))?;
+        // Create a tar archive of the flake directory + Dockerfile + install script
+        let tar_data = create_build_context_with_extra(
+            flake_dir,
+            dockerfile,
+            &[("install-devshell.sh", install_script)],
+        )
+        .map_err(|e| format!("failed to create build context: {e}"))?;
 
-        rt.block_on(async {
-            let options = BuildImageOptions {
-                t: image_tag.as_str(),
-                rm: true,
-                ..Default::default()
-            };
+        let options = BuildImageOptions {
+            t: image_tag.as_str(),
+            rm: true,
+            // nocache: true, // uncomment to force rebuild past Docker layer cache
+            ..Default::default()
+        };
 
-            let mut stream = docker.build_image(
-                options,
-                None,
-                Some(tar_data.into()),
-            );
+        let mut stream = docker.build_image(options, None, Some(tar_data.into()));
 
-            while let Some(result) = stream.next().await {
-                match result {
-                    Ok(info) => {
-                        if let Some(err) = info.error {
-                            return Err(format!("docker build error: {err}"));
-                        }
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(info) => {
+                    if let Some(ref stream) = info.stream {
+                        eprint!("{stream}");
                     }
-                    Err(e) => return Err(format!("docker build failed: {e}")),
+                    if let Some(err) = info.error {
+                        return Err(format!("docker build error: {err}"));
+                    }
                 }
+                Err(e) => return Err(format!("docker build failed: {e}")),
             }
+        }
 
-            Ok(image_tag.clone())
-        })
+        Ok(image_tag)
     }
 
     /// Run a command inside a Docker container with network isolation and
@@ -394,7 +412,7 @@ CMD [\"bash\"]
             // 2. If a flake.nix exists, build an image from the devShell
             // 3. Otherwise, use the configured default image
             let flake_image: Option<String> = if let Some(fp) = flake_path {
-                Some(self.build_image_from_flake(fp, &docker, &rt)?)
+                Some(self.build_image_from_flake(fp, &docker).await?)
             } else {
                 None
             };
@@ -2265,8 +2283,12 @@ fn md5_hash(data: &[u8]) -> u64 {
     hash
 }
 
-/// Create a tar archive from a directory plus an injected Dockerfile.
-fn create_build_context(dir: &Utf8Path, dockerfile: &str) -> std::io::Result<Vec<u8>> {
+/// Create a tar archive from a directory, an injected Dockerfile, and extra files.
+fn create_build_context_with_extra(
+    dir: &Utf8Path,
+    dockerfile: &str,
+    extra_files: &[(&str, &str)],
+) -> std::io::Result<Vec<u8>> {
     let mut archive = tar::Builder::new(Vec::new());
 
     // Add Dockerfile
@@ -2276,6 +2298,16 @@ fn create_build_context(dir: &Utf8Path, dockerfile: &str) -> std::io::Result<Vec
     header.set_mode(0o644);
     header.set_cksum();
     archive.append_data(&mut header, "Dockerfile", dockerfile_bytes)?;
+
+    // Add extra files
+    for (name, content) in extra_files {
+        let bytes = content.as_bytes();
+        let mut header = tar::Header::new_gnu();
+        header.set_size(bytes.len() as u64);
+        header.set_mode(0o755);
+        header.set_cksum();
+        archive.append_data(&mut header, name, bytes)?;
+    }
 
     // Add all files from the directory
     for entry in walkdir::WalkDir::new(dir.as_std_path())
