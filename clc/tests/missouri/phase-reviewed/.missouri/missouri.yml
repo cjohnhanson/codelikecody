@@ -1,3 +1,6 @@
+doc: |
+  Review complete. Source files locked, stop allowed. One step from done.
+
 assertions:
   - name: "state file exists"
     command: "test -f .clc/state"
@@ -27,6 +30,8 @@ transitions:
   - name: "advance to done"
     command: "clc status set done"
     target: "../phase-done-via-review"
+    doc: |
+      Work is finalized.
     comparators:
       files:
         - path: ".claude/settings.local.json"

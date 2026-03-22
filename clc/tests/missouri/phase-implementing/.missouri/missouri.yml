@@ -1,3 +1,6 @@
+doc: |
+  Everything is unlocked. The agent can edit any file. This is the only phase (besides `in-review`) where source files are writable. The prime text nudges the agent to run tests after every file edit.
+
 assertions:
   - name: "state file exists"
     command: "test -f .clc/state"
@@ -54,6 +57,8 @@ transitions:
   - name: "advance to green"
     command: "clc status set green"
     target: "../phase-green"
+    doc: |
+      Tests pass. Source files lock again — if the agent needs to change implementation after this, it goes back to `implementing` (backward transitions are always allowed).
     comparators:
       files:
         - path: ".claude/settings.local.json"

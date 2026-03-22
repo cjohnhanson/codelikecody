@@ -1,3 +1,6 @@
+doc: |
+  The agent can stop here. Source files are locked (test-only edits). A reviewer — human or coordinator — can pick up the review. If no review is needed, the agent advances through the remaining phases.
+
 assertions:
   - name: "state file exists"
     command: "test -f .clc/state"
@@ -30,6 +33,8 @@ transitions:
   - name: "advance to in-review"
     command: "clc status set in-review"
     target: "../phase-in-review"
+    doc: |
+      A reviewer is looking at the work. Source files unlock again so review feedback can be addressed.
     comparators:
       files:
         - path: ".claude/settings.local.json"

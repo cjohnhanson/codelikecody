@@ -1,3 +1,12 @@
+doc: |
+  Source files are locked. The agent can read anything and run commands,
+  but Edit, Write, and NotebookEdit are rejected for anything outside
+  `tests/missouri/`. The stop hook blocks too — the agent can't bail
+  until it reaches `review-requested`.
+
+  Skipping ahead doesn't work. `clc status set red` is rejected —
+  phases advance one step at a time.
+
 assertions:
   - name: "state file exists"
     command: "test -f .clc/state"
@@ -75,6 +84,10 @@ transitions:
   - name: "advance to tests-written"
     command: "clc status set tests-written"
     target: "../phase-tests-written"
+    doc: |
+      Tests exist. The guard doesn't verify this — it trusts the
+      transition. Verification happens at `red`, when the tests
+      need to actually fail.
     comparators:
       files:
         - path: ".claude/settings.local.json"

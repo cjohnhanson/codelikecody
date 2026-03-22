@@ -1,3 +1,6 @@
+doc: |
+  Tests fail for the right reason. Source files are still locked — the agent can't start implementing until it advances to `implementing`. This is the TDD checkpoint: if the tests passed at `red`, something is wrong with the tests.
+
 assertions:
   - name: "state file exists"
     command: "test -f .clc/state"
@@ -42,6 +45,8 @@ transitions:
   - name: "advance to implementing"
     command: "clc status set implementing"
     target: "../phase-implementing"
+    doc: |
+      Source files unlock. Everything is editable — code, config, build files. The agent writes the minimum to make the tests pass.
     comparators:
       files:
         - path: ".claude/settings.local.json"

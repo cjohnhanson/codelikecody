@@ -1,3 +1,9 @@
+doc: |
+  Done. The agent can stop. `clc done` closes the tisket, commits the
+  finalization, and the branch is ready for merge. Nine phases, one at
+  a time, no skipping. The agent didn't choose to follow TDD — the
+  guard made it the only option.
+
 assertions:
   - name: "state file exists"
     command: "test -f .clc/state"

@@ -71,6 +71,10 @@ pub struct DocArgs {
     /// Output format
     #[arg(long, default_value = "markdown")]
     pub format: DocFormat,
+
+    /// Path index to render (1-based, default: 1)
+    #[arg(long, default_value = "1")]
+    pub path: usize,
 }
 
 #[derive(Clone, clap::ValueEnum)]
@@ -470,8 +474,12 @@ pub fn run_command(config_dir: &str, command: Command) -> miette::Result<bool> {
                 return Ok(true);
             }
 
-            // Render the first path
-            let path = &paths[0];
+            let idx = doc_args.path.saturating_sub(1);
+            if idx >= paths.len() {
+                eprintln!("path {} not found (have {} paths)", doc_args.path, paths.len());
+                return Ok(false);
+            }
+            let path = &paths[idx];
 
             match doc_args.format {
                 DocFormat::Markdown => {

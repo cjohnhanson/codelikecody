@@ -339,6 +339,10 @@ transitions:
   - name: "set initial phase"
     command: "clc status set tests-unwritten"
     target: "../phase-tests-unwritten"
+    doc: |
+      Set the phase. In practice `clc pickup` does this automatically,
+      but the phase system works independently — it's just a state file
+      at `.clc/state` and a guard that reads it on every tool call.
     comparators:
       files:
         - path: ".claude/settings.local.json"

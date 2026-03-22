@@ -1,3 +1,8 @@
+doc: |
+  Tests exist but haven't been run yet. Source files are still locked.
+  The prime text no longer includes missouri authoring detail —
+  the agent wrote its tests, now it needs to run them and see them fail.
+
 assertions:
   - name: "state file exists"
     command: "test -f .clc/state"
@@ -45,6 +50,9 @@ transitions:
   - name: "advance to red"
     command: "clc status set red"
     target: "../phase-red"
+    doc: |
+      The tests fail. This is the point — a test that passes immediately
+      isn't specifying new behavior, it's confirming what already exists.
     comparators:
       files:
         - path: ".claude/settings.local.json"

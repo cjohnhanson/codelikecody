@@ -1,3 +1,6 @@
+doc: |
+  All edits are unlocked, like `implementing`. The stop hook blocks — review changes need to be finished before the agent can stop. This prevents half-applied review feedback.
+
 assertions:
   - name: "state file exists"
     command: "test -f .clc/state"
@@ -30,6 +33,8 @@ transitions:
   - name: "advance to reviewed"
     command: "clc status set reviewed"
     target: "../phase-reviewed"
+    doc: |
+      Review is done. Edits lock, the agent can stop or advance to `done`.
     comparators:
       files:
         - path: ".claude/settings.local.json"
