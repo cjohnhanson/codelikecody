@@ -13,6 +13,8 @@ use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
+use clc_sdk::agent::Agent;
+
 use camino::Utf8Path;
 use nix::sys::stat::Mode;
 use nix::unistd::{self, Pid};
@@ -73,93 +75,24 @@ pub fn dispatch(
     let initial_prompt = build_worker_prompt(project_dir, id)?;
     let system_prompt = build_system_prompt(id);
 
-    // Spawn the worker.
+    // Spawn the worker via the Agent trait.
+    let agent = clc_sdk::agent::ClaudeCodeAgent::new();
+    let agent_config = clc_sdk::agent::AgentConfig {
+        model: model.to_string(),
+        system_prompt,
+        initial_prompt: initial_prompt.clone(),
+        extra_args: vec![],
+    };
+    let cmd = agent
+        .build_start_command(&agent_config, &worktree_dir)
+        .map_err(|e| Error::NonBlocking(format!("failed to build agent command: {e}")))?;
+
     let worker_dir = worktree_dir.join(".clc").join(WORKER_DIR);
-    let pid = spawn_worker_process(
-        &worktree_dir,
-        &worker_dir,
-        model,
-        &system_prompt,
-        &initial_prompt,
-        &[],
-    )?;
+    let pid = spawn_agent_process(cmd, &worker_dir, &initial_prompt)?;
 
     eprintln!("dispatched worker for '{id}' (pid {pid})");
 
     Ok(())
-}
-
-/// Spawn a claude --print process with pipe infrastructure.
-///
-/// Creates the worker state directory with stdin.pipe, stdout.jsonl,
-/// stderr.log, and pid file. Sends the initial prompt via the pipe.
-///
-/// Returns the child PID.
-pub fn spawn_worker_process(
-    working_dir: &Path,
-    worker_dir: &Path,
-    model: &str,
-    system_prompt: &str,
-    initial_prompt: &str,
-    extra_args: &[&str],
-) -> Result<u32, Error> {
-    fs::create_dir_all(worker_dir)?;
-
-    let pid_path = worker_dir.join("pid");
-    let stdout_path = worker_dir.join("stdout.jsonl");
-    let stderr_path = worker_dir.join("stderr.log");
-    let stdin_pipe_path = worker_dir.join("stdin.pipe");
-
-    // Create the named pipe for stdin.
-    create_named_pipe(&stdin_pipe_path)?;
-
-    // Open stdout and stderr files.
-    let stdout_file = fs::File::create(&stdout_path)?;
-    let stderr_file = fs::File::create(&stderr_path)?;
-
-    // Open the named pipe for reading (will be the child's stdin).
-    // This must be opened with O_RDWR to prevent blocking on open and to keep
-    // the read end alive even when no writer is connected.
-    let stdin_file = fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(&stdin_pipe_path)?;
-
-    // Build the claude command.
-    let mut cmd = Command::new("claude");
-    cmd.current_dir(working_dir);
-    cmd.arg("--print");
-    cmd.arg("--verbose");
-    cmd.arg("--input-format").arg("stream-json");
-    cmd.arg("--output-format").arg("stream-json");
-    cmd.arg("--model").arg(model);
-    cmd.arg("--append-system-prompt").arg(system_prompt);
-
-    for arg in extra_args {
-        cmd.arg(arg);
-    }
-
-    cmd.stdin(Stdio::from(stdin_file));
-    cmd.stdout(Stdio::from(stdout_file));
-    cmd.stderr(Stdio::from(stderr_file));
-
-    // Clear CLAUDECODE so the child doesn't think it's nested.
-    cmd.env_remove("CLAUDECODE");
-
-    // Spawn the worker.
-    let child = cmd
-        .spawn()
-        .map_err(|e| Error::NonBlocking(format!("failed to spawn claude worker: {e}")))?;
-
-    let pid = child.id();
-
-    // Write PID file.
-    fs::write(&pid_path, pid.to_string())?;
-
-    // Send the initial prompt via the named pipe.
-    send_prompt(&stdin_pipe_path, initial_prompt)?;
-
-    Ok(pid)
 }
 
 /// Spawn an agent process with pipe infrastructure.

@@ -6,7 +6,9 @@
 use std::fs;
 use std::io::Write;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
+
+use clc_sdk::agent::Agent;
 
 use claude_code::protocol::{ContentBlock, OutputMessage};
 use nix::sys::signal::{self, Signal};
@@ -305,23 +307,19 @@ pub fn resume(project_dir: &Path, id: &str) -> Result<(), Error> {
         .write(true)
         .open(&stdin_pipe_path)?;
 
-    // Build the claude command with --resume.
-    let mut cmd = Command::new("claude");
-    cmd.current_dir(&work_dir);
-    cmd.arg("--print");
-    cmd.arg("--verbose");
-    cmd.arg("--input-format").arg("stream-json");
-    cmd.arg("--output-format").arg("stream-json");
-    cmd.arg("--resume").arg(&session_id);
+    // Build the resume command via the Agent trait.
+    let agent = clc_sdk::agent::ClaudeCodeAgent::new();
+    let mut cmd = agent
+        .build_resume_command(&session_id, &work_dir)
+        .map_err(|e| Error::NonBlocking(format!("failed to build resume command: {e}")))?;
 
     cmd.stdin(Stdio::from(stdin_file));
     cmd.stdout(Stdio::from(stdout_file));
     cmd.stderr(Stdio::from(stderr_file));
-    cmd.env_remove("CLAUDECODE");
 
     let child = cmd
         .spawn()
-        .map_err(|e| Error::NonBlocking(format!("failed to spawn claude worker: {e}")))?;
+        .map_err(|e| Error::NonBlocking(format!("failed to spawn agent: {e}")))?;
 
     let pid = child.id();
     fs::write(&pid_path, pid.to_string())?;
