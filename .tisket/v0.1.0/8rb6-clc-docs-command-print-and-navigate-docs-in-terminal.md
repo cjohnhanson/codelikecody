@@ -1,12 +1,12 @@
 ---
 title: "docs subcommand: each tool prints its own bundled docs"
-status: todo
+status: in_progress
 priority: 2
 assignee:
 labels: [clc, docs]
 depends_on: []
 created: 2026-03-21T18:23:34Z
-updated: "2026-03-21T20:35:23Z"
+updated: "2026-03-22T01:27:02Z"
 ---
 
 Each tool gets a docs subcommand that prints its own bundled documentation.
@@ -53,3 +53,5 @@ Humans pipe to bat/less/glow.
 - clc missouri docs delegates correctly
 - docs search <query> works on each tool
 - cargo test covers the commands
+
+## Scratch Notes
