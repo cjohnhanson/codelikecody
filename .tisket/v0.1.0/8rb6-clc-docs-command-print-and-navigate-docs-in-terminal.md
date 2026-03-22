@@ -1,23 +1,55 @@
 ---
-title: "clc docs command: print and navigate docs in terminal"
+title: "docs subcommand: each tool prints its own bundled docs"
 status: todo
 priority: 2
 assignee:
 labels: [clc, docs]
 depends_on: []
 created: 2026-03-21T18:23:34Z
-updated: "2026-03-21T18:24:02Z"
+updated: "2026-03-21T20:35:23Z"
 ---
 
-CLI command for reading project documentation in the terminal.
+Each tool gets a docs subcommand that prints its own bundled documentation.
 
-clc docs — list available docs
-clc docs <topic> — print a doc to stdout
-clc docs search <query> — search across docs
+## Commands per tool
 
-Markdown from docs/ baked into the binary at compile time. Rendered as
-terminal-formatted text (or raw markdown, agent-friendly). No server,
-no browser — just print.
+tisket docs — list tisket docs
+tisket docs <topic> — print a tisket doc
+missouri docs — list missouri docs  
+missouri docs <topic> — print a missouri doc
+clc docs — list all docs (clc's own + ecosystem-level)
+clc docs <topic> — print a doc
 
-Agents use this to look up CLI reference, config schemas, and workflows
-without needing web access or file reads. Humans pipe to a pager.
+All three: docs search <query> — search across that tool's docs
+
+## Also via clc delegation
+
+clc tisket docs → delegates to tisket docs
+clc missouri docs → delegates to missouri docs
+
+## Implementation
+
+Each crate bundles its own docs/ via include_str!() in a docs module.
+Share the docs module structure across crates (maybe in clc-sdk or as
+a pattern each crate implements).
+
+- tisket bundles: tisket/docs/*.md
+- missouri bundles: missouri/docs/*.md  
+- clc bundles: clc/docs/*.md (includes ecosystem docs: index, what-is,
+  getting-started, phase-system, orchestration, cli-reference)
+
+## Output format
+
+Raw markdown to stdout. No rendering, no colors. Agents consume directly.
+Humans pipe to bat/less/glow.
+
+## Done when
+
+- tisket docs, missouri docs, clc docs each list their docs with titles
+- tisket docs <topic> prints the correct doc
+- missouri docs <topic> prints the correct doc
+- clc docs <topic> prints any doc (clc's own + ecosystem)
+- clc tisket docs delegates correctly
+- clc missouri docs delegates correctly
+- docs search <query> works on each tool
+- cargo test covers the commands
