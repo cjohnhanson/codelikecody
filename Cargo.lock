@@ -512,6 +512,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tisket",
  "toml 0.8.23",
+ "zettel",
 ]
 
 [[package]]
@@ -544,7 +545,7 @@ dependencies = [
  "gloo-net",
  "leptos",
  "leptos_router",
- "pulldown-cmark 0.12.2",
+ "pulldown-cmark",
  "serde",
  "serde_json",
  "web-sys",
@@ -967,18 +968,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "docs-web"
-version = "0.1.0"
-dependencies = [
- "console_error_panic_hook",
- "leptos",
- "leptos_router",
- "pulldown-cmark 0.13.2",
- "wasm-bindgen",
- "web-sys",
 ]
 
 [[package]]
@@ -3084,6 +3073,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yml",
+ "tar",
  "tempfile",
  "termimad",
  "thiserror 2.0.18",
@@ -3432,18 +3422,6 @@ name = "pulldown-cmark"
 version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f86ba2052aebccc42cbbb3ed234b8b13ce76f75c3551a303cb2bcffcff12bb14"
-dependencies = [
- "bitflags",
- "memchr",
- "pulldown-cmark-escape",
- "unicase",
-]
-
-[[package]]
-name = "pulldown-cmark"
-version = "0.13.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14104c5a24d9bcf7eb2c24753e0f49fe14555d8bd565ea3d38e4b4303267259d"
 dependencies = [
  "bitflags",
  "memchr",
@@ -4194,6 +4172,17 @@ dependencies = [
  "throw_error",
  "wasm-bindgen",
  "web-sys",
+]
+
+[[package]]
+name = "tar"
+version = "0.4.45"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22692a6476a21fa75fdfc11d452fda482af402c008cdbaf3476414e122040973"
+dependencies = [
+ "filetime",
+ "libc",
+ "xattr",
 ]
 
 [[package]]
@@ -5291,6 +5280,16 @@ name = "writeable"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9edde0db4769d2dc68579893f2306b26c6ecfbe0ef499b013d731b7b9247e0b9"
+
+[[package]]
+name = "xattr"
+version = "1.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32e45ad4206f6d2479085147f02bc2ef834ac85886624a23575ae137c8aa8156"
+dependencies = [
+ "libc",
+ "rustix",
+]
 
 [[package]]
 name = "xxhash-rust"

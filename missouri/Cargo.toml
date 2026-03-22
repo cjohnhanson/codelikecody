@@ -20,6 +20,7 @@ miette = { version = "7", features = ["fancy"] }
 serde = { version = "1", features = ["derive"] }
 serde_yml = "0.0"
 termimad = "0.34"
+tar = "0.4"
 tempfile = "3"
 thiserror = "2"
 tracing = "0.1"
