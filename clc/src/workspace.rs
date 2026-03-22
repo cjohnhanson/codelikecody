@@ -19,6 +19,7 @@ use crate::worker;
 
 pub struct WorktreeWorkspace {
     config: WorkspaceConfig,
+    agent: Box<dyn clc_sdk::agent::Agent>,
     working_dir: PathBuf,
     worker_dir: PathBuf,
     status: WorkspaceStatus,
@@ -30,14 +31,12 @@ pub struct WorktreeWorkspace {
 
 impl WorktreeWorkspace {
     #[must_use]
-    pub fn new(config: WorkspaceConfig) -> Self {
-        // Use the same path logic as worker::working_dir_for / worker_dir_for so
-        // the coordinator (COORDINATOR_ID) resolves to trunk and regular workers
-        // resolve to their worktree.
+    pub fn new(config: WorkspaceConfig, agent: Box<dyn clc_sdk::agent::Agent>) -> Self {
         let working_dir = worker::working_dir_for(&config.project_dir, &config.tisket_id);
         let worker_dir = worker::worker_dir_for(&config.project_dir, &config.tisket_id);
         Self {
             config,
+            agent,
             working_dir,
             worker_dir,
             status: WorkspaceStatus::NotStarted,
@@ -69,16 +68,15 @@ impl Workspace for WorktreeWorkspace {
             return Err(WorkspaceError::Process("workspace already started".into()));
         }
 
-        let model = self.config.model.as_deref().unwrap_or("claude-sonnet-4-6");
-        let system_prompt = self.config.system_prompt.as_deref().unwrap_or("");
+        let cmd = self
+            .agent
+            .build_start_command(&self.config.agent_config, &self.working_dir)
+            .map_err(|e| WorkspaceError::Process(format!("{e}")))?;
 
-        let pid = dispatch::spawn_worker_process(
-            &self.working_dir,
+        let pid = dispatch::spawn_agent_process(
+            cmd,
             &self.worker_dir,
-            model,
-            system_prompt,
-            &self.config.initial_prompt,
-            &[],
+            &self.config.agent_config.initial_prompt,
         )
         .map_err(|e| WorkspaceError::Process(format!("{e}")))?;
 

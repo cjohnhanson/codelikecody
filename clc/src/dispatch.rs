@@ -162,6 +162,51 @@ pub fn spawn_worker_process(
     Ok(pid)
 }
 
+/// Spawn an agent process with pipe infrastructure.
+///
+/// Takes a pre-built `Command` from an `Agent::build_start_command` call.
+/// Wires up stdin (named pipe), stdout (jsonl file), stderr (log file),
+/// writes PID file, and sends the initial prompt.
+///
+/// Returns the child PID.
+pub fn spawn_agent_process(
+    mut cmd: Command,
+    worker_dir: &Path,
+    initial_prompt: &str,
+) -> Result<u32, Error> {
+    fs::create_dir_all(worker_dir)?;
+
+    let pid_path = worker_dir.join("pid");
+    let stdout_path = worker_dir.join("stdout.jsonl");
+    let stderr_path = worker_dir.join("stderr.log");
+    let stdin_pipe_path = worker_dir.join("stdin.pipe");
+
+    create_named_pipe(&stdin_pipe_path)?;
+
+    let stdout_file = fs::File::create(&stdout_path)?;
+    let stderr_file = fs::File::create(&stderr_path)?;
+
+    let stdin_file = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&stdin_pipe_path)?;
+
+    cmd.stdin(Stdio::from(stdin_file));
+    cmd.stdout(Stdio::from(stdout_file));
+    cmd.stderr(Stdio::from(stderr_file));
+
+    let child = cmd
+        .spawn()
+        .map_err(|e| Error::NonBlocking(format!("failed to spawn agent: {e}")))?;
+
+    let pid = child.id();
+    fs::write(&pid_path, pid.to_string())?;
+
+    send_prompt(&stdin_pipe_path, initial_prompt)?;
+
+    Ok(pid)
+}
+
 pub fn is_worker_alive(worktree_dir: &Path) -> bool {
     let pid_path = worktree_dir.join(".clc").join(WORKER_DIR).join("pid");
     let Ok(contents) = fs::read_to_string(&pid_path) else {

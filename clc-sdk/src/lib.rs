@@ -1,5 +1,6 @@
 pub use claude_code::protocol;
 
+pub mod agent;
 pub mod inbox;
 pub mod outbox;
 pub mod workspace;

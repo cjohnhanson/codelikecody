@@ -72,7 +72,7 @@ pub fn coordinate(
         worker_perm_defaults,
         worker_perm_deny,
         coordinator_config,
-        WorktreeWorkspace::new,
+        |config| WorktreeWorkspace::new(config, Box::new(clc_sdk::agent::ClaudeCodeAgent::new())),
     )
 }
 
@@ -157,10 +157,12 @@ pub fn coordinate_with<W: Workspace>(
         tisket_id: worker::COORDINATOR_ID.to_string(),
         project_dir: project_dir.to_path_buf(),
         main_branch: main_branch.to_string(),
-        initial_prompt,
-        system_prompt: Some(system_prompt),
-        max_budget_usd: None,
-        model: Some(model.to_string()),
+        agent_config: clc_sdk::agent::AgentConfig {
+            model: model.to_string(),
+            system_prompt,
+            initial_prompt,
+            extra_args: vec![],
+        },
     };
     let mut workspace = workspace_factory(config);
     workspace
@@ -757,9 +759,9 @@ mod workspace_tests {
             prompt_out: &Rc<RefCell<String>>,
             system_out: &Rc<RefCell<Option<String>>>,
         ) -> Self {
-            *model_out.borrow_mut() = config.model.clone();
-            *prompt_out.borrow_mut() = config.initial_prompt.clone();
-            *system_out.borrow_mut() = config.system_prompt.clone();
+            *model_out.borrow_mut() = Some(config.agent_config.model.clone());
+            *prompt_out.borrow_mut() = config.agent_config.initial_prompt.clone();
+            *system_out.borrow_mut() = Some(config.agent_config.system_prompt.clone());
             Self {
                 id: config.tisket_id.clone(),
                 working_dir: config.project_dir.clone(),

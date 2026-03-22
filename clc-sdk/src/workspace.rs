@@ -60,10 +60,8 @@ pub struct WorkspaceConfig {
     pub tisket_id: String,
     pub project_dir: PathBuf,
     pub main_branch: String,
-    pub initial_prompt: String,
-    pub system_prompt: Option<String>,
-    pub max_budget_usd: Option<f64>,
-    pub model: Option<String>,
+    /// Agent-level configuration (model, prompts, extra args).
+    pub agent_config: crate::agent::AgentConfig,
 }
 
 /// An isolated environment where an agent works, plus a control channel.
