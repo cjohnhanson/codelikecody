@@ -547,7 +547,7 @@ dependencies = [
  "gloo-net",
  "leptos",
  "leptos_router",
- "pulldown-cmark 0.12.2",
+ "pulldown-cmark",
  "serde",
  "serde_json",
  "web-sys",
@@ -991,18 +991,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "docs-web"
-version = "0.1.0"
-dependencies = [
- "console_error_panic_hook",
- "leptos",
- "leptos_router",
- "pulldown-cmark 0.13.2",
- "wasm-bindgen",
- "web-sys",
 ]
 
 [[package]]
@@ -3483,18 +3471,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pulldown-cmark"
-version = "0.13.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14104c5a24d9bcf7eb2c24753e0f49fe14555d8bd565ea3d38e4b4303267259d"
-dependencies = [
- "bitflags",
- "memchr",
- "pulldown-cmark-escape",
- "unicase",
-]
-
-[[package]]
 name = "pulldown-cmark-escape"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5474,6 +5450,7 @@ dependencies = [
  "chrono",
  "clap",
  "mdstore",
+ "regex",
  "serde",
  "serde_json",
  "serde_yml",
