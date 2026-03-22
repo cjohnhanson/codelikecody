@@ -1,12 +1,12 @@
 ---
 title: "Zettel feature round: status field, context, search, read, stats"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: [zettel]
 depends_on: []
 created: 2026-03-22T03:04:06Z
-updated: "2026-03-22T03:07:08Z"
+updated: "2026-03-22T03:30:48Z"
 ---
 
 Add the features needed to make zettel actually useful for knowledge exploration.
@@ -34,5 +34,3 @@ zettel stats — note count, draft vs permanent breakdown, tag distribution, mos
 ## Testing
 
 Missouri tests for each feature. Extend the existing test graph with new states.
-
-## Scratch Notes
