@@ -105,6 +105,8 @@ pub async fn edit_issue(
         depends_on: depends_str.as_deref(),
         body: req.body.as_deref(),
         append: req.append.as_deref(),
+        tags: &[],
+        untags: &[],
     };
 
     repo.edit_issue(&id, opts)?;
