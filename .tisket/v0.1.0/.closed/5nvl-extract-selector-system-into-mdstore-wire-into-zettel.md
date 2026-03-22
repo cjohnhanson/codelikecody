@@ -1,12 +1,12 @@
 ---
 title: "Extract selector system into mdstore, wire into zettel"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: [refactor, zettel]
 depends_on: []
 created: 2026-03-22T12:39:24Z
-updated: "2026-03-22T12:39:34Z"
+updated: "2026-03-22T12:46:49Z"
 ---
 
 Move the generic selector parsing (namespace:value, AND semantics) into mdstore. Tisket and zettel both implement domain-specific matching via a trait.
@@ -26,5 +26,3 @@ Move the generic selector parsing (namespace:value, AND semantics) into mdstore.
 
 - Add --where flag to zettel note list (same as tisket issue list)
 - Missouri tests for zettel selectors
-
-## Scratch Notes
