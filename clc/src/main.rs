@@ -21,6 +21,7 @@ mod missouri;
 mod permissions;
 mod phase;
 mod pickup;
+mod skills;
 mod tisket;
 mod topology;
 mod zettel;

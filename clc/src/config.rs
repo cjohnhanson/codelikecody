@@ -39,6 +39,9 @@ struct TomlFile {
 
     #[serde(default)]
     rules: Vec<PolicyRule>,
+
+    #[serde(default)]
+    skills: Vec<SkillSource>,
 }
 
 // --- Workflow policy types ---
@@ -123,6 +126,23 @@ pub struct Config {
 
     #[serde(default)]
     pub rules: Vec<PolicyRule>,
+
+    #[serde(default)]
+    pub skills: Vec<SkillSource>,
+}
+
+/// A source of agent skills: a local directory, a git repo, or built-in.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum SkillSource {
+    /// Local directory containing SKILL.md files.
+    Path {
+        path: String,
+    },
+    /// Git repository containing SKILL.md files.
+    Git {
+        git: String,
+    },
 }
 
 impl Config {
@@ -166,6 +186,7 @@ impl Default for Config {
             coordinator: CoordinatorConfig::default(),
             workflows: HashMap::new(),
             rules: Vec::new(),
+            skills: Vec::new(),
         }
     }
 }
@@ -181,6 +202,7 @@ impl From<TomlFile> for Config {
             coordinator: toml.coordinator,
             workflows: toml.workflows,
             rules: toml.rules,
+            skills: toml.skills,
         }
     }
 }
@@ -566,6 +588,97 @@ mod tests {
         let yaml_str = serde_yml::to_string(&config).unwrap();
         assert!(yaml_str.contains("main_branch: trunk"), "expected YAML format but got: {yaml_str}");
         assert!(!yaml_str.contains("main_branch = "), "expected YAML not TOML but got: {yaml_str}");
+    }
+
+    // --- Skills config tests ---
+
+    #[test]
+    fn parse_yaml_config_with_skill_sources() {
+        let yaml = "\
+            skills:\n\
+            \x20 - path: ~/Projects/co.d/skills/\n\
+            \x20 - path: ./skills/\n\
+            \x20 - git: git@github.com:cjohnhanson/skills.git\n";
+        let config: Config = serde_yml::from_str(yaml).unwrap();
+        assert_eq!(config.skills.len(), 3);
+        assert_eq!(
+            config.skills[0],
+            SkillSource::Path {
+                path: "~/Projects/co.d/skills/".into()
+            }
+        );
+        assert_eq!(
+            config.skills[1],
+            SkillSource::Path {
+                path: "./skills/".into()
+            }
+        );
+        assert_eq!(
+            config.skills[2],
+            SkillSource::Git {
+                git: "git@github.com:cjohnhanson/skills.git".into()
+            }
+        );
+    }
+
+    #[test]
+    fn parse_yaml_config_skills_empty_by_default() {
+        let yaml = "main_branch: main\n";
+        let config: Config = serde_yml::from_str(yaml).unwrap();
+        assert!(config.skills.is_empty());
+    }
+
+    #[test]
+    fn parse_yaml_config_skills_coexists_with_other_fields() {
+        let yaml = "\
+            main_branch: trunk\n\
+            skills:\n\
+            \x20 - path: ./skills/\n\
+            coordinator:\n\
+            \x20 auto_grant:\n\
+            \x20   - \"Bash(cargo *)\"\n";
+        let config: Config = serde_yml::from_str(yaml).unwrap();
+        assert_eq!(config.main_branch, "trunk");
+        assert_eq!(config.skills.len(), 1);
+        assert_eq!(config.coordinator.auto_grant, vec!["Bash(cargo *)"]);
+    }
+
+    #[test]
+    fn load_yaml_root_config_with_skills() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("clc.yml"),
+            "skills:\n  - path: ./skills/\n  - git: git@github.com:example/skills.git\n",
+        )
+        .unwrap();
+
+        let config = load(dir.path()).unwrap();
+        assert_eq!(config.skills.len(), 2);
+    }
+
+    #[test]
+    fn load_toml_config_with_skills() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("clc.toml"),
+            "[[skills]]\npath = \"./skills/\"\n\n[[skills]]\ngit = \"git@github.com:example/skills.git\"\n",
+        )
+        .unwrap();
+
+        let config = load(dir.path()).unwrap();
+        assert_eq!(config.skills.len(), 2);
+        assert_eq!(
+            config.skills[0],
+            SkillSource::Path {
+                path: "./skills/".into()
+            }
+        );
+        assert_eq!(
+            config.skills[1],
+            SkillSource::Git {
+                git: "git@github.com:example/skills.git".into()
+            }
+        );
     }
 
     #[test]

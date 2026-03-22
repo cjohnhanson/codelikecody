@@ -17,6 +17,7 @@ missing_panics_doc = "allow"
 
 [dependencies]
 camino = "1"
+dirs = "6"
 clap = { version = "4", features = ["derive"] }
 claude-code = { path = "../claude-code" }
 clc-sdk = { path = "../clc-sdk" }
