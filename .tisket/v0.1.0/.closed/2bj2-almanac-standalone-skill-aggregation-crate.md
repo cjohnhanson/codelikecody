@@ -1,12 +1,12 @@
 ---
 title: "almanac: standalone skill aggregation crate"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: []
 depends_on: []
 created: 2026-03-22T12:52:24Z
-updated: "2026-03-22T12:52:55Z"
+updated: "2026-03-22T13:47:43Z"
 ---
 
 ## What
@@ -37,5 +37,3 @@ mounted by clc as a subcommand.
 
 - cgqv (merged) — `clc skills list` and `clc skills show`
 - v7g1 (merged) — skill indexing and config infrastructure
-
-## Scratch Notes
