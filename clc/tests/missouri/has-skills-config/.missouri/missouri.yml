@@ -6,7 +6,7 @@ assertions:
     command: "test -f skills/test-skill/SKILL.md && test -f skills/another-skill/SKILL.md"
 
   - name: "prime includes skills section header"
-    command: "clc prime | grep -i 'Skills (clc)'"
+    command: "clc prime | grep -i 'Skills (almanac)'"
 
   - name: "prime lists test-skill with description"
     command: "clc prime | grep 'test-skill' | grep 'A test skill for validation'"
@@ -18,22 +18,22 @@ assertions:
     command: "clc prime | grep 'test-skill' | grep 'file:'"
 
   - name: "SessionStart hook output includes skill index"
-    command: "echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook | jq -r '.hookSpecificOutput.additionalContext' | grep -i 'Skills (clc)'"
+    command: "echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook | jq -r '.hookSpecificOutput.additionalContext' | grep -i 'Skills (almanac)'"
 
   - name: "SessionStart hook output lists both skills"
     command: "echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook | jq -r '.hookSpecificOutput.additionalContext' | grep 'test-skill' && echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook | jq -r '.hookSpecificOutput.additionalContext' | grep 'another-skill'"
 
-  - name: "skills list shows both skills"
-    command: "clc skills list | grep 'test-skill' && clc skills list | grep 'another-skill'"
+  - name: "almanac list shows both skills"
+    command: "clc almanac list | grep 'test-skill' && clc almanac list | grep 'another-skill'"
 
-  - name: "skills list shows source type"
-    command: "clc skills list | grep '\\[file\\]'"
+  - name: "almanac list shows source type"
+    command: "clc almanac list | grep '\\[file\\]'"
 
-  - name: "skills show prints full SKILL.md content"
-    command: "clc skills show test-skill | grep '# Test Skill'"
+  - name: "almanac show prints full SKILL.md content"
+    command: "clc almanac show test-skill | grep '# Test Skill'"
 
-  - name: "skills show unknown skill fails"
-    command: "! clc skills show nonexistent 2>/dev/null"
+  - name: "almanac show unknown skill fails"
+    command: "! clc almanac show nonexistent 2>/dev/null"
 
   - name: "prime without skills config has no skills section"
-    command: "rm clc.yml && ! clc prime | grep -i 'Skills (clc)'"
+    command: "rm clc.yml && ! clc prime | grep -i 'Skills (almanac)'"
