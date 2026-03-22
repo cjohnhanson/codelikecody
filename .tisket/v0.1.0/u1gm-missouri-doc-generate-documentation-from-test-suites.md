@@ -71,3 +71,22 @@ to drift from reality.
 - Rendered output is usable as a standalone tutorial
 
 ## Scratch Notes
+
+### Approach
+Add `doc: Option<String>` to StateConfig, TransitionConfig, State, Transition.
+New `docgen.rs` module with `render_markdown` and `render_json` functions.
+New `Doc` subcommand in cli.rs.
+
+### Key files
+- `missouri/src/config.rs` — add doc fields to StateConfig + TransitionConfig
+- `missouri/src/graph.rs` — add doc fields to State + Transition; propagate from config
+- `missouri/src/docgen.rs` — NEW: rendering logic (stubs + tests)
+- `missouri/src/cli.rs` — add Doc subcommand, dispatch to docgen
+- `missouri/src/lib.rs` — register docgen module
+
+### Docgen API
+- `render_markdown(graph: &StateGraph, path: &TestPath) -> String`
+- `render_json(graph: &StateGraph, path: &TestPath) -> serde_json::Value`
+
+### Phase
+Currently: tests-unwritten → writing tests + minimal stubs

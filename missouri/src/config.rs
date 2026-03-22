@@ -22,6 +22,9 @@ pub struct StateConfig {
     /// Paths can begin here without traversing upstream transitions.
     #[serde(default)]
     pub entrypoint: bool,
+
+    /// Optional prose description of this state, used for doc generation.
+    pub doc: Option<String>,
 }
 
 /// Network interception config for a transition.
@@ -111,6 +114,9 @@ pub struct TransitionConfig {
     /// Background services to run during this transition.
     #[serde(default)]
     pub services: Vec<ServiceConfig>,
+
+    /// Optional prose description of this transition, used for doc generation.
+    pub doc: Option<String>,
 }
 
 /// Comparison overrides for a transition.
@@ -735,5 +741,51 @@ transitions:
         assert_eq!(config.transitions[0].services[0].command, "server-a --port 0");
         assert_eq!(config.transitions[0].services[1].command, "server-b --port 0");
         assert!(config.transitions[0].services[1].ready.is_some());
+    }
+
+    #[test]
+    fn parse_state_config_doc_field() {
+        let yaml = r#"
+doc: |
+  This state represents an initialized repository.
+  It has a clean working tree.
+"#;
+        let config = parse_config(yaml).unwrap();
+        let doc = config.doc.as_deref().unwrap();
+        assert!(doc.contains("initialized repository"));
+        assert!(doc.contains("clean working tree"));
+    }
+
+    #[test]
+    fn parse_transition_doc_field() {
+        let yaml = r#"
+transitions:
+  - name: "tisket init"
+    command: "tisket init"
+    target: "../initialized"
+    doc: |
+      The generated tisket.yml configures where issues are stored.
+"#;
+        let config = parse_config(yaml).unwrap();
+        let doc = config.transitions[0].doc.as_deref().unwrap();
+        assert!(doc.contains("tisket.yml configures"));
+    }
+
+    #[test]
+    fn parse_config_doc_absent_defaults_to_none() {
+        let yaml = "transitions: []";
+        let config = parse_config(yaml).unwrap();
+        assert!(config.doc.is_none());
+    }
+
+    #[test]
+    fn parse_transition_doc_absent_defaults_to_none() {
+        let yaml = r#"
+transitions:
+  - command: "echo hi"
+    target: "../next"
+"#;
+        let config = parse_config(yaml).unwrap();
+        assert!(config.transitions[0].doc.is_none());
     }
 }

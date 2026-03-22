@@ -47,6 +47,9 @@ pub enum Command {
 
     /// Browse bundled documentation
     Docs(DocsArgs),
+
+    /// Generate documentation from test suites
+    Doc(DocArgs),
 }
 
 #[derive(Parser)]
@@ -56,6 +59,23 @@ pub struct DocsArgs {
 
     /// Search query (when topic is "search")
     pub query: Option<String>,
+}
+
+#[derive(Parser)]
+pub struct DocArgs {
+    /// Root directory containing states
+    #[arg(short, long, default_value = ".")]
+    pub dir: Utf8PathBuf,
+
+    /// Output format
+    #[arg(long, default_value = "markdown")]
+    pub format: DocFormat,
+}
+
+#[derive(Clone, clap::ValueEnum)]
+pub enum DocFormat {
+    Markdown,
+    Json,
 }
 
 #[derive(Parser)]
@@ -432,6 +452,37 @@ pub fn run_command(config_dir: &str, command: Command) -> miette::Result<bool> {
                     }
                 }
             }
+        }
+
+        Command::Doc(doc_args) => {
+            let dir = resolve_dir(&doc_args.dir)?;
+
+            let graph = crate::graph::StateGraph::discover(&dir, config_dir).into_diagnostic()?;
+            let roots = graph.roots();
+            if roots.is_empty() {
+                return Err(crate::error::Error::NoRoots.into());
+            }
+
+            let paths = crate::paths::enumerate_subgraph_paths(&graph);
+            if paths.is_empty() {
+                eprintln!("no test paths found");
+                return Ok(true);
+            }
+
+            // Render the first path
+            let path = &paths[0];
+
+            match doc_args.format {
+                DocFormat::Markdown => {
+                    let md = crate::docgen::render_markdown(&graph, path);
+                    print!("{md}");
+                }
+                DocFormat::Json => {
+                    let json = crate::docgen::render_json(&graph, path);
+                    println!("{}", json);
+                }
+            }
+            Ok(true)
         }
     }
 }

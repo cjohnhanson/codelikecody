@@ -22,6 +22,8 @@ pub struct State {
     pub env: BTreeMap<String, String>,
     /// When true, this state is a valid subgraph entrypoint.
     pub entrypoint: bool,
+    /// Optional prose description from `doc:` field in state's missouri.yml.
+    pub doc: Option<String>,
 }
 
 /// A resolved file comparator override.
@@ -67,6 +69,8 @@ pub struct Transition {
     pub expected_stderr: Option<String>,
     /// Background services to run during this transition.
     pub services: Vec<crate::config::ServiceConfig>,
+    /// Optional prose description from `doc:` field in the transition config.
+    pub doc: Option<String>,
 }
 
 /// A resolved assertion attached to a state.
@@ -218,6 +222,7 @@ impl StateGraph {
                 name,
                 env: merged_env,
                 entrypoint: cfg.entrypoint,
+                doc: cfg.doc.clone(),
             });
             configs.push(cfg);
         }
@@ -270,6 +275,7 @@ impl StateGraph {
                     expected_stdout: t.stdout.clone(),
                     expected_stderr: t.stderr.clone(),
                     services: t.services.clone(),
+                    doc: t.doc.clone(),
                 });
 
                 adjacency.entry(source_id).or_default().push(transition_idx);
@@ -1391,5 +1397,93 @@ assertions:
         let graph = StateGraph::discover(root, ".missouri").unwrap();
         assert!(graph.transitions[0].services.is_empty());
         assert!(graph.assertions[0].services.is_empty());
+    }
+
+    #[test]
+    fn discover_state_doc_propagated() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        make_state(
+            root,
+            "a",
+            r#"
+doc: |
+  This is the initial state.
+transitions:
+  - command: "echo"
+    target: "../b"
+"#,
+        );
+        make_state(root, "b", "{}");
+
+        let graph = StateGraph::discover(root, ".missouri").unwrap();
+        let state_a = graph.states.iter().find(|s| s.name == "a").unwrap();
+        assert_eq!(state_a.doc.as_deref(), Some("This is the initial state.\n"));
+    }
+
+    #[test]
+    fn discover_state_doc_absent_is_none() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        make_state(
+            root,
+            "a",
+            r#"
+transitions:
+  - command: "echo"
+    target: "../b"
+"#,
+        );
+        make_state(root, "b", "{}");
+
+        let graph = StateGraph::discover(root, ".missouri").unwrap();
+        let state_a = graph.states.iter().find(|s| s.name == "a").unwrap();
+        assert!(state_a.doc.is_none());
+    }
+
+    #[test]
+    fn discover_transition_doc_propagated() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        make_state(
+            root,
+            "a",
+            r#"
+transitions:
+  - name: "build"
+    command: "make build"
+    target: "../b"
+    doc: |
+      Compiles the project artifacts.
+"#,
+        );
+        make_state(root, "b", "{}");
+
+        let graph = StateGraph::discover(root, ".missouri").unwrap();
+        let t = &graph.transitions[0];
+        assert_eq!(t.doc.as_deref(), Some("Compiles the project artifacts.\n"));
+    }
+
+    #[test]
+    fn discover_transition_doc_absent_is_none() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        make_state(
+            root,
+            "a",
+            r#"
+transitions:
+  - command: "echo"
+    target: "../b"
+"#,
+        );
+        make_state(root, "b", "{}");
+
+        let graph = StateGraph::discover(root, ".missouri").unwrap();
+        assert!(graph.transitions[0].doc.is_none());
     }
 }
