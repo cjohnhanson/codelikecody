@@ -1,12 +1,12 @@
 ---
 title: "Add zettel crate implementing zettelkasten on mdstore"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: [zettel]
 depends_on: [5d2z]
 created: 2026-03-21T19:31:32Z
-updated: "2026-03-21T19:52:57Z"
+updated: "2026-03-22T01:20:07Z"
 ---
 
 New crate that implements zettelkasten-style note management on top of the mdstore generic frontmattered markdown library.
@@ -22,5 +22,3 @@ New crate that implements zettelkasten-style note management on top of the mdsto
 ## Depends on
 
 - mdstore for: frontmatter parse/serialize, prefix+slug IDs, directory scanning, git context
-
-## Scratch Notes
