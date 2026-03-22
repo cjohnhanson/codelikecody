@@ -1,0 +1,21 @@
+assertions:
+  - name: "clc docs lists all documentation"
+    command: "clc docs | grep -q 'What is codelikecody' && clc docs | grep -q 'Phase System' && clc docs | grep -q 'CLI Reference'"
+
+  - name: "clc docs what-is-codelikecody prints content"
+    command: "clc docs what-is-codelikecody | grep -q 'workflow engine'"
+
+  - name: "clc docs shows missouri docs too"
+    command: "clc docs | grep -q 'What is Missouri'"
+
+  - name: "clc docs shows tisket docs too"
+    command: "clc docs | grep -q 'What is Tisket'"
+
+  - name: "clc docs search works across all tools"
+    command: "clc docs search phase | grep -q 'Phase System'"
+
+  - name: "clc tisket docs delegates"
+    command: "clc tisket docs | grep -q 'What is Tisket'"
+
+  - name: "clc missouri docs delegates"
+    command: "clc missouri docs | grep -q 'What is Missouri'"

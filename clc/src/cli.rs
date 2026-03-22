@@ -51,6 +51,14 @@ pub enum Command {
         #[command(subcommand)]
         action: ConfigAction,
     },
+    /// Browse bundled documentation.
+    Docs {
+        /// Topic slug to display, or "search" to search.
+        topic: Option<String>,
+
+        /// Search query (when topic is "search").
+        query: Option<String>,
+    },
     /// Run tisket commands.
     Tisket {
         #[command(subcommand)]

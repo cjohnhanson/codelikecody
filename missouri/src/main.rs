@@ -3,6 +3,7 @@ use std::process::ExitCode;
 use clap::Parser;
 
 fn main() -> ExitCode {
+    sigpipe::reset();
     let args = missouri::cli::Args::parse();
 
     ctrlc::set_handler(|| {

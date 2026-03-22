@@ -2,6 +2,7 @@
 
 pub mod cli;
 pub mod compare;
+pub mod docs;
 pub mod config;
 pub mod error;
 pub mod executor;

@@ -3,6 +3,7 @@ mod admin;
 mod cli;
 mod config;
 mod coordinate;
+mod docs;
 mod coordinator_mgmt;
 mod dispatch;
 mod done;
@@ -39,6 +40,7 @@ fn is_untracked(project_dir: &Path) -> bool {
 }
 
 fn main() {
+    sigpipe::reset();
     let cli = <cli::Cli as clap::Parser>::parse();
 
     if matches!(cli.command, cli::Command::Hook) {
@@ -105,6 +107,7 @@ fn main() {
         } => cmd_workers(all, prune, stranded),
         cli::Command::Worker { ref id, ref action } => cmd_worker(id, action),
         cli::Command::Land { ref id } => cmd_land(id),
+        cli::Command::Docs { topic, query } => cmd_docs(topic.as_deref(), query.as_deref()),
         cli::Command::Tisket { command } => cmd_tisket(command),
         cli::Command::Missouri { command } => cmd_missouri(command),
         cli::Command::Zettel { command } => cmd_zettel(command),
@@ -287,6 +290,35 @@ fn cmd_prime() -> Result<(), Error> {
     let text = hook::prime_text()?;
     print!("{text}");
     Ok(())
+}
+
+fn cmd_docs(topic: Option<&str>, query: Option<&str>) -> Result<(), Error> {
+    match topic {
+        None => {
+            docs::list();
+            Ok(())
+        }
+        Some("search") => {
+            let q = query.unwrap_or("");
+            if q.is_empty() {
+                return Err(Error::NonBlocking(
+                    "usage: clc docs search <query>".to_string(),
+                ));
+            }
+            docs::search(q);
+            Ok(())
+        }
+        Some(slug) => {
+            if docs::show(slug) {
+                Ok(())
+            } else {
+                eprintln!("unknown doc: {slug}");
+                eprintln!();
+                docs::list();
+                Err(Error::NonBlocking(format!("doc '{slug}' not found")))
+            }
+        }
+    }
 }
 
 fn cmd_tisket(command: ::tisket::cli::Command) -> Result<(), Error> {
