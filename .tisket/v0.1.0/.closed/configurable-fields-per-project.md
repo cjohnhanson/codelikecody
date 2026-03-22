@@ -1,12 +1,12 @@
 ---
 title: "Arbitrary key:value tags on tisket issues"
-status: in_progress
+status: done
 priority: 3
 assignee:
 labels: [tisket, feature]
 depends_on: []
 created: 2026-02-22T17:22:32Z
-updated: "2026-03-22T02:15:24Z"
+updated: "2026-03-22T03:33:39Z"
 ---
 
 ## Summary
@@ -50,5 +50,3 @@ tags:
 ## Also
 
 `tisket issue list` should gain `--label` filtering — the coordinator already supports it but the CLI doesn't expose it.
-
-## Scratch Notes
