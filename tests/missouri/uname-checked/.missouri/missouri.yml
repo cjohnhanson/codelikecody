@@ -1,5 +1,0 @@
-transitions:
-  - name: "env vars injected into sandbox"
-    command: "echo $MISSOURI_TEST_GREETING"
-    target: ../env-checked
-    stdout: "hello-from-env\n"

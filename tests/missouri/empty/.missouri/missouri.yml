@@ -1,0 +1,5 @@
+transitions:
+  - name: "shell command creates file"
+    command: "echo hello > output.txt"
+    target: ../has-file
+    stdout: ""

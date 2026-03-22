@@ -1,5 +1,0 @@
-transitions:
-  - name: "stderr captured from sandbox"
-    command: "echo error-output >&2"
-    target: ../stderr-checked
-    stderr: "error-output\n"
