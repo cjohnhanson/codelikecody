@@ -283,77 +283,42 @@ const DEFAULT_DOCKER_IMAGE: &str = "debian:bookworm-slim";
 const MITM_DOCKER_IMAGE: &str = "mitm-test";
 
 impl DockerBackend {
-    /// Build a Docker image from a flake.nix devShell. Returns the image tag.
+    /// Build a Docker image from a Dockerfile in the given directory.
+    /// Returns the image tag.
     ///
-    /// Generates a Dockerfile that uses nixos/nix as a base, copies the flake.nix,
-    /// and builds the devShell packages into a nix profile. The user writes a
-    /// normal flake with a devShell — missouri handles the Docker wrapping.
-    async fn build_image_from_flake(
+    /// The Dockerfile is the user's responsibility — it can use nix, apt,
+    /// or anything else to set up the environment. Missouri just builds it
+    /// and caches the result by content hash.
+    async fn build_image_from_dockerfile(
         &self,
-        flake_path: &Utf8Path,
+        dockerfile_dir: &Utf8Path,
         docker: &bollard::Docker,
     ) -> Result<String, String> {
         use bollard::image::BuildImageOptions;
         use futures_util::StreamExt;
 
-        let flake_dir = flake_path
-            .parent()
-            .ok_or_else(|| "flake.nix has no parent directory".to_string())?;
+        let dockerfile_path = dockerfile_dir.join("Dockerfile");
+        let dockerfile_content = std::fs::read_to_string(&dockerfile_path)
+            .map_err(|e| format!("failed to read {dockerfile_path}: {e}"))?;
 
-        // Dockerfile + install script. Uses `nix develop` to get the devShell's
-        // PATH, then symlinks all executables into /env/bin/.
-        let dockerfile = "FROM nixos/nix:latest\n\
-RUN echo 'experimental-features = nix-command flakes' >> /etc/nix/nix.conf\n\
-COPY . /build/\n\
-WORKDIR /build\n\
-COPY install-devshell.sh /tmp/\n\
-RUN chmod +x /tmp/install-devshell.sh && /tmp/install-devshell.sh\n\
-ENV PATH=\"/env/bin:$PATH\"\n\
-CMD [\"bash\"]\n";
-
-        let install_script = "#!/bin/sh\n\
-set -ex\n\
-cd /build\n\
-ls -la /build/\n\
-DEVPATH=$(nix develop --impure --command sh -c 'echo $PATH')\n\
-echo \"DEVPATH=$DEVPATH\"\n\
-mkdir -p /env/bin\n\
-IFS=':'\n\
-for dir in $DEVPATH; do\n\
-  if [ -d \"$dir\" ]; then\n\
-    for f in \"$dir\"/*; do\n\
-      [ -x \"$f\" ] && [ -f \"$f\" ] && ln -sf \"$f\" /env/bin/ 2>/dev/null || true\n\
-    done\n\
-  fi\n\
-done\n\
-echo \"Installed: $(ls /env/bin/ | wc -l) executables\"\n\
-ls /env/bin/ | head -10\n";
-
-        // Hash flake + dockerfile content for stable image tag
-        let flake_content = std::fs::read_to_string(flake_path)
-            .map_err(|e| format!("failed to read {flake_path}: {e}"))?;
-        let hash = format!("{:x}", md5_hash(format!("{flake_content}{dockerfile}").as_bytes()));
-        let image_tag = format!("missouri-flake:{hash}");
+        // Hash Dockerfile + all files in the directory for a stable image tag
+        let hash = format!("{:x}", md5_hash(dockerfile_content.as_bytes()));
+        let image_tag = format!("missouri:{hash}");
 
         // Check if image already exists
         if docker.inspect_image(&image_tag).await.is_ok() {
             return Ok(image_tag);
         }
 
-        eprintln!("missouri: building Docker image from {flake_path} (first build may take several minutes)...");
+        eprintln!("missouri: building Docker image from {dockerfile_path} (first build may take several minutes)...");
 
-        // Create a tar archive of the flake directory + Dockerfile + install script
-        let tar_data = create_build_context_with_extra(
-            flake_dir,
-            dockerfile,
-            &[("install-devshell.sh", install_script)],
-        )
-        .map_err(|e| format!("failed to create build context: {e}"))?;
+        // Create a tar archive of the directory (Dockerfile + context)
+        let tar_data = create_build_context(dockerfile_dir)
+            .map_err(|e| format!("failed to create build context: {e}"))?;
 
         let options = BuildImageOptions {
             t: image_tag.as_str(),
             rm: true,
-            // nocache: true, // uncomment to force rebuild past Docker layer cache
             ..Default::default()
         };
 
@@ -362,9 +327,6 @@ ls /env/bin/ | head -10\n";
         while let Some(result) = stream.next().await {
             match result {
                 Ok(info) => {
-                    if let Some(ref stream) = info.stream {
-                        eprint!("{stream}");
-                    }
                     if let Some(err) = info.error {
                         return Err(format!("docker build error: {err}"));
                     }
@@ -391,7 +353,7 @@ ls /env/bin/ | head -10\n";
         env: &BTreeMap<String, String>,
         replay_flow: Option<&Utf8Path>,
         replay_hosts: &[String],
-        flake_path: Option<&Utf8Path>,
+        dockerfile_dir: Option<&Utf8Path>,
     ) -> Result<CommandOutput, String> {
         use bollard::container::{Config, CreateContainerOptions, RemoveContainerOptions};
         use bollard::models::HostConfig;
@@ -409,17 +371,17 @@ ls /env/bin/ | head -10\n";
 
             // Determine the Docker image to use:
             // 1. If replay is active, use the mitmproxy image
-            // 2. If a flake.nix exists, build an image from the devShell
-            // 3. Otherwise, use the configured default image
-            let flake_image: Option<String> = if let Some(fp) = flake_path {
-                Some(self.build_image_from_flake(fp, &docker).await?)
+            // 2. If a Dockerfile exists, build it
+            // 3. Otherwise, use the configured default image (or docker_image from config)
+            let built_image: Option<String> = if let Some(dir) = dockerfile_dir {
+                Some(self.build_image_from_dockerfile(dir, &docker).await?)
             } else {
                 None
             };
             let image: &str = if replay_flow.is_some() {
                 MITM_DOCKER_IMAGE
-            } else if let Some(ref fi) = flake_image {
-                fi.as_str()
+            } else if let Some(ref bi) = built_image {
+                bi.as_str()
             } else {
                 self.image.as_str()
             };
@@ -2055,11 +2017,11 @@ fn execute_transition(
             _ => (None, [].as_slice()),
         };
 
-        // Check for flake.nix in the source state directory
-        let flake_path = {
-            let candidate = source_state.path.join("flake.nix");
-            if candidate.exists() {
-                Some(candidate)
+        // Check for Dockerfile in the source state's config directory
+        let dockerfile_dir = {
+            let config_dir = source_state.path.join(&graph.config_dir);
+            if config_dir.join("Dockerfile").exists() {
+                Some(config_dir)
             } else {
                 None
             }
@@ -2077,7 +2039,7 @@ fn execute_transition(
             &cmd_env,
             replay_flow.as_deref(),
             replay_hosts,
-            flake_path.as_deref(),
+            dockerfile_dir.as_deref(),
         ) {
             Ok(out) => (Some(out.exit_code), out.stdout, out.stderr),
             Err(e) => {
@@ -2284,32 +2246,10 @@ fn md5_hash(data: &[u8]) -> u64 {
 }
 
 /// Create a tar archive from a directory, an injected Dockerfile, and extra files.
-fn create_build_context_with_extra(
-    dir: &Utf8Path,
-    dockerfile: &str,
-    extra_files: &[(&str, &str)],
-) -> std::io::Result<Vec<u8>> {
+/// Create a tar archive from a directory for Docker build context.
+fn create_build_context(dir: &Utf8Path) -> std::io::Result<Vec<u8>> {
     let mut archive = tar::Builder::new(Vec::new());
 
-    // Add Dockerfile
-    let dockerfile_bytes = dockerfile.as_bytes();
-    let mut header = tar::Header::new_gnu();
-    header.set_size(dockerfile_bytes.len() as u64);
-    header.set_mode(0o644);
-    header.set_cksum();
-    archive.append_data(&mut header, "Dockerfile", dockerfile_bytes)?;
-
-    // Add extra files
-    for (name, content) in extra_files {
-        let bytes = content.as_bytes();
-        let mut header = tar::Header::new_gnu();
-        header.set_size(bytes.len() as u64);
-        header.set_mode(0o755);
-        header.set_cksum();
-        archive.append_data(&mut header, name, bytes)?;
-    }
-
-    // Add all files from the directory
     for entry in walkdir::WalkDir::new(dir.as_std_path())
         .into_iter()
         .filter_map(|e| e.ok())
