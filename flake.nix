@@ -63,6 +63,8 @@
             version = "0.1.0";
             inherit src;
             strictDeps = true;
+            # Exclude docs-web (WASM/Leptos crate, needs wasm32 target, built via Trunk)
+            cargoExtraArgs = "--workspace --exclude docs-web";
             buildInputs = pkgs.lib.optionals pkgs.stdenv.isDarwin [
               pkgs.libiconv
             ];
@@ -92,7 +94,7 @@
                 tmpHome="$(mktemp -d)"
                 export HOME="$tmpHome"
                 export MISSOURI_SANDBOX=preinstalled
-                cargo test --profile release --locked
+                cargo test --profile release --locked --workspace --exclude docs-web
               '';
             }
           );
