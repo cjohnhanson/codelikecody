@@ -22,6 +22,7 @@ mod phase;
 mod pickup;
 mod tisket;
 mod topology;
+mod zettel;
 mod worker;
 mod workspace;
 
@@ -106,6 +107,7 @@ fn main() {
         cli::Command::Land { ref id } => cmd_land(id),
         cli::Command::Tisket { command } => cmd_tisket(command),
         cli::Command::Missouri { command } => cmd_missouri(command),
+        cli::Command::Zettel { command } => cmd_zettel(command),
         cli::Command::Permissions { ref action } => cmd_permissions(action),
         cli::Command::Inbox { ref action } => cmd_inbox(action),
         cli::Command::Outbox { ref action } => cmd_outbox(action),
@@ -179,6 +181,15 @@ fn cmd_status() -> Result<(), Error> {
         Ok(None) => {}
         Err(e) => {
             println!("topology: error ({e})");
+        }
+    }
+
+    match zettel::detect(&cwd) {
+        Ok(state) => {
+            println!("{}", state.status_basic());
+        }
+        Err(e) => {
+            println!("zettel: error ({e})");
         }
     }
 
@@ -284,6 +295,17 @@ fn cmd_tisket(command: ::tisket::cli::Command) -> Result<(), Error> {
         .map_err(|e| Error::NonBlocking(format!("non-UTF8 path: {e}")))?;
     ::tisket::cli::run_command(&root, command)
         .map_err(|e: ::tisket::Error| Error::NonBlocking(e.to_string()))
+}
+
+fn cmd_zettel(command: ::zettel::cli::Command) -> Result<(), Error> {
+    let cwd = std::env::current_dir()?;
+    let root = camino::Utf8PathBuf::try_from(cwd)
+        .map_err(|e| Error::NonBlocking(format!("non-UTF8 path: {e}")))?;
+    let args = ::zettel::cli::Args {
+        root,
+        command,
+    };
+    ::zettel::cli::run(args).map_err(|e: ::zettel::Error| Error::NonBlocking(e.to_string()))
 }
 
 fn cmd_missouri(command: ::missouri::cli::Command) -> Result<(), Error> {

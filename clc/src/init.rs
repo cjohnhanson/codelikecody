@@ -93,6 +93,8 @@ const EXCLUDE_PATTERNS: &[&str] = &[
     ".claude/settings.local.json",
     "tisket.yml",
     ".tisket/",
+    "zettel.yml",
+    ".zettel/",
 ];
 
 fn write_git_excludes(project_dir: &Path) -> Result<(), Error> {

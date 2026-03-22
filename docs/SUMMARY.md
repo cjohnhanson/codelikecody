@@ -21,3 +21,7 @@
 # tisket
 
 - [CLI Reference](tisket/cli-reference.md)
+
+# zettel
+
+- [CLI Reference](zettel/cli-reference.md)
