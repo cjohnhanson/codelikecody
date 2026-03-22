@@ -1,12 +1,12 @@
 ---
 title: "clc skills: aggregate and inject skill index from pluggable sources"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: []
 depends_on: []
 created: 2026-03-22T01:26:24Z
-updated: "2026-03-22T01:31:36Z"
+updated: "2026-03-22T02:54:46Z"
 ---
 
 ## What
@@ -59,5 +59,3 @@ aggregates and injects the index.
   half of that design space
 - `restructure-prime-text-as-skills` — separate concern (splitting prime into
   ambient/deferred); could use the skill index as the deferred surface
-
-## Scratch Notes
