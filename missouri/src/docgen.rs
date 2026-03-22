@@ -5,7 +5,7 @@
 
 use camino::Utf8Path;
 use ignore::gitignore::Gitignore;
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::graph::StateGraph;
 use crate::paths::TestPath;
@@ -21,8 +21,79 @@ use crate::paths::TestPath;
 ///
 /// Returns an empty string for paths with no steps.
 pub fn render_markdown(graph: &StateGraph, path: &TestPath) -> String {
-    let _ = (graph, path);
-    String::new()
+    if path.steps.is_empty() {
+        return String::new();
+    }
+
+    let mut out = String::new();
+
+    // Walk through each step: state + transition
+    for &step_idx in &path.steps {
+        let t = &graph.transitions[step_idx];
+        let state = &graph.states[t.source.0];
+
+        // State section
+        out.push_str(&format!("## {}\n\n", state.name));
+
+        if let Some(doc) = &state.doc {
+            out.push_str(doc.trim_end());
+            out.push_str("\n\n");
+        }
+
+        let files = walk_state_files(&state.path, &graph.config_dir, &graph.ignore);
+        if !files.is_empty() {
+            out.push_str("```\n");
+            for f in &files {
+                out.push_str(f);
+                out.push('\n');
+            }
+            out.push_str("```\n\n");
+        }
+
+        // Transition section
+        if let Some(doc) = &t.doc {
+            out.push_str(doc.trim_end());
+            out.push_str("\n\n");
+        }
+
+        out.push_str("```console\n");
+        out.push_str(&format!("$ {}\n", t.command));
+        out.push_str("```\n");
+
+        if let Some(stdout) = &t.expected_stdout {
+            if !stdout.is_empty() {
+                out.push('\n');
+                out.push_str("```\n");
+                out.push_str(stdout);
+                out.push_str("```\n");
+            }
+        }
+
+        out.push('\n');
+    }
+
+    // Final state
+    let last_t = &graph.transitions[*path.steps.last().unwrap()];
+    let final_state = &graph.states[last_t.target.0];
+
+    out.push_str(&format!("## {}\n\n", final_state.name));
+
+    if let Some(doc) = &final_state.doc {
+        out.push_str(doc.trim_end());
+        out.push_str("\n\n");
+    }
+
+    let files = walk_state_files(&final_state.path, &graph.config_dir, &graph.ignore);
+    if !files.is_empty() {
+        out.push_str("```\n");
+        for f in &files {
+            out.push_str(f);
+            out.push('\n');
+        }
+        out.push_str("```\n\n");
+    }
+
+    out
 }
 
 /// Render a test path as a JSON document.
@@ -31,15 +102,100 @@ pub fn render_markdown(graph: &StateGraph, path: &TestPath) -> String {
 /// - `state`: `{ name, doc, files }`
 /// - `transition`: `{ name, command, doc, stdout }`
 pub fn render_json(graph: &StateGraph, path: &TestPath) -> Value {
-    let _ = (graph, path);
-    Value::Null
+    if path.steps.is_empty() {
+        return json!({ "steps": [] });
+    }
+
+    let mut steps = Vec::new();
+
+    for &step_idx in &path.steps {
+        let t = &graph.transitions[step_idx];
+        let state = &graph.states[t.source.0];
+
+        let files = walk_state_files(&state.path, &graph.config_dir, &graph.ignore);
+
+        let state_obj = json!({
+            "name": state.name,
+            "doc": state.doc,
+            "files": files,
+        });
+
+        let transition_obj = json!({
+            "name": t.name,
+            "command": t.command,
+            "doc": t.doc,
+            "stdout": t.expected_stdout,
+        });
+
+        steps.push(json!({
+            "state": state_obj,
+            "transition": transition_obj,
+        }));
+    }
+
+    // Include the final state (no outgoing transition)
+    let last_t = &graph.transitions[*path.steps.last().unwrap()];
+    let final_state = &graph.states[last_t.target.0];
+    let final_files = walk_state_files(&final_state.path, &graph.config_dir, &graph.ignore);
+
+    json!({
+        "steps": steps,
+        "final_state": {
+            "name": final_state.name,
+            "doc": final_state.doc,
+            "files": final_files,
+        }
+    })
 }
 
 /// Walk a state directory and return relative file paths, sorted, excluding
 /// the config directory and any paths matched by the ignore patterns.
 pub fn walk_state_files(state_path: &Utf8Path, config_dir: &str, ignore: &Gitignore) -> Vec<String> {
-    let _ = (state_path, config_dir, ignore);
-    Vec::new()
+    let mut files = Vec::new();
+    collect_files(state_path, state_path, config_dir, ignore, &mut files);
+    files.sort();
+    files
+}
+
+fn collect_files(
+    base: &Utf8Path,
+    dir: &Utf8Path,
+    config_dir: &str,
+    ignore: &Gitignore,
+    out: &mut Vec<String>,
+) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = match camino::Utf8PathBuf::try_from(entry.path()) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+
+        let rel = match path.strip_prefix(base) {
+            Ok(r) => r.to_owned(),
+            Err(_) => continue,
+        };
+
+        // Skip the config directory (e.g., .missouri/)
+        if rel.as_str() == config_dir || rel.starts_with(config_dir) {
+            continue;
+        }
+
+        // Check ignore patterns against the full path
+        let matched = ignore.matched_path_or_any_parents(path.as_std_path(), path.is_dir());
+        if matched.is_ignore() {
+            continue;
+        }
+
+        if path.is_dir() {
+            collect_files(base, &path, config_dir, ignore, out);
+        } else {
+            out.push(rel.to_string());
+        }
+    }
 }
 
 #[cfg(test)]

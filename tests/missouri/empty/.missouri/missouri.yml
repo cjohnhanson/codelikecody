@@ -1,5 +1,11 @@
+doc: |
+  The working directory starts empty — no files exist yet.
+
 transitions:
   - name: "shell command creates file"
     command: "echo hello > output.txt"
     target: ../has-file
+    doc: |
+      A shell redirect writes the echo output to a file.
+      Missouri compares the resulting directory against the `has-file` state.
     stdout: ""
