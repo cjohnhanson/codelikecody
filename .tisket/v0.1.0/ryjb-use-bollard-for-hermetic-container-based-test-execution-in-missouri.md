@@ -174,9 +174,86 @@ but never left `tests-unwritten` phase. Possibly:
 - The `clc dispatch` environment inside Docker is missing something
   (no .claude/CLAUDE.md, no skills, etc.)
 
-**Next attempt should:**
-1. Remove the domain filter — just `mitmdump --mode regular -p 18080 -w file.flow -q`
-2. Give the tisket more detailed instructions
-3. Check worker stdout.jsonl for what the worker actually did
-4. Consider longer timeout (worker might need >5 min for a real task)
-5. Ensure the test project has a CLAUDE.md with minimal instructions
+### Session 2026-03-22 — Recording attempt #3: SUCCESS
+
+**Auth fix:** `CLAUDE_CODE_OAUTH_TOKEN` (not `ANTHROPIC_AUTH_TOKEN`) is the
+correct env var. Token read from `~/.claude/token` mounted as a Docker secret.
+`ANTHROPIC_AUTH_TOKEN` authenticates for `claude auth status` but fails with
+`401: OAuth authentication is currently not supported` when making actual API
+calls through the proxy.
+
+**Result: Full worker lifecycle completed.**
+- `tests-unwritten` → `tests-written` (120s)
+- `tests-written` → `implementing` (315s)
+- `implementing` → `green` (480s)
+- `green` → `review-requested` → `done` (525s)
+- 234 tool uses, 0 auth errors
+- 16MB flow file at `/tmp/record-output/worker-happy-path.flow`
+- missouri: 1/1 passing in the worktree
+- Tisket closed
+
+**Worker behavior verified:**
+- Added `pub fn hello(name: &str) -> String` returning `"Hello, {name}!"`
+- Added test `hello_greets_by_name`
+- Created missouri tests (3 states)
+- Single implementation commit + finalize commit
+- Followed TDD: wrote tests first, confirmed red, implemented, confirmed green
+
+**Recording command that works:**
+```
+docker run --rm --cap-add NET_ADMIN \
+  -v ~/.claude/token:/run/secrets/anthropic-token:ro \
+  -v /tmp/clc-linux-bin:/clc-bin:ro \
+  -v /tmp/record-test:/project \
+  -v /tmp/record-output:/recordings \
+  missouri-record sh -c '
+export CLAUDE_CODE_OAUTH_TOKEN=$(cat /run/secrets/anthropic-token)
+export PATH=/clc-bin:$PATH
+export HOME=/root
+mitmdump --mode regular -p 18080 -w /recordings/flow.flow -q &
+sleep 2
+cd /project
+HTTPS_PROXY=http://127.0.0.1:18080 \
+HTTP_PROXY=http://127.0.0.1:18080 \
+NODE_EXTRA_CA_CERTS=/root/.mitmproxy/mitmproxy-ca-cert.pem \
+clc dispatch <tisket-id>
+# wait for worker PID to exit, then kill mitmdump
+'
+```
+
+### Remaining problems for replay tests
+
+**1. Flow file contains secrets**
+The flow file has Authorization bearer tokens in HTTP headers. Cannot be
+committed to the repo as-is. Needs a scrubbing step to remove auth headers
+before storage.
+
+**2. Flow file size**
+16MB uncompressed, 6MB gzipped. Per-recording. Multiple behavioral tests
+means multiple recordings. Binary files don't diff well in git.
+
+Options considered:
+- Git LFS (adds dependency)
+- Commit compressed (bloats repo history)
+- Scrub + compress (best balance)
+- Generate on demand (defeats hermetic replay purpose)
+
+**3. Container auth for workspaces (general problem)**
+`CLAUDE_CODE_OAUTH_TOKEN` works for recording. For replay tests, the
+container doesn't need real auth (traffic is replayed). But for clc
+workspaces (the general case), agent auth needs to flow into containers.
+This is the Belmont problem — Belmont as an LLM gateway would handle
+auth injection and secret scrubbing at the network layer.
+
+**4. Scrubbing flow files**
+mitmdump has addon support. A scrubbing script should:
+- Remove Authorization / X-Api-Key headers from requests
+- Remove Set-Cookie headers from responses
+- Optionally redact sensitive patterns in bodies
+- Preserve enough structure for replay matching (URL, method, response body)
+
+**5. Prompt drift invalidates recordings**
+Recorded responses are specific to the conversation flow. If prime text,
+hooks, or phase logic changes, the replayed responses won't match the
+new tool calls. Recordings need to be re-recorded after prompt changes.
+This is inherent to the approach — not solvable, only manageable.
