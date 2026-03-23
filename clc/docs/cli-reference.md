@@ -142,6 +142,7 @@ clc coordinate [options]
 | `--exclude-label <label>` | String | | Skip tiskets with this label |
 | `--project <name>` | String | | Only tiskets in this project |
 | `--depends-on <id>` | String | | Only tiskets in the dependency chain rooted at this ID |
+| `--filter <selectors>` | String | | Filter by comma-separated selectors (e.g. `label:feature,project:v0.1.0`) |
 | `--dry-run` | bool | `false` | List pickable tiskets and exit without spawning |
 | `--id <id>` | String | | Unique identity for this coordinator (e.g., `coord-infra`) |
 | `--auto-grant <pattern>` | String | | Permission pattern to auto-grant to workers (repeatable) |
