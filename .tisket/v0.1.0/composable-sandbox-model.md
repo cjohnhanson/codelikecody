@@ -1,11 +1,12 @@
 ---
 title: "Composable sandbox model"
-status: discovery
+status: cancelled
+priority:
 assignee:
 labels: [missouri, feature]
 depends_on: []
-created: "2026-02-23T00:00:00Z"
-updated: "2026-02-23T00:00:00Z"
+created: 2026-02-23T00:00:00Z
+updated: "2026-03-23T00:08:51Z"
 ---
 
 Currently `Sandbox` is an enum: `None` or `Flox { flox_bin, project_root }`.

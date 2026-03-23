@@ -1,12 +1,12 @@
 ---
 title: "Prime text should mandate TDD independently of phase enforcement"
-status: discovery
+status: cancelled
 priority: 2
 assignee:
 labels: [clc, prompt]
 depends_on: []
 created: 2026-02-26T04:13:11Z
-updated: "2026-03-01T16:51:49Z"
+updated: "2026-03-23T00:17:13Z"
 ---
 
 The prime text describes TDD as part of the workflow system — "Write tests first —

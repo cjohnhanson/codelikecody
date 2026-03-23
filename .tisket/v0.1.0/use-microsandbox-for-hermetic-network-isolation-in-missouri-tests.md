@@ -1,12 +1,12 @@
 ---
 title: "Use microsandbox for hermetic network isolation in missouri tests"
-status: discovery
+status: cancelled
 priority: 3
 assignee:
 labels: [missouri, network]
 depends_on: []
 created: 2026-03-19T02:16:09Z
-updated: "2026-03-21T18:23:06Z"
+updated: "2026-03-23T00:08:51Z"
 ---
 
 microsandbox.dev provides microVM-based isolation via libkrun. Each sandbox

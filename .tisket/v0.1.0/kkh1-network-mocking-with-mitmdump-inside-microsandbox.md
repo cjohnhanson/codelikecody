@@ -1,12 +1,12 @@
 ---
 title: "Network mocking with mitmdump inside microsandbox"
-status: todo
+status: cancelled
 priority: 2
 assignee:
 labels: [missouri, network, microsandbox]
 depends_on: [6851-missouri-microsandbox-backend-for-hermetic-test-execution]
-created: "2026-03-20T02:57:41Z"
-updated: "2026-03-20T02:57:41Z"
+created: 2026-03-20T02:57:41Z
+updated: "2026-03-23T00:08:51Z"
 ---
 
 mitmdump record/replay runs inside microsandbox alongside the transition

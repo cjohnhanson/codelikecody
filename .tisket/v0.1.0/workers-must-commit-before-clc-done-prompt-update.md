@@ -1,12 +1,12 @@
 ---
 title: "Workers must commit before clc done: prompt update"
-status: discovery
+status: cancelled
 priority:
 assignee:
 labels: [clc, prompt]
 depends_on: []
 created: 2026-03-01T13:15:48Z
-updated: "2026-03-01T16:51:50Z"
+updated: "2026-03-23T00:21:00Z"
 ---
 
 The worker-cleanup worker called `clc done` without committing its implementation. The tisket closed, the branch finalized, but all functional code was left as uncommitted working tree changes. If merged, it would have been an empty delivery.

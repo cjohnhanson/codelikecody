@@ -1,12 +1,12 @@
 ---
 title: "Bundled docs (diataxis)"
-status: discovery
+status: done
 priority:
 assignee:
 labels: [architecture]
 depends_on: [clc-sdk-crate-with-agent-detection]
-created: "2026-02-24T14:52:06Z"
-updated: "2026-02-24T14:52:06Z"
+created: 2026-02-24T14:52:06Z
+updated: "2026-03-23T00:21:00Z"
 ---
 
 Bundle documentation in the binary via `include_str!()` of markdown files,

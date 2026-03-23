@@ -1,12 +1,12 @@
 ---
 title: "Missouri microsandbox backend for hermetic test execution"
-status: todo
+status: cancelled
 priority: 2
 assignee:
 labels: [missouri, microsandbox]
 depends_on: [8jyy-clc-builder-persistent-nix-builder-sandbox-management]
-created: "2026-03-20T02:57:41Z"
-updated: "2026-03-20T02:57:41Z"
+created: 2026-03-20T02:57:41Z
+updated: "2026-03-23T00:08:51Z"
 ---
 
 New `Backend` impl alongside `BareBackend` and `NixBackend`. Transitions

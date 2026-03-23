@@ -1,12 +1,12 @@
 ---
 title: "clc builder: persistent nix builder sandbox management"
-status: todo
+status: cancelled
 priority: 2
 assignee:
 labels: [clc, microsandbox]
 depends_on: []
-created: "2026-03-20T02:57:41Z"
-updated: "2026-03-20T02:57:41Z"
+created: 2026-03-20T02:57:41Z
+updated: "2026-03-23T00:08:51Z"
 ---
 
 `clc builder start/stop/status` manages a persistent microsandbox VM that
