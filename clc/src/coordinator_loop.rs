@@ -104,14 +104,17 @@ impl CoordinatorSession {
 }
 
 fn coordinator_system_prompt() -> String {
-    "You are a coordinator agent. When asked about a permission request, \
-     respond with exactly one of:\n\
-     GRANT: <permission pattern>\n\
-     DENY: <reason>\n\
-     ESCALATE: <reason>\n\n\
-     When asked about a stuck worker, respond with advice to send to the worker.\n\
-     When asked about merge conflicts, provide the resolution.\n\
-     Be concise. One decision per response."
+    "You are a coordinator agent managing autonomous workers. \
+     You have access to clc commands as tools:\n\n\
+     - `clc permissions grant <worker-id> \"<pattern>\"` — grant a permission\n\
+     - `clc permissions deny <worker-id> \"<reason>\"` — deny a permission\n\
+     - `clc permissions escalate <worker-id> \"<reason>\"` — escalate to human\n\
+     - `clc worker <id> check` — see worker's recent output\n\
+     - `clc worker <id> send \"<message>\"` — send a message to a worker\n\
+     - `clc workers` — list all workers\n\
+     - `clc land <id>` — land completed work\n\n\
+     When asked to handle a situation, use these tools to investigate and act. \
+     Do not respond with text — take action."
         .to_string()
 }
 
@@ -138,7 +141,10 @@ pub fn run(
     let coord = Coordination::open(project_dir)
         .map_err(|e| Error::NonBlocking(format!("coordination DB: {e}")))?;
 
-    let _ = coord.register_agent(&scope.id, Some("supervisor"));
+    // Register (or re-register on restart — ignore duplicate error).
+    if coord.register_agent(&scope.id, Some("supervisor")).is_err() {
+        // Already registered from a prior run — just update status.
+    }
     let _ = coord.set_status(&scope.id, clc_sdk::coordination::AgentStatus::Running);
 
     let mut session = CoordinatorSession::new(&scope.model, project_dir);
@@ -216,15 +222,15 @@ fn tick(
             match crate::merge::merge(project_dir, id, main_branch, admin_branch) {
                 Ok(()) => eprintln!("coordinator '{}': landed '{id}'", scope.id),
                 Err(e) => {
-                    // Merge failed — invoke Claude for help.
-                    eprintln!("coordinator '{}': land failed for '{id}', asking Claude: {e}", scope.id);
+                    // Merge failed — invoke Claude to resolve.
+                    eprintln!("coordinator '{}': land failed for '{id}', invoking Claude", scope.id);
                     let msg = format!(
                         "Landing worker '{id}' failed with: {e}\n\
-                         What should be done? If this is a merge conflict, provide resolution steps."
+                         Investigate and resolve this. Use `clc land {id}` to retry after fixing."
                     );
                     match session.invoke(&msg) {
-                        Ok(response) => eprintln!("coordinator '{}': Claude says: {}", scope.id, response.trim()),
-                        Err(e) => eprintln!("coordinator '{}': Claude invocation failed: {e}", scope.id),
+                        Ok(_) => {} // Claude acted via tools.
+                        Err(invoke_err) => eprintln!("coordinator '{}': Claude invocation failed: {invoke_err}", scope.id),
                     }
                 }
             }
@@ -271,40 +277,24 @@ fn tick(
                 continue;
             }
 
-            // Judgment: ask Claude.
+            // Judgment: invoke Claude. Claude has clc tools and will act directly
+            // (grant, deny, or escalate via tool calls).
             eprintln!(
-                "coordinator '{}': asking Claude about permission '{tool_name}' for '{worker_id}'",
+                "coordinator '{}': invoking Claude for permission '{tool_name}' from '{worker_id}'",
                 scope.id
             );
             let prompt = format!(
-                "Worker '{worker_id}' requests permission for '{tool_name}'.\n\
+                "Worker '{worker_id}' is requesting permission for '{tool_name}'. \
                  Reason: {reason}\n\
-                 Respond with GRANT, DENY, or ESCALATE."
+                 Check the worker's context with `clc worker {worker_id} check` and \
+                 handle this permission request."
             );
             match session.invoke(&prompt) {
-                Ok(response) => {
-                    let trimmed = response.trim().to_uppercase();
-                    if trimmed.starts_with("GRANT") {
-                        let pattern = trimmed
-                            .strip_prefix("GRANT:")
-                            .or_else(|| trimmed.strip_prefix("GRANT"))
-                            .map(str::trim)
-                            .unwrap_or(tool_name);
-                        let _ = crate::permissions::grant(project_dir, worker_id, pattern);
-                    } else if trimmed.starts_with("DENY") {
-                        let deny_reason = trimmed
-                            .strip_prefix("DENY:")
-                            .or_else(|| trimmed.strip_prefix("DENY"))
-                            .map(str::trim)
-                            .unwrap_or("denied by coordinator");
-                        let _ = crate::permissions::deny(project_dir, worker_id, deny_reason);
-                    } else {
-                        // Default: escalate.
-                        let _ = crate::permissions::escalate(project_dir, worker_id, reason);
-                    }
+                Ok(_) => {
+                    // Claude acted via tool calls (grant/deny/escalate).
+                    // If it didn't act, the request stays pending for next tick.
                 }
                 Err(e) => {
-                    // Claude failed — escalate.
                     eprintln!("coordinator '{}': Claude failed ({e}), escalating", scope.id);
                     let _ = crate::permissions::escalate(project_dir, worker_id, reason);
                 }
