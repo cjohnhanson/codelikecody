@@ -1,12 +1,12 @@
 ---
 title: "Restructure clc prime text as skills with progressive disclosure"
-status: in_progress
+status: todo
 priority: 2
 assignee:
 labels: [clc, ergonomics]
 depends_on: []
 created: 2026-03-05T04:15:00Z
-updated: "2026-03-21T20:30:39Z"
+updated: "2026-03-23T02:12:43Z"
 ---
 
 ## Problem
@@ -107,5 +107,3 @@ The prime must communicate this constraint:
 - The `is_untracked` flag is already available via `.clc/state` — prime assembly should check it and inject the stealth constraint when true
 
 This is not about the tree restructure per se, but it's a prime content gap that should be addressed in the same pass.
-
-## Scratch Notes
