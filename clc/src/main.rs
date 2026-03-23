@@ -10,6 +10,7 @@ mod done;
 mod error;
 mod event;
 mod git;
+mod git_add;
 mod gix_ops;
 mod guard;
 mod home;

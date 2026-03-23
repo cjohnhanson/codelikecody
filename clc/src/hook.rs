@@ -65,7 +65,7 @@ pub fn run() -> Result<i32, Error> {
                 context: Some(text),
             })
         }
-        _ => guard::evaluate(&event, git_state.as_ref(), current_phase),
+        _ => guard::evaluate(&event, git_state.as_ref(), current_phase, cwd),
     };
 
     let (output, exit_code) = adapter.format_response(&event, &response);

@@ -1,7 +1,10 @@
+use std::path::Path;
+
 use serde_json::Value;
 
 use crate::event::{Event, Response};
 use crate::git::GitState;
+use crate::git_add;
 use crate::phase::Phase;
 
 /// Read-only tools: always allowed regardless of branch or phase.
@@ -44,7 +47,7 @@ const BASH_ALLOWLIST: &[&str] = &[
 ];
 
 /// Evaluate an event against the current git state and phase.
-pub fn evaluate(event: &Event, git: Option<&GitState>, phase: Option<Phase>) -> Response {
+pub fn evaluate(event: &Event, git: Option<&GitState>, phase: Option<Phase>, cwd: &Path) -> Response {
     // Escape hatch: set CLC_GUARD_OFF=1 to bypass all guard checks.
     // Used during clc development when the guard itself is being modified.
     if std::env::var("CLC_GUARD_OFF").is_ok_and(|v| !v.is_empty()) {
@@ -54,7 +57,7 @@ pub fn evaluate(event: &Event, git: Option<&GitState>, phase: Option<Phase>) -> 
         Event::PreToolUse {
             tool_name,
             tool_input,
-        } => check_tool_use(tool_name, tool_input, git, phase),
+        } => check_tool_use(tool_name, tool_input, git, phase, cwd),
         Event::Stop => check_stop(git, phase),
         _ => Response::Passthrough,
     }
@@ -90,7 +93,17 @@ fn check_tool_use(
     tool_input: &Value,
     git: Option<&GitState>,
     phase: Option<Phase>,
+    cwd: &Path,
 ) -> Response {
+    // Git-add validation runs on all branches, before any other checks.
+    if tool_name == "Bash" {
+        if let Some(command) = tool_input.get("command").and_then(Value::as_str) {
+            if let git_add::GitAddCheck::Blocked(reason) = git_add::validate(command, cwd) {
+                return Response::Block { message: reason };
+            }
+        }
+    }
+
     let Some(state) = git else {
         return Response::Passthrough;
     };
@@ -209,6 +222,10 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    fn test_cwd() -> &'static Path {
+        Path::new("/tmp")
+    }
+
     fn feature_branch() -> GitState {
         GitState {
             branch: "feat-xyz".to_string(),
@@ -241,7 +258,7 @@ mod tests {
     #[test]
     fn stop_allowed_at_review_requested() {
         let git = feature_branch();
-        let resp = evaluate(&stop_event(), Some(&git), Some(Phase::ReviewRequested));
+        let resp = evaluate(&stop_event(), Some(&git), Some(Phase::ReviewRequested), test_cwd());
         assert!(matches!(resp, Response::Passthrough));
     }
 
@@ -250,7 +267,7 @@ mod tests {
     #[test]
     fn stop_allowed_at_reviewed() {
         let git = feature_branch();
-        let resp = evaluate(&stop_event(), Some(&git), Some(Phase::Reviewed));
+        let resp = evaluate(&stop_event(), Some(&git), Some(Phase::Reviewed), test_cwd());
         assert!(matches!(resp, Response::Passthrough));
     }
 
@@ -268,7 +285,7 @@ mod tests {
     #[test]
     fn stop_allowed_at_done() {
         let git = feature_branch();
-        let resp = evaluate(&stop_event(), Some(&git), Some(Phase::Done));
+        let resp = evaluate(&stop_event(), Some(&git), Some(Phase::Done), test_cwd());
         assert!(matches!(resp, Response::Passthrough));
     }
 
@@ -286,7 +303,7 @@ mod tests {
     #[test]
     fn edit_src_allowed_in_in_review() {
         let git = feature_branch();
-        let resp = evaluate(&edit_src_event(), Some(&git), Some(Phase::InReview));
+        let resp = evaluate(&edit_src_event(), Some(&git), Some(Phase::InReview), test_cwd());
         assert!(matches!(resp, Response::Passthrough));
     }
 
@@ -300,6 +317,7 @@ mod tests {
             &json!({"file_path": "src/main.rs"}),
             Some(&git),
             Some(Phase::ReviewRequested),
+            test_cwd(),
         );
         assert!(matches!(resp, Response::Block { .. }));
     }
@@ -307,7 +325,7 @@ mod tests {
     #[test]
     fn edit_test_allowed_in_review_requested() {
         let git = feature_branch();
-        let resp = evaluate(&edit_test_event(), Some(&git), Some(Phase::ReviewRequested));
+        let resp = evaluate(&edit_test_event(), Some(&git), Some(Phase::ReviewRequested), test_cwd());
         assert!(matches!(resp, Response::Passthrough));
     }
 
@@ -321,6 +339,7 @@ mod tests {
             &json!({"file_path": "src/main.rs"}),
             Some(&git),
             Some(Phase::Reviewed),
+            test_cwd(),
         );
         assert!(matches!(resp, Response::Block { .. }));
     }
@@ -328,7 +347,7 @@ mod tests {
     #[test]
     fn edit_test_allowed_in_reviewed() {
         let git = feature_branch();
-        let resp = evaluate(&edit_test_event(), Some(&git), Some(Phase::Reviewed));
+        let resp = evaluate(&edit_test_event(), Some(&git), Some(Phase::Reviewed), test_cwd());
         assert!(matches!(resp, Response::Passthrough));
     }
 
@@ -352,6 +371,7 @@ mod tests {
             &json!({"file_path": "src/main.rs"}),
             Some(&git),
             None,
+            test_cwd(),
         );
         assert!(matches!(resp, Response::Passthrough));
     }
@@ -373,6 +393,7 @@ mod tests {
             &json!({"command": "rm -rf /tmp/junk"}),
             Some(&git),
             None,
+            test_cwd(),
         );
         assert!(matches!(resp, Response::Passthrough));
     }
