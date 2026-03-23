@@ -1,16 +1,14 @@
-FROM nixos/nix:latest
-RUN echo 'experimental-features = nix-command flakes' >> /etc/nix/nix.conf
+FROM rust:1.88-bookworm
 
-# Install claude-code
-RUN NIXPKGS_ALLOW_UNFREE=1 nix profile install --impure nixpkgs#claude-code
+# Install claude-code via npm
+RUN apt-get update && apt-get install -y nodejs npm git && \
+    npm install -g @anthropic-ai/claude-code && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install git and standard tools
-RUN nix profile install nixpkgs#git nixpkgs#coreutils nixpkgs#bash nixpkgs#gnugrep nixpkgs#findutils
-
-# Build project binaries from the flake
+# Build project binaries from source
 COPY . /src/
-RUN cd /src && nix build .#packages.$(nix eval --raw --expr 'builtins.currentSystem').default --out-link /tmp/clc-build && \
-    cp /tmp/clc-build/bin/* /usr/local/bin/ && \
+RUN cd /src && cargo build --release --workspace && \
+    cp target/release/clc target/release/tisket target/release/missouri /usr/local/bin/ && \
     rm -rf /src
 
 ENV HOME=/root
