@@ -1,12 +1,12 @@
 ---
 title: "missouri subgraph execution — break graph at complete fixtures"
-status: in_progress
+status: done
 priority: 2
 assignee:
 labels: [missouri]
 depends_on: []
 created: 2026-03-20T03:37:45Z
-updated: "2026-03-20T03:51:49Z"
+updated: "2026-03-23T02:12:21Z"
 ---
 
 ## Problem

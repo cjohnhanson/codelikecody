@@ -1,12 +1,12 @@
 ---
 title: "Prime text should treat todo status as dispatch-ready and enforce scoping"
-status: todo
+status: discovery
 priority: 2
 assignee:
 labels: [clc, ergonomics]
 depends_on: [restructure-clc-prime-text-as-skills-with-progressive-disclosure]
-created: "2026-03-05T04:30:00Z"
-updated: "2026-03-05T04:30:00Z"
+created: 2026-03-05T04:30:00Z
+updated: "2026-03-23T02:14:19Z"
 ---
 
 ## Problem

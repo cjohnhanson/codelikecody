@@ -1,12 +1,12 @@
 ---
 title: "Investigate missouri test suite performance"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: [missouri]
 depends_on: []
 created: 2026-03-19T02:36:01Z
-updated: "2026-03-19T03:41:00Z"
+updated: "2026-03-23T02:12:21Z"
 ---
 
 ## Problem

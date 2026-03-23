@@ -1,12 +1,12 @@
 ---
 title: "Missouri builds OCI images from flake.nix devShell"
-status: todo
+status: discovery
 priority: 2
 assignee:
 labels: [missouri, microsandbox]
 depends_on: [8jyy-clc-builder-persistent-nix-builder-sandbox-management, 6851-missouri-microsandbox-backend-for-hermetic-test-execution]
-created: "2026-03-20T02:57:41Z"
-updated: "2026-03-20T02:57:41Z"
+created: 2026-03-20T02:57:41Z
+updated: "2026-03-23T02:12:47Z"
 ---
 
 A `flake.nix` in a missouri state directory defines the test's execution

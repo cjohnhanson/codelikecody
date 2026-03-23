@@ -1,12 +1,12 @@
 ---
 title: "Justfile with minimal task recipes"
-status: todo
+status: done
 priority:
 assignee:
 labels: [admin]
 depends_on: []
 created: 2026-02-26T06:00:00Z
-updated: "2026-03-02T08:00:00Z"
+updated: "2026-03-23T02:12:21Z"
 ---
 
 Add a justfile with minimal recipes and add `just` to the flake.nix devShell.
