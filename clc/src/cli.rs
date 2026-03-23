@@ -101,6 +101,12 @@ pub enum Command {
         /// Poll interval in seconds.
         #[arg(long, default_value = "10")]
         poll_interval: u64,
+        /// Workspace type: worktree or docker.
+        #[arg(long, default_value = "worktree")]
+        workspace: String,
+        /// Docker image to use (when workspace=docker).
+        #[arg(long)]
+        docker_image: Option<String>,
     },
     /// Run the coordinator: dispatch pickable tiskets to worker agents.
     Coordinate {

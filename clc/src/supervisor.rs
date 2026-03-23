@@ -202,6 +202,16 @@ impl Supervisor {
             cmd.arg("--always-escalate").arg(pattern);
         }
 
+        match scope.workspace {
+            crate::config::WorkspaceType::Docker => {
+                cmd.arg("--workspace").arg("docker");
+                if let Some(ref image) = scope.docker_image {
+                    cmd.arg("--docker-image").arg(image);
+                }
+            }
+            crate::config::WorkspaceType::Worktree => {}
+        }
+
         cmd.current_dir(&self.project_dir);
 
         match cmd.spawn() {

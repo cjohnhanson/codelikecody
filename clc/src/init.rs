@@ -151,10 +151,10 @@ fn write_untracked_state(project_dir: &Path) -> Result<(), Error> {
 }
 
 fn resolve_hook_command() -> String {
-    std::env::current_exe().map_or_else(
-        |_| "clc hook".to_string(),
-        |p| format!("{} hook", p.display()),
-    )
+    // Use bare `clc hook` rather than an absolute path so the hook works
+    // both on the host and inside Docker containers where the binary
+    // is at a different path.
+    "clc hook".to_string()
 }
 
 /// Check whether a matcher object contains a clc hook command.

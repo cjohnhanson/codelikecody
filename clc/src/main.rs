@@ -77,6 +77,8 @@ fn main() {
             ref auto_grant,
             ref always_escalate,
             poll_interval,
+            ref workspace,
+            ref docker_image,
         } => cmd_coordinator_run(
             id,
             max_workers,
@@ -87,6 +89,8 @@ fn main() {
             auto_grant,
             always_escalate,
             poll_interval,
+            workspace,
+            docker_image.as_deref(),
         ),
         cli::Command::Coordinate {
             ref model,
@@ -275,6 +279,7 @@ fn cmd_up() -> Result<(), Error> {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 fn cmd_coordinator_run(
     id: &str,
     max_workers: usize,
@@ -285,9 +290,16 @@ fn cmd_coordinator_run(
     auto_grant: &[String],
     always_escalate: &[String],
     poll_interval: u64,
+    workspace: &str,
+    docker_image: Option<&str>,
 ) -> Result<(), Error> {
     let project_dir = std::env::current_dir()?;
     let cfg = config::load(&project_dir).unwrap_or_default();
+
+    let ws_type = match workspace {
+        "docker" => config::WorkspaceType::Docker,
+        _ => config::WorkspaceType::Worktree,
+    };
 
     let scope = config::CoordinatorScope {
         id: id.to_string(),
@@ -296,8 +308,8 @@ fn cmd_coordinator_run(
         exclude_label: exclude_label.map(str::to_string),
         max_workers,
         model: model.to_string(),
-        workspace: config::WorkspaceType::default(),
-        docker_image: None,
+        workspace: ws_type,
+        docker_image: docker_image.map(str::to_string),
         auto_grant: auto_grant.to_vec(),
         always_escalate: always_escalate.to_vec(),
     };
