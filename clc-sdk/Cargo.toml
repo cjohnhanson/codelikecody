@@ -16,7 +16,9 @@ missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 
 [dependencies]
+async-trait = "0.1"
 claude-code = { path = "../claude-code" }
 
 [dev-dependencies]
 tempfile = "3.26.0"
+tokio = { version = "1", features = ["rt", "macros"] }

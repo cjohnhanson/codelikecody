@@ -549,8 +549,10 @@ dependencies = [
 name = "clc-sdk"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "claude-code",
  "tempfile",
+ "tokio",
 ]
 
 [[package]]
