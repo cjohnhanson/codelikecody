@@ -648,11 +648,14 @@ name = "clc"
 version = "0.1.0"
 dependencies = [
  "almanac",
+ "bollard",
  "camino",
  "clap",
  "claude-code",
  "clc-sdk",
  "ctrlc",
+ "dirs",
+ "futures-util",
  "gix",
  "missouri",
  "nix",

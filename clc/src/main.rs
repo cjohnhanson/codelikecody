@@ -8,6 +8,7 @@ mod docs;
 mod coordinator_loop;
 mod coordinator_mgmt;
 mod dispatch;
+mod docker_workspace;
 mod done;
 mod error;
 mod event;
@@ -295,6 +296,8 @@ fn cmd_coordinator_run(
         exclude_label: exclude_label.map(str::to_string),
         max_workers,
         model: model.to_string(),
+        workspace: config::WorkspaceType::default(),
+        docker_image: None,
         auto_grant: auto_grant.to_vec(),
         always_escalate: always_escalate.to_vec(),
     };

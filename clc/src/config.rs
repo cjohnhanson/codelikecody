@@ -104,6 +104,14 @@ pub struct CoordinatorConfig {
     pub always_escalate: Vec<String>,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WorkspaceType {
+    #[default]
+    Worktree,
+    Docker,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CoordinatorScope {
     pub id: String,
@@ -122,6 +130,13 @@ pub struct CoordinatorScope {
 
     #[serde(default = "default_coordinator_model")]
     pub model: String,
+
+    #[serde(default)]
+    pub workspace: WorkspaceType,
+
+    /// Docker image to use for docker workspaces.
+    #[serde(default)]
+    pub docker_image: Option<String>,
 
     #[serde(default)]
     pub auto_grant: Vec<String>,
