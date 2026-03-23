@@ -149,6 +149,27 @@ pub fn spawn_agent_process(
 }
 
 pub fn is_worker_alive(worktree_dir: &Path) -> bool {
+    // Try coordination DB first — check stored status and PID.
+    let db_path = worktree_dir.join(".clc").join("coordination.db");
+    if !db_path.exists() {
+        // Check project root DB (worktree_dir is inside .worktrees/<id>/).
+        if let Some(project_dir) = worktree_dir.parent().and_then(|p| p.parent()) {
+            let project_db = project_dir.join(".clc").join("coordination.db");
+            if project_db.exists() {
+                if let Ok(coord) = Coordination::open(project_dir) {
+                    let id = worktree_dir
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy();
+                    if let Ok(status) = coord.get_status(&id) {
+                        return status == clc_sdk::coordination::AgentStatus::Running;
+                    }
+                }
+            }
+        }
+    }
+
+    // Fall back to PID file.
     let pid_path = worktree_dir.join(".clc").join(WORKER_DIR).join("pid");
     let Ok(contents) = fs::read_to_string(&pid_path) else {
         return false;
@@ -223,6 +244,44 @@ pub fn send_prompt(pipe_path: &Path, prompt: &str) -> Result<(), Error> {
     let mut file = fs::OpenOptions::new().write(true).open(pipe_path)?;
     writeln!(file, "{json}")?;
     file.flush()?;
+
+    // Record in coordination DB if available.
+    // Walk up from pipe_path (.clc/worker/stdin.pipe) to find the project root.
+    if let Some(worker_dir) = pipe_path.parent() {
+        if let Some(clc_dir) = worker_dir.parent() {
+            if let Some(worktree_dir) = clc_dir.parent() {
+                // Check project root (parent of .worktrees/<id>)
+                if let Some(project_dir) = worktree_dir.parent().and_then(|p| p.parent()) {
+                    let db_path = project_dir.join(".clc").join("coordination.db");
+                    if db_path.exists() {
+                        if let Ok(coord) = Coordination::open(project_dir) {
+                            let worker_id = worktree_dir
+                                .file_name()
+                                .unwrap_or_default()
+                                .to_string_lossy()
+                                .to_string();
+                            let msg = clc_sdk::coordination::Message {
+                                id: format!(
+                                    "input-{}",
+                                    std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap_or_default()
+                                        .as_millis()
+                                ),
+                                from: "coordinator".into(),
+                                to: worker_id,
+                                kind: clc_sdk::coordination::MessageKind::Text(
+                                    prompt.to_string(),
+                                ),
+                                timestamp: std::time::SystemTime::now(),
+                            };
+                            let _ = coord.send(msg);
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     Ok(())
 }

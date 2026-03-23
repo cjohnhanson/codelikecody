@@ -14,6 +14,7 @@ use clc_sdk::workspace::{
 use nix::sys::signal;
 use nix::unistd::Pid;
 
+use crate::coordination::Coordination;
 use crate::dispatch;
 use crate::worker;
 
@@ -128,6 +129,45 @@ impl Workspace for WorktreeWorkspace {
                         };
                     }
                     messages.push(msg);
+                }
+            }
+        }
+
+        // Feed output lines into coordination DB.
+        if !messages.is_empty() {
+            let db_path = self.config.project_dir.join(".clc").join("coordination.db");
+            if db_path.exists() {
+                if let Ok(coord) = Coordination::open(&self.config.project_dir) {
+                    for m in &messages {
+                        let summary = match m {
+                            OutputMessage::Assistant(a) => {
+                                a.message.content.first().map(|c| match c {
+                                    claude_code::protocol::ContentBlock::Text { text } => {
+                                        text.chars().take(200).collect::<String>()
+                                    }
+                                    _ => String::new(),
+                                }).unwrap_or_default()
+                            }
+                            OutputMessage::Result(_) => "session complete".to_string(),
+                            _ => String::new(),
+                        };
+                        if !summary.is_empty() {
+                            let msg = clc_sdk::coordination::Message {
+                                id: format!(
+                                    "output-{}",
+                                    std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap_or_default()
+                                        .as_nanos()
+                                ),
+                                from: self.config.tisket_id.clone(),
+                                to: "coordinator".into(),
+                                kind: clc_sdk::coordination::MessageKind::Output(summary),
+                                timestamp: std::time::SystemTime::now(),
+                            };
+                            let _ = coord.send(msg);
+                        }
+                    }
                 }
             }
         }
