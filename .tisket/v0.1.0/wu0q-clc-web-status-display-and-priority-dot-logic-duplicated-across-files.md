@@ -1,12 +1,12 @@
 ---
 title: "clc-web status display and priority dot logic duplicated across files"
-status: todo
+status: discovery
 priority:
 assignee:
 labels: [clc-web, duplication]
 depends_on: []
-created: "2026-03-23T03:12:16Z"
-updated: "2026-03-23T03:12:16Z"
+created: 2026-03-23T03:12:16Z
+updated: "2026-03-23T03:53:11Z"
 ---
 
 ## Problem

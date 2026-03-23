@@ -1,12 +1,12 @@
 ---
 title: "no error message documentation anywhere — error reference missing across all tools"
-status: todo
+status: discovery
 priority:
 assignee:
 labels: [docs, completeness]
 depends_on: []
-created: "2026-03-23T03:12:16Z"
-updated: "2026-03-23T03:12:16Z"
+created: 2026-03-23T03:12:16Z
+updated: "2026-03-23T03:53:11Z"
 ---
 
 ## Problem

@@ -1,12 +1,12 @@
 ---
 title: "missouri executor.rs exceeds reasonable file size — too large to reason about as a unit"
-status: todo
+status: discovery
 priority:
 assignee:
 labels: [missouri, maintainability]
 depends_on: []
-created: "2026-03-23T03:11:53Z"
-updated: "2026-03-23T03:11:53Z"
+created: 2026-03-23T03:11:53Z
+updated: "2026-03-23T03:53:11Z"
 ---
 
 ## Problem

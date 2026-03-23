@@ -1,12 +1,12 @@
 ---
 title: "bash trunk allowlist uses prefix matching — chained commands pass the guard"
-status: todo
+status: discovery
 priority:
 assignee:
 labels: [clc, security, guard]
 depends_on: []
-created: "2026-03-23T03:12:04Z"
-updated: "2026-03-23T03:12:04Z"
+created: 2026-03-23T03:12:04Z
+updated: "2026-03-23T03:53:11Z"
 ---
 
 ## Problem

@@ -1,12 +1,12 @@
 ---
 title: "cross-reference links use doc-slugs that break outside doc-serving system"
-status: todo
+status: discovery
 priority:
 assignee:
 labels: [docs, linking]
 depends_on: []
-created: "2026-03-23T03:12:16Z"
-updated: "2026-03-23T03:12:16Z"
+created: 2026-03-23T03:12:16Z
+updated: "2026-03-23T03:53:11Z"
 ---
 
 ## Problem

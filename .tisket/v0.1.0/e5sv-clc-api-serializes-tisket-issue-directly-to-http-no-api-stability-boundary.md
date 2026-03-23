@@ -1,12 +1,12 @@
 ---
 title: "clc-api serializes tisket::Issue directly to HTTP — no API stability boundary"
-status: todo
+status: discovery
 priority:
 assignee:
 labels: [clc-api, architecture]
 depends_on: []
-created: "2026-03-23T03:11:52Z"
-updated: "2026-03-23T03:11:52Z"
+created: 2026-03-23T03:11:52Z
+updated: "2026-03-23T03:53:11Z"
 ---
 
 ## Problem

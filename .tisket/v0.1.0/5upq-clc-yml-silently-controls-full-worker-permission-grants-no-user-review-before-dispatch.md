@@ -1,12 +1,12 @@
 ---
 title: "clc.yml silently controls full worker permission grants — no user review before dispatch"
-status: todo
+status: discovery
 priority:
 assignee:
 labels: [clc, security, permissions]
 depends_on: []
-created: "2026-03-23T03:12:04Z"
-updated: "2026-03-23T03:12:04Z"
+created: 2026-03-23T03:12:04Z
+updated: "2026-03-23T03:53:11Z"
 ---
 
 ## Problem

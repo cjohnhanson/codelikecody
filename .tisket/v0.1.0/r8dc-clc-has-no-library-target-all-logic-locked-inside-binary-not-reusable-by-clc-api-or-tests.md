@@ -1,12 +1,12 @@
 ---
 title: "clc has no library target — all logic locked inside binary, not reusable by clc-api or tests"
-status: todo
+status: discovery
 priority:
 assignee:
 labels: [clc, architecture]
 depends_on: []
-created: "2026-03-23T03:11:52Z"
-updated: "2026-03-23T03:11:52Z"
+created: 2026-03-23T03:11:52Z
+updated: "2026-03-23T03:53:11Z"
 ---
 
 ## Problem
