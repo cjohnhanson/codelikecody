@@ -1,12 +1,12 @@
 ---
 title: "README"
-status: discovery
+status: cancelled
 priority:
 assignee:
 labels: [admin]
 depends_on: []
-created: "2026-02-23T00:12:02Z"
-updated: "2026-02-23T00:12:02Z"
+created: 2026-02-23T00:12:02Z
+updated: "2026-03-23T02:36:08Z"
 ---
 
 READMEs exist for root and all 5 crates (written 2026-03-01). Remaining work:

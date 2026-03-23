@@ -1,12 +1,12 @@
 ---
 title: "Docs site with Leptos and Tailwind"
-status: discovery
+status: cancelled
 priority:
 assignee:
 labels: [documentation, infrastructure]
 depends_on: []
 created: 2026-02-26T06:00:00Z
-updated: "2026-03-02T08:00:00Z"
+updated: "2026-03-23T02:36:08Z"
 ---
 
 Epic: docs site built with Leptos (Rust WASM), styled with Tailwind, content sourced from markdown files in this repo following diataxis structure.
