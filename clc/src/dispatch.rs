@@ -100,6 +100,12 @@ pub fn dispatch_with_workspace(
     if worktree_dir.is_dir() {
         eprintln!("cleaning up stale worktree for '{id}'");
         cleanup_stale_worktree(project_dir, &worktree_dir, id)?;
+    } else {
+        // Worktree dir doesn't exist but branch might (orphaned from a prior failed dispatch).
+        if let Err(e) = crate::gix_ops::delete_branch(project_dir, id) {
+            // Branch doesn't exist — fine.
+            let _ = e;
+        }
     }
 
     // Pickup creates worktree, sets tisket status, inits clc.

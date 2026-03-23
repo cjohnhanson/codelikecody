@@ -79,13 +79,36 @@ impl Workspace for DockerWorkspace {
             .map(|a| a.to_string_lossy().to_string())
             .collect();
 
-        let mut full_cmd = vec![program];
-        full_cmd.extend(args);
+        let mut full_cmd = vec![shell_quote(&program)];
+        full_cmd.extend(args.iter().map(|a| shell_quote(a)));
 
-        // Mount the project directory.
-        let project_mount = format!("{}:/project", self.project_dir.display());
+        // Mount the worktree (where the worker actually works) as /project.
+        // Also mount the project root as /project-root for access to .tisket/, tisket.yml, etc.
+        let worktree_dir = self
+            .project_dir
+            .join(".worktrees")
+            .join(&self.config.tisket_id);
+        // Mount the worktree as /project (working dir).
+        // Mount the project root's .git/ so git worktree references resolve.
+        // Mount tisket config so tisket commands work.
+        let worktree_mount = format!("{}:/project", worktree_dir.display());
+        let git_mount = format!("{}/.git:/project-git:ro", self.project_dir.display());
+        let tisket_mount = format!("{}/tisket.yml:/project/tisket.yml:ro", self.project_dir.display());
+        let tisket_dir_mount = format!("{}/.tisket:/project/.tisket", self.project_dir.display());
 
-        let mut binds = vec![project_mount];
+        // Fix the worktree's .git file to point to the container path.
+        let git_file = worktree_dir.join(".git");
+        if git_file.is_file() {
+            let content = std::fs::read_to_string(&git_file).unwrap_or_default();
+            if content.contains("gitdir:") {
+                // Rewrite to container-relative path.
+                let wt_name = &self.config.tisket_id;
+                let container_gitdir = format!("gitdir: /project-git/worktrees/{wt_name}\n");
+                let _ = std::fs::write(&git_file, container_gitdir);
+            }
+        }
+
+        let mut binds = vec![worktree_mount, git_mount, tisket_mount, tisket_dir_mount];
 
         // Agent-specific secrets: mount token files and inject env vars.
         // The Agent trait doesn't expose this yet, so we check for known
@@ -132,13 +155,40 @@ impl Workspace for DockerWorkspace {
             env_vec.push(format!("{k}={v}"));
         }
 
+        // Write initial prompt to a temp file, mount it, and pipe it to stdin.
+        let initial_prompt = &self.config.agent_config.initial_prompt;
+        let prompt_json = if initial_prompt.is_empty() {
+            String::new()
+        } else {
+            let input = claude_code::protocol::InputMessage::user(initial_prompt);
+            serde_json::to_string(&input).unwrap_or_default()
+        };
+
+        // Write the initial prompt to a file in the worktree for Claude to read via stdin redirect.
+        if !prompt_json.is_empty() {
+            let prompt_path = worktree_dir.join(".clc").join("initial-prompt.jsonl");
+            if let Some(parent) = prompt_path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _ = std::fs::write(&prompt_path, format!("{prompt_json}\n"));
+        }
+
+        // Build the shell command: redirect prompt file to stdin if it exists.
+        let agent_cmd = full_cmd.join(" ");
+        let shell_cmd = format!(
+            "if [ -f /project/.clc/initial-prompt.jsonl ]; then \
+               {agent_cmd} < /project/.clc/initial-prompt.jsonl; \
+             else \
+               {agent_cmd}; \
+             fi"
+        );
+
         let container_config = Config {
             image: Some(self.image.as_str()),
-            cmd: Some(full_cmd.iter().map(String::as_str).collect()),
+            cmd: Some(vec!["sh", "-c", &shell_cmd]),
             working_dir: Some("/project"),
             env: Some(env_vec.iter().map(String::as_str).collect()),
             host_config: Some(host_config),
-            open_stdin: Some(true),
             ..Default::default()
         };
 
@@ -162,40 +212,6 @@ impl Workspace for DockerWorkspace {
 
             Ok::<_, WorkspaceError>(container.id)
         })?;
-
-        // Send initial prompt via exec.
-        let initial_prompt = self.config.agent_config.initial_prompt.clone();
-        if !initial_prompt.is_empty() {
-            let cid = container_id.clone();
-            self.rt.block_on(async {
-                let input = claude_code::protocol::InputMessage::user(&initial_prompt);
-                let json = serde_json::to_string(&input).unwrap_or_default();
-
-                // Write to container's stdin via attach.
-                let exec = self
-                    .docker
-                    .create_exec(
-                        &cid,
-                        CreateExecOptions {
-                            cmd: Some(vec![
-                                "sh",
-                                "-c",
-                                &format!("echo '{}' > /proc/1/fd/0", json.replace('\'', "'\\''")),
-                            ]),
-                            ..Default::default()
-                        },
-                    )
-                    .await
-                    .map_err(|e| WorkspaceError::Communication(format!("exec: {e}")))?;
-
-                self.docker
-                    .start_exec(&exec.id, None)
-                    .await
-                    .map_err(|e| WorkspaceError::Communication(format!("start exec: {e}")))?;
-
-                Ok::<_, WorkspaceError>(())
-            })?;
-        }
 
         self.container_id = Some(container_id);
         self.status = WorkspaceStatus::Running;
@@ -299,4 +315,10 @@ impl Workspace for DockerWorkspace {
         }
         Ok(())
     }
+}
+
+/// Single-quote a string for safe shell embedding.
+fn shell_quote(s: &str) -> String {
+    // Replace single quotes with '\'' (end quote, escaped quote, restart quote).
+    format!("'{}'", s.replace('\'', "'\\''"))
 }
