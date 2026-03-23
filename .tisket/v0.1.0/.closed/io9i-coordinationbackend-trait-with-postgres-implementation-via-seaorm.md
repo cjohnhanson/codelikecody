@@ -1,12 +1,12 @@
 ---
 title: "CoordinationBackend trait with Postgres implementation via SeaORM"
-status: in_progress
+status: done
 priority: 2
 assignee:
 labels: [clc, architecture]
 depends_on: [am9k-agent-trait-extract-claude-specific-code-from-workspace-into-agent-abstraction]
 created: 2026-03-22T22:02:06Z
-updated: "2026-03-22T23:52:44Z"
+updated: "2026-03-23T00:08:12Z"
 ---
 
 Replace filesystem communication (stdout.jsonl, pid files, stdin pipes, outbox) with a CoordinationBackend trait. First impl: Postgres via SeaORM.
