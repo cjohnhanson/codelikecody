@@ -1,12 +1,12 @@
 ---
 title: "Fix zettel QA findings: dangling links, unicode slugs, flag consistency"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: [zettel, qa]
 depends_on: []
 created: 2026-03-23T01:09:46Z
-updated: "2026-03-23T01:09:55Z"
+updated: "2026-03-23T01:17:23Z"
 ---
 
 QA run found 9 issues. Fix all of them.
@@ -25,5 +25,3 @@ QA run found 9 issues. Fix all of them.
 ## Missing
 8. Dangling link check command (zettel check)
 9. Search result snippets — show matching text, not just field name
-
-## Scratch Notes
