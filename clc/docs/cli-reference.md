@@ -114,14 +114,15 @@ clc prime
 
 View and manage clc configuration.
 
-clc reads configuration from multiple files with a priority order:
+clc has two separate config concepts:
 
-1. `clc.yaml` — **topology only** (workspace member declarations). Used by `clc coordinate` to discover workspace members.
-2. `clc.yml` — **project config** at the repo root (main branch, worker permissions, skill sources). Highest priority for settings.
-3. `clc.toml` — **project config** in TOML format. Lower priority than `clc.yml` — if both exist, `clc.yml` wins.
-4. `.clc/config.yml` — **legacy config** inside the `.clc/` state directory. Lowest priority.
+**Topology** (`clc.yaml`) declares workspace members for multi-crate coordination. Read by `clc coordinate` to discover member suites. This file has nothing to do with project settings.
 
-The distinction matters: `clc.yaml` is for multi-workspace topology, `clc.yml`/`clc.toml` is for project settings.
+**Project config** controls settings like main branch, worker permissions, and skill sources. Three files are checked in priority order:
+
+1. `clc.yml` — at the repo root. Highest priority.
+2. `clc.toml` — at the repo root. Used if `clc.yml` doesn't exist.
+3. `.clc/config.yml` — inside the `.clc/` state directory. Legacy location, lowest priority.
 
 ### clc config show
 
