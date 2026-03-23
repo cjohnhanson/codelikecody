@@ -68,27 +68,28 @@ After all sections are drafted:
 
 ## File conventions
 
-All documentation lives in `docs/` at the project root.
+Documentation lives in crate-level `docs/` directories — `clc/docs/`,
+`missouri/docs/`, `tisket/docs/`, `zettel/docs/`, `almanac/docs/`. Each
+crate bundles its own docs via `include_str!()` in a `docs.rs` module.
+These are the authoritative source of truth.
 
-Every doc file requires YAML frontmatter:
+Every doc file uses an HTML comment metadata block (not YAML frontmatter):
 
-```yaml
----
+```markdown
+<!-- metadata
 title: "The document title"
 description: "One-sentence summary for indexes and search"
 type: tutorial | guide | reference | explanation
----
+-->
 ```
 
+The `docs.rs` module strips this comment when rendering content via
+`DocPage::content()`.
+
 File naming: lowercase, hyphens, descriptive. Match the title loosely.
-Example: `cli-configuration-reference.md` for a doc titled
-"CLI Configuration Reference."
+Example: `cli-reference.md`, `getting-started.md`, `writing-tests.md`.
 
-Internal links use relative paths between docs: `[see the CLI ref](./cli-configuration-reference.md)`.
-
-These conventions anticipate a static site generator (Hugo/Zola style)
-but none is configured yet. The frontmatter and structure should be
-compatible with either.
+Internal links use doc slugs (not file paths): `[CLI Reference](/missouri/cli-reference)`.
 
 ## Type discipline
 
@@ -201,8 +202,8 @@ It does not apply to:
 
 ## Checklist (for self-verification before presenting work)
 
-- [ ] Frontmatter includes title, description, and type
-- [ ] File is in `docs/`, named with lowercase hyphens
+- [ ] HTML metadata comment includes title, description, and type
+- [ ] File is in the crate's `docs/` directory, named with lowercase hyphens
 - [ ] Document serves exactly one Diátaxis type
 - [ ] No section belongs to a different type without being flagged
 - [ ] Every technical claim in reference docs is verified against source
