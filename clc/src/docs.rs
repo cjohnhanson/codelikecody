@@ -69,6 +69,9 @@ pub fn list() {
     println!();
     println!("almanac");
     print!("{}", almanac::docs::format_list(almanac::docs::PAGES));
+    println!();
+    println!("zettel");
+    print!("{}", zettel::docs::format_list(zettel::docs::PAGES));
 }
 
 /// Find a doc by flexible identifier across all tools.
@@ -84,6 +87,9 @@ pub fn find(identifier: &str) -> Option<&'static str> {
         return Some(page.content());
     }
     if let Some(page) = almanac::docs::find(identifier) {
+        return Some(page.content());
+    }
+    if let Some(page) = zettel::docs::find(identifier) {
         return Some(page.content());
     }
     None
@@ -124,6 +130,12 @@ pub fn search(query: &str) {
     if !al_matches.is_empty() {
         println!("almanac");
         print!("{}", almanac::docs::format_list_from_refs(&al_matches));
+        any = true;
+    }
+    let ze_matches = zettel::docs::find_matching(zettel::docs::PAGES, query);
+    if !ze_matches.is_empty() {
+        println!("zettel");
+        print!("{}", zettel::docs::format_list_from_refs(&ze_matches));
         any = true;
     }
     if !any {
