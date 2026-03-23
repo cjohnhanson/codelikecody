@@ -1,12 +1,12 @@
 ---
 title: "CLC_GUARD_OFF env var disables all guards — agent on feature branch could self-deescalate"
-status: discovery
+status: cancelled
 priority:
 assignee:
 labels: [clc, security, guard]
 depends_on: []
 created: 2026-03-23T03:12:04Z
-updated: "2026-03-23T03:53:11Z"
+updated: "2026-03-23T03:57:04Z"
 ---
 
 ## Problem
