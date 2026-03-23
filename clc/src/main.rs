@@ -5,6 +5,7 @@ mod config;
 mod coordinate;
 mod coordination;
 mod docs;
+mod coordinator_loop;
 mod coordinator_mgmt;
 mod dispatch;
 mod done;
@@ -62,6 +63,34 @@ fn main() {
             action: Some(cli::StatusAction::Set { ref phase }),
         } => cmd_status_set(phase),
         cli::Command::Admin => cmd_admin(),
+        cli::Command::Up {
+            ref model,
+            ref label,
+            ref exclude_label,
+            ref project,
+            ref depends_on,
+            ref filter,
+            max_workers,
+            poll_interval,
+            ref auto_grant,
+            escalate_all,
+            ref grant_config,
+        } => {
+            let filters = coordinate::CoordinateFilters {
+                tisket: None,
+                label: label.as_deref(),
+                exclude_label: exclude_label.as_deref(),
+                project: project.as_deref(),
+                depends_on: depends_on.as_deref(),
+                filter: filter.as_deref(),
+                dry_run: false,
+                coordinator_id: None,
+                auto_grant,
+                escalate_all,
+                grant_config: grant_config.as_deref(),
+            };
+            cmd_up(model, &filters, max_workers, poll_interval)
+        }
         cli::Command::Coordinate {
             ref model,
             ref tisket,
@@ -226,6 +255,28 @@ fn cmd_status_set(target: &str) -> Result<(), Error> {
     let cwd = std::env::current_dir()?;
     let cfg = config::load(&cwd).unwrap_or_default();
     phase::set(&cwd, target, cfg.required_attempts)
+}
+
+fn cmd_up(
+    model: &str,
+    filters: &coordinate::CoordinateFilters<'_>,
+    max_workers: usize,
+    poll_interval: u64,
+) -> Result<(), Error> {
+    let project_dir = std::env::current_dir()?;
+    let cfg = config::load(&project_dir).unwrap_or_default();
+    coordinator_loop::run(&coordinator_loop::LoopConfig {
+        project_dir: &project_dir,
+        main_branch: &cfg.main_branch,
+        admin_branch: &cfg.admin_branch,
+        model,
+        filters,
+        worker_perm_defaults: &cfg.worker.permissions.default,
+        worker_perm_deny: &cfg.worker.permissions.deny,
+        coordinator_config: &cfg.coordinator,
+        poll_interval: std::time::Duration::from_secs(poll_interval),
+        max_workers,
+    })
 }
 
 fn cmd_coordinate(model: &str, filters: &coordinate::CoordinateFilters<'_>) -> Result<(), Error> {
