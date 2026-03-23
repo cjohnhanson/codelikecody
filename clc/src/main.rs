@@ -24,6 +24,7 @@ mod permissions;
 mod phase;
 mod pickup;
 mod skills;
+mod supervisor;
 mod tisket;
 mod topology;
 mod zettel;
@@ -63,34 +64,28 @@ fn main() {
             action: Some(cli::StatusAction::Set { ref phase }),
         } => cmd_status_set(phase),
         cli::Command::Admin => cmd_admin(),
-        cli::Command::Up {
+        cli::Command::Up => cmd_up(),
+        cli::Command::CoordinatorRun {
+            ref id,
+            max_workers,
             ref model,
+            ref project,
             ref label,
             ref exclude_label,
-            ref project,
-            ref depends_on,
-            ref filter,
-            max_workers,
-            poll_interval,
             ref auto_grant,
-            escalate_all,
-            ref grant_config,
-        } => {
-            let filters = coordinate::CoordinateFilters {
-                tisket: None,
-                label: label.as_deref(),
-                exclude_label: exclude_label.as_deref(),
-                project: project.as_deref(),
-                depends_on: depends_on.as_deref(),
-                filter: filter.as_deref(),
-                dry_run: false,
-                coordinator_id: None,
-                auto_grant,
-                escalate_all,
-                grant_config: grant_config.as_deref(),
-            };
-            cmd_up(model, &filters, max_workers, poll_interval)
-        }
+            ref always_escalate,
+            poll_interval,
+        } => cmd_coordinator_run(
+            id,
+            max_workers,
+            model,
+            project.as_deref(),
+            label.as_deref(),
+            exclude_label.as_deref(),
+            auto_grant,
+            always_escalate,
+            poll_interval,
+        ),
         cli::Command::Coordinate {
             ref model,
             ref tisket,
@@ -257,26 +252,63 @@ fn cmd_status_set(target: &str) -> Result<(), Error> {
     phase::set(&cwd, target, cfg.required_attempts)
 }
 
-fn cmd_up(
-    model: &str,
-    filters: &coordinate::CoordinateFilters<'_>,
+fn cmd_up() -> Result<(), Error> {
+    let project_dir = std::env::current_dir()?;
+    let cfg = config::load(&project_dir).unwrap_or_default();
+
+    if cfg.supervisor.coordinators.is_empty() {
+        return Err(Error::NonBlocking(
+            "no coordinator scopes configured in clc.yml — add [[supervisor.coordinators]] sections"
+                .into(),
+        ));
+    }
+
+    let mut sup = supervisor::Supervisor::new(
+        &project_dir,
+        &cfg.main_branch,
+        &cfg.admin_branch,
+        &cfg.worker.permissions.default,
+        &cfg.worker.permissions.deny,
+        &cfg.supervisor,
+    );
+    sup.run()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn cmd_coordinator_run(
+    id: &str,
     max_workers: usize,
+    model: &str,
+    project: Option<&str>,
+    label: Option<&str>,
+    exclude_label: Option<&str>,
+    auto_grant: &[String],
+    always_escalate: &[String],
     poll_interval: u64,
 ) -> Result<(), Error> {
     let project_dir = std::env::current_dir()?;
     let cfg = config::load(&project_dir).unwrap_or_default();
-    coordinator_loop::run(&coordinator_loop::LoopConfig {
-        project_dir: &project_dir,
-        main_branch: &cfg.main_branch,
-        admin_branch: &cfg.admin_branch,
-        model,
-        filters,
-        worker_perm_defaults: &cfg.worker.permissions.default,
-        worker_perm_deny: &cfg.worker.permissions.deny,
-        coordinator_config: &cfg.coordinator,
-        poll_interval: std::time::Duration::from_secs(poll_interval),
+
+    let scope = config::CoordinatorScope {
+        id: id.to_string(),
+        project: project.map(str::to_string),
+        label: label.map(str::to_string),
+        exclude_label: exclude_label.map(str::to_string),
         max_workers,
-    })
+        model: model.to_string(),
+        auto_grant: auto_grant.to_vec(),
+        always_escalate: always_escalate.to_vec(),
+    };
+
+    coordinator_loop::run(
+        &project_dir,
+        &cfg.main_branch,
+        &cfg.admin_branch,
+        &scope,
+        &cfg.worker.permissions.default,
+        &cfg.worker.permissions.deny,
+        std::time::Duration::from_secs(poll_interval),
+    )
 }
 
 fn cmd_coordinate(model: &str, filters: &coordinate::CoordinateFilters<'_>) -> Result<(), Error> {

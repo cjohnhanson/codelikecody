@@ -177,6 +177,7 @@ pub fn coordinate_with<W: Workspace>(
 }
 
 /// Public entry point for resolving the permission policy.
+#[allow(dead_code)]
 pub fn resolve_policy_pub(
     config: &CoordinatorConfig,
     filters: &CoordinateFilters<'_>,

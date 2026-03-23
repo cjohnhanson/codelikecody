@@ -19,6 +19,7 @@ missing_panics_doc = "allow"
 almanac = { path = "../almanac", default-features = false }
 camino = "1"
 clap = { version = "4", features = ["derive"] }
+ctrlc = "3"
 claude-code = { path = "../claude-code" }
 clc-sdk = { path = "../clc-sdk", features = ["sqlite"] }
 gix = { version = "0.80.0", default-features = false, features = [

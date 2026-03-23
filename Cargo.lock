@@ -652,6 +652,7 @@ dependencies = [
  "clap",
  "claude-code",
  "clc-sdk",
+ "ctrlc",
  "gix",
  "missouri",
  "nix",

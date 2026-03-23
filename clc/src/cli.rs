@@ -69,41 +69,38 @@ pub enum Command {
         #[command(subcommand)]
         command: ::tisket::cli::Command,
     },
-    /// Start the coordinator loop: poll for work, dispatch workers, handle permissions.
-    Up {
+    /// Start the supervisor: spawn coordinators, monitor health, surface escalations.
+    Up,
+    /// Run a coordinator process (started by the supervisor, not by humans).
+    #[command(name = "coordinator-run")]
+    CoordinatorRun {
+        /// Coordinator ID.
+        #[arg(long)]
+        id: String,
+        /// Maximum concurrent workers for this coordinator.
+        #[arg(long, default_value = "3")]
+        max_workers: usize,
         /// Model to use for workers.
         #[arg(long, default_value = "sonnet")]
         model: String,
+        /// Only tiskets in this project.
+        #[arg(long)]
+        project: Option<String>,
         /// Only tiskets with this label.
         #[arg(long)]
         label: Option<String>,
         /// Skip tiskets with this label.
         #[arg(long)]
         exclude_label: Option<String>,
-        /// Only tiskets in this project.
-        #[arg(long)]
-        project: Option<String>,
-        /// Only tiskets in the dependency chain rooted at this id.
-        #[arg(long)]
-        depends_on: Option<String>,
-        /// Filter by comma-separated selectors.
-        #[arg(long)]
-        filter: Option<String>,
-        /// Maximum concurrent workers.
-        #[arg(long, default_value = "3")]
-        max_workers: usize,
-        /// Poll interval in seconds.
-        #[arg(long, default_value = "10")]
-        poll_interval: u64,
         /// Permission pattern to auto-grant (repeatable).
         #[arg(long)]
         auto_grant: Vec<String>,
-        /// Escalate all permission requests.
+        /// Permission pattern to always escalate (repeatable).
         #[arg(long)]
-        escalate_all: bool,
-        /// Path to permission policy YAML file.
-        #[arg(long)]
-        grant_config: Option<String>,
+        always_escalate: Vec<String>,
+        /// Poll interval in seconds.
+        #[arg(long, default_value = "10")]
+        poll_interval: u64,
     },
     /// Run the coordinator: dispatch pickable tiskets to worker agents.
     Coordinate {
