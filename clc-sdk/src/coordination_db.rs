@@ -1,11 +1,12 @@
-//! Postgres implementation of [`CoordinationBackend`] via SeaORM.
+//! Database-backed [`CoordinationBackend`] via SeaORM.
 //!
-//! Enabled by the `postgres` feature flag.
+//! Works with both SQLite and Postgres. Enabled by the `sqlite` or
+//! `postgres` feature flags respectively.
 
 use sea_orm::entity::prelude::*;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
-    QueryFilter, QueryOrder, Set,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseConnection,
+    EntityTrait, FromQueryResult, QueryFilter, QueryOrder, Set, Statement,
 };
 
 use crate::coordination::{
@@ -13,7 +14,7 @@ use crate::coordination::{
     Message, MessageId, MessageKind, ReviewVerdict,
 };
 
-/// SeaORM entity for the `agents` table.
+/// SeaORM entity for the `coordination_agents` table.
 mod agent_entity {
     use sea_orm::entity::prelude::*;
 
@@ -34,7 +35,7 @@ mod agent_entity {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
-/// SeaORM entity for the `messages` table.
+/// SeaORM entity for the `coordination_messages` table.
 mod message_entity {
     use sea_orm::entity::prelude::*;
 
@@ -44,7 +45,7 @@ mod message_entity {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: String,
         /// Auto-incrementing sequence for cursor-based retrieval.
-        /// BIGSERIAL — database assigns the value on insert.
+        /// Database assigns the value on insert (BIGSERIAL/AUTOINCREMENT).
         #[sea_orm(unique, default_value = "0")]
         pub seq: i64,
         pub from_agent: String,
@@ -62,57 +63,106 @@ mod message_entity {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
-/// Postgres-backed coordination backend.
-pub struct PostgresBackend {
+/// Database-backed coordination backend via SeaORM.
+///
+/// Works with any SeaORM-supported database (SQLite, Postgres).
+/// The database type is detected from the connection and appropriate
+/// DDL is used for table creation.
+pub struct DbBackend {
     db: DatabaseConnection,
 }
 
-impl PostgresBackend {
+impl DbBackend {
     /// Create a new backend from an existing database connection.
     pub fn new(db: DatabaseConnection) -> Self {
         Self { db }
     }
 
-    /// Create the tables if they don't exist. Call once at startup.
-    pub async fn create_tables(&self) -> Result<(), CoordinationError> {
-        use sea_orm::{ConnectionTrait, Statement};
-
-        let sql = r"
-            CREATE TABLE IF NOT EXISTS coordination_agents (
-                id TEXT PRIMARY KEY,
-                parent_id TEXT,
-                status TEXT NOT NULL DEFAULT 'pending',
-                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-            );
-
-            CREATE TABLE IF NOT EXISTS coordination_messages (
-                id TEXT PRIMARY KEY,
-                seq BIGSERIAL UNIQUE NOT NULL,
-                from_agent TEXT NOT NULL,
-                to_agent TEXT NOT NULL,
-                kind TEXT NOT NULL,
-                payload TEXT NOT NULL DEFAULT '{}',
-                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_messages_to_seq
-                ON coordination_messages (to_agent, seq);
-            CREATE INDEX IF NOT EXISTS idx_messages_kind_to
-                ON coordination_messages (kind, to_agent);
-        ";
-
-        self.db
-            .execute(Statement::from_string(
-                sea_orm::DatabaseBackend::Postgres,
-                sql.to_string(),
-            ))
+    /// Connect to a database by URL and create a backend.
+    ///
+    /// SQLite: `sqlite:///path/to/db.sqlite?mode=rwc`
+    /// Postgres: `postgres://user@host/dbname`
+    pub async fn connect(url: &str) -> Result<Self, CoordinationError> {
+        let db = sea_orm::Database::connect(url)
             .await
             .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+        Ok(Self { db })
+    }
+
+    /// Create the tables if they don't exist. Call once at startup.
+    pub async fn create_tables(&self) -> Result<(), CoordinationError> {
+        let backend = self.db.get_database_backend();
+        let statements: &[&str] = match backend {
+            sea_orm::DatabaseBackend::Postgres => &POSTGRES_DDL,
+            sea_orm::DatabaseBackend::Sqlite => &SQLITE_DDL,
+            sea_orm::DatabaseBackend::MySql => {
+                return Err(CoordinationError::Storage(
+                    "MySQL not supported".to_string(),
+                ));
+            }
+        };
+
+        for sql in statements {
+            self.db
+                .execute(Statement::from_string(backend, (*sql).to_string()))
+                .await
+                .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+        }
 
         Ok(())
     }
+
+    /// Access the underlying database connection.
+    pub fn connection(&self) -> &DatabaseConnection {
+        &self.db
+    }
 }
+
+const POSTGRES_DDL: &[&str] = &[
+    "CREATE TABLE IF NOT EXISTS coordination_agents (
+        id TEXT PRIMARY KEY,
+        parent_id TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )",
+    "CREATE TABLE IF NOT EXISTS coordination_messages (
+        id TEXT PRIMARY KEY,
+        seq BIGSERIAL UNIQUE NOT NULL,
+        from_agent TEXT NOT NULL,
+        to_agent TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        payload TEXT NOT NULL DEFAULT '{}',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )",
+    "CREATE INDEX IF NOT EXISTS idx_messages_to_seq
+        ON coordination_messages (to_agent, seq)",
+    "CREATE INDEX IF NOT EXISTS idx_messages_kind_to
+        ON coordination_messages (kind, to_agent)",
+];
+
+const SQLITE_DDL: &[&str] = &[
+    "CREATE TABLE IF NOT EXISTS coordination_agents (
+        id TEXT PRIMARY KEY,
+        parent_id TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )",
+    "CREATE TABLE IF NOT EXISTS coordination_messages (
+        id TEXT PRIMARY KEY,
+        seq INTEGER,
+        from_agent TEXT NOT NULL,
+        to_agent TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        payload TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )",
+    "CREATE INDEX IF NOT EXISTS idx_messages_to_seq
+        ON coordination_messages (to_agent, seq)",
+    "CREATE INDEX IF NOT EXISTS idx_messages_kind_to
+        ON coordination_messages (kind, to_agent)",
+];
 
 fn status_to_str(status: &AgentStatus) -> &'static str {
     match status {
@@ -256,13 +306,12 @@ fn model_to_message(
 }
 
 #[async_trait::async_trait]
-impl CoordinationBackend for PostgresBackend {
+impl CoordinationBackend for DbBackend {
     async fn register_agent(
         &self,
         id: &str,
         parent_id: Option<&str>,
     ) -> Result<(), CoordinationError> {
-        // Check for existing agent first.
         let existing = agent_entity::Entity::find_by_id(id.to_string())
             .one(&self.db)
             .await
@@ -334,9 +383,28 @@ impl CoordinationBackend for PostgresBackend {
         msg: Message,
     ) -> Result<MessageId, CoordinationError> {
         let id = msg.id.clone();
+
+        // SQLite lacks BIGSERIAL; compute next seq manually.
+        // Postgres uses BIGSERIAL (NotSet lets the DB assign it).
+        let seq = if self.db.get_database_backend() == sea_orm::DatabaseBackend::Sqlite {
+            let row = self.db
+                .query_one(Statement::from_string(
+                    sea_orm::DatabaseBackend::Sqlite,
+                    "SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM coordination_messages".to_string(),
+                ))
+                .await
+                .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+            let next: i64 = row
+                .map(|r| r.try_get_by_index::<i64>(0).unwrap_or(1))
+                .unwrap_or(1);
+            Set(next)
+        } else {
+            sea_orm::ActiveValue::NotSet
+        };
+
         let model = message_entity::ActiveModel {
             id: Set(msg.id),
-            seq: sea_orm::ActiveValue::NotSet, // BIGSERIAL — DB assigns.
+            seq,
             from_agent: Set(msg.from),
             to_agent: Set(msg.to),
             kind: Set(kind_to_str(&msg.kind).to_string()),
@@ -439,69 +507,120 @@ impl CoordinationBackend for PostgresBackend {
     }
 }
 
+/// Convenience alias for the Postgres-backed variant.
+pub type PostgresBackend = DbBackend;
+
+/// Convenience alias for the SQLite-backed variant.
+pub type SqliteBackend = DbBackend;
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::coordination::contract_tests;
 
-    /// Requires a running Postgres instance. Set `DATABASE_URL` to run.
-    /// e.g. `DATABASE_URL=postgres://localhost/clc_test cargo test -p clc-sdk --features postgres`
-    async fn setup_backend() -> Option<PostgresBackend> {
-        let url = match std::env::var("DATABASE_URL") {
-            Ok(url) => url,
-            Err(_) => return None,
-        };
-
-        let db = sea_orm::Database::connect(&url).await.ok()?;
-        let backend = PostgresBackend::new(db);
-        backend.create_tables().await.ok()?;
-
-        // Clean up from previous runs.
-        use sea_orm::{ConnectionTrait, Statement};
-        let _ = backend.db.execute(Statement::from_string(
-            sea_orm::DatabaseBackend::Postgres,
-            "DELETE FROM coordination_messages; DELETE FROM coordination_agents;".to_string(),
-        )).await;
-
-        Some(backend)
+    async fn sqlite_backend() -> DbBackend {
+        let backend = DbBackend::connect("sqlite::memory:")
+            .await
+            .expect("connect to in-memory SQLite");
+        backend
+            .create_tables()
+            .await
+            .expect("create tables in SQLite");
+        backend
     }
 
-    macro_rules! pg_contract_test {
+    macro_rules! db_contract_test {
         ($name:ident) => {
             #[tokio::test]
             async fn $name() {
-                let Some(backend) = setup_backend().await else {
-                    eprintln!(
-                        "Skipping {}: no DATABASE_URL set",
-                        stringify!($name)
-                    );
-                    return;
-                };
+                let backend = sqlite_backend().await;
                 contract_tests::$name(&backend).await;
             }
         };
     }
 
-    pg_contract_test!(register_starts_pending);
-    pg_contract_test!(register_duplicate_errors);
-    pg_contract_test!(set_and_get_status);
-    pg_contract_test!(status_lifecycle);
-    pg_contract_test!(status_not_found);
-    pg_contract_test!(set_status_not_found);
-    pg_contract_test!(send_and_recv);
-    pg_contract_test!(recv_filters_by_recipient);
-    pg_contract_test!(cursor_tracks_position);
-    pg_contract_test!(recv_empty);
-    pg_contract_test!(permission_request_flow);
-    pg_contract_test!(permission_denied_flow);
-    pg_contract_test!(review_request_flow);
-    pg_contract_test!(pending_permissions_filters_kind);
-    pg_contract_test!(pending_reviews_filters_kind);
-    pg_contract_test!(list_agents_all);
-    pg_contract_test!(list_agents_by_parent);
-    pg_contract_test!(list_agents_parentless_excluded);
-    pg_contract_test!(status_update_message);
-    pg_contract_test!(output_message);
-    pg_contract_test!(message_ordering);
-    pg_contract_test!(send_returns_id);
+    db_contract_test!(register_starts_pending);
+    db_contract_test!(register_duplicate_errors);
+    db_contract_test!(set_and_get_status);
+    db_contract_test!(status_lifecycle);
+    db_contract_test!(status_not_found);
+    db_contract_test!(set_status_not_found);
+    db_contract_test!(send_and_recv);
+    db_contract_test!(recv_filters_by_recipient);
+    db_contract_test!(cursor_tracks_position);
+    db_contract_test!(recv_empty);
+    db_contract_test!(permission_request_flow);
+    db_contract_test!(permission_denied_flow);
+    db_contract_test!(review_request_flow);
+    db_contract_test!(pending_permissions_filters_kind);
+    db_contract_test!(pending_reviews_filters_kind);
+    db_contract_test!(list_agents_all);
+    db_contract_test!(list_agents_by_parent);
+    db_contract_test!(list_agents_parentless_excluded);
+    db_contract_test!(status_update_message);
+    db_contract_test!(output_message);
+    db_contract_test!(message_ordering);
+    db_contract_test!(send_returns_id);
+
+    /// Postgres contract tests — requires DATABASE_URL env var.
+    mod postgres {
+        use super::*;
+
+        async fn pg_backend() -> Option<DbBackend> {
+            let url = std::env::var("DATABASE_URL").ok()?;
+            let backend = DbBackend::connect(&url).await.ok()?;
+            backend.create_tables().await.ok()?;
+
+            let db_backend = backend.db.get_database_backend();
+            let _ = backend
+                .db
+                .execute(Statement::from_string(
+                    db_backend,
+                    "DELETE FROM coordination_messages; DELETE FROM coordination_agents;"
+                        .to_string(),
+                ))
+                .await;
+
+            Some(backend)
+        }
+
+        macro_rules! pg_contract_test {
+            ($name:ident) => {
+                #[tokio::test]
+                async fn $name() {
+                    let Some(backend) = pg_backend().await else {
+                        eprintln!(
+                            "Skipping {}: no DATABASE_URL set",
+                            stringify!($name)
+                        );
+                        return;
+                    };
+                    contract_tests::$name(&backend).await;
+                }
+            };
+        }
+
+        pg_contract_test!(register_starts_pending);
+        pg_contract_test!(register_duplicate_errors);
+        pg_contract_test!(set_and_get_status);
+        pg_contract_test!(status_lifecycle);
+        pg_contract_test!(status_not_found);
+        pg_contract_test!(set_status_not_found);
+        pg_contract_test!(send_and_recv);
+        pg_contract_test!(recv_filters_by_recipient);
+        pg_contract_test!(cursor_tracks_position);
+        pg_contract_test!(recv_empty);
+        pg_contract_test!(permission_request_flow);
+        pg_contract_test!(permission_denied_flow);
+        pg_contract_test!(review_request_flow);
+        pg_contract_test!(pending_permissions_filters_kind);
+        pg_contract_test!(pending_reviews_filters_kind);
+        pg_contract_test!(list_agents_all);
+        pg_contract_test!(list_agents_by_parent);
+        pg_contract_test!(list_agents_parentless_excluded);
+        pg_contract_test!(status_update_message);
+        pg_contract_test!(output_message);
+        pg_contract_test!(message_ordering);
+        pg_contract_test!(send_returns_id);
+    }
 }
