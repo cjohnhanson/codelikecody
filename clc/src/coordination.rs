@@ -104,6 +104,7 @@ impl Coordination {
             .block_on(self.backend.pending_reviews(reviewer_id))
     }
 
+    #[allow(dead_code)] // Will replace filesystem scan when output format migrates.
     pub fn list_agents(
         &self,
         parent_id: Option<&str>,

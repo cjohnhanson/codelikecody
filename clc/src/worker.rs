@@ -32,31 +32,6 @@ struct WorkerInfo {
 
 /// List workers across worktrees. By default only shows live workers; pass `all=true` to include dead ones.
 pub fn list_workers(project_dir: &Path, all: bool) -> Result<(), Error> {
-    // Try coordination database first.
-    if let Ok(coord) = Coordination::open(project_dir) {
-        if let Ok(agents) = coord.list_agents(None) {
-            if !agents.is_empty() {
-                let visible: Vec<_> = agents
-                    .iter()
-                    .filter(|(_, s)| {
-                        all || *s == clc_sdk::coordination::AgentStatus::Running
-                    })
-                    .collect();
-
-                if visible.is_empty() {
-                    eprintln!("no workers");
-                    return Ok(());
-                }
-
-                for (id, status) in &visible {
-                    println!("{id}\t{status:?}");
-                }
-                return Ok(());
-            }
-        }
-    }
-
-    // Fall back to filesystem scan.
     let workers = collect_workers(project_dir)?;
 
     let visible: Vec<&WorkerInfo> = workers.iter().filter(|w| all || w.alive).collect();
