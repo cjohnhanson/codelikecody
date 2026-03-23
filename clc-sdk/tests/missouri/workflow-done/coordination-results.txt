@@ -1,0 +1,15 @@
+registered: 3
+worker-1 initial: Pending
+duplicate registration: rejected
+worker-1 running: Running
+pending permissions: 1
+worker-1 received grant: true
+coordinator received status: true
+coordinator received output: true
+pending reviews: 1
+worker-1 received approval: true
+worker-2 received denial: true
+coordinator children: 2
+final: coordinator=Pending, worker-1=Completed, worker-2=Running
+ghost agent: not found
+set ghost status: not found
