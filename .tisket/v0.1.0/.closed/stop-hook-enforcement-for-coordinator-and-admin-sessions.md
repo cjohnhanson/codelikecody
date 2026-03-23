@@ -1,8 +1,12 @@
 ---
 title: "Stop hook enforcement for coordinator and admin sessions"
-status: discovery
-labels:
-  - clc
+status: cancelled
+priority:
+assignee:
+labels: [clc]
+depends_on: []
+created: "2026-03-23T02:31:43Z"
+updated: "2026-03-23T02:31:43Z"
 ---
 
 ## Problem
