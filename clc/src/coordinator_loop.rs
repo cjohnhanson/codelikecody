@@ -198,7 +198,13 @@ fn tick(
 
         for id in pickable.iter().take(slots) {
             eprintln!("coordinator '{}': dispatching '{id}'", scope.id);
-            match crate::dispatch::dispatch(
+            let ws_type = match scope.workspace {
+                crate::config::WorkspaceType::Worktree => crate::dispatch::DispatchWorkspace::Worktree,
+                crate::config::WorkspaceType::Docker => crate::dispatch::DispatchWorkspace::Docker {
+                    image: scope.docker_image.clone(),
+                },
+            };
+            match crate::dispatch::dispatch_with_workspace(
                 project_dir,
                 id,
                 main_branch,
@@ -207,6 +213,7 @@ fn tick(
                 worker_perm_defaults,
                 worker_perm_deny,
                 Some(&scope.id),
+                &ws_type,
             ) {
                 Ok(()) => {}
                 Err(e) => eprintln!("coordinator '{}': dispatch failed for '{id}': {e}", scope.id),

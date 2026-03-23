@@ -14,6 +14,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use clc_sdk::agent::Agent;
+use clc_sdk::workspace::Workspace;
 
 use camino::Utf8Path;
 use nix::sys::stat::Mode;
@@ -28,6 +29,18 @@ use crate::pickup;
 /// Worker state directory name inside `.clc/`.
 const WORKER_DIR: &str = "worker";
 
+/// Workspace type for dispatch.
+pub enum DispatchWorkspace {
+    Worktree,
+    Docker { image: Option<String> },
+}
+
+impl Default for DispatchWorkspace {
+    fn default() -> Self {
+        Self::Worktree
+    }
+}
+
 pub fn dispatch(
     project_dir: &Path,
     id: &str,
@@ -37,6 +50,30 @@ pub fn dispatch(
     worker_perm_defaults: &[String],
     worker_perm_deny: &[String],
     coordinator_id: Option<&str>,
+) -> Result<(), Error> {
+    dispatch_with_workspace(
+        project_dir,
+        id,
+        main_branch,
+        admin_branch,
+        model,
+        worker_perm_defaults,
+        worker_perm_deny,
+        coordinator_id,
+        &DispatchWorkspace::default(),
+    )
+}
+
+pub fn dispatch_with_workspace(
+    project_dir: &Path,
+    id: &str,
+    main_branch: &str,
+    admin_branch: &str,
+    model: &str,
+    worker_perm_defaults: &[String],
+    worker_perm_deny: &[String],
+    coordinator_id: Option<&str>,
+    workspace_type: &DispatchWorkspace,
 ) -> Result<(), Error> {
     // Must be on main branch.
     let git_state = git::detect(project_dir, main_branch, admin_branch)
@@ -76,7 +113,7 @@ pub fn dispatch(
     let initial_prompt = build_worker_prompt(project_dir, id)?;
     let system_prompt = build_system_prompt(id);
 
-    // Spawn the worker via the Agent trait.
+    // Spawn the worker.
     let agent = clc_sdk::agent::ClaudeCodeAgent::new();
     let agent_config = clc_sdk::agent::AgentConfig {
         model: model.to_string(),
@@ -84,21 +121,51 @@ pub fn dispatch(
         initial_prompt: initial_prompt.clone(),
         extra_args: vec![],
     };
-    let cmd = agent
-        .build_start_command(&agent_config, &worktree_dir)
-        .map_err(|e| Error::NonBlocking(format!("failed to build agent command: {e}")))?;
 
-    let worker_dir = worktree_dir.join(".clc").join(WORKER_DIR);
-    let pid = spawn_agent_process(cmd, &worker_dir, &initial_prompt)?;
+    match workspace_type {
+        DispatchWorkspace::Worktree => {
+            let cmd = agent
+                .build_start_command(&agent_config, &worktree_dir)
+                .map_err(|e| Error::NonBlocking(format!("failed to build agent command: {e}")))?;
 
-    // Register the worker in the coordination database.
-    if let Ok(coord) = Coordination::open(project_dir) {
-        let _ = coord.register_agent(id, coordinator_id);
-        let _ = coord.set_status(id, clc_sdk::coordination::AgentStatus::Running);
-        let _ = coord.set_pid(id, Some(pid.cast_signed()));
+            let worker_dir = worktree_dir.join(".clc").join(WORKER_DIR);
+            let pid = spawn_agent_process(cmd, &worker_dir, &initial_prompt)?;
+
+            if let Ok(coord) = Coordination::open(project_dir) {
+                let _ = coord.register_agent(id, coordinator_id);
+                let _ = coord.set_status(id, clc_sdk::coordination::AgentStatus::Running);
+                let _ = coord.set_pid(id, Some(pid.cast_signed()));
+            }
+
+            eprintln!("dispatched worker for '{id}' (pid {pid})");
+        }
+        DispatchWorkspace::Docker { image } => {
+            let ws_config = clc_sdk::workspace::WorkspaceConfig {
+                tisket_id: id.to_string(),
+                project_dir: project_dir.to_path_buf(),
+                main_branch: main_branch.to_string(),
+                agent_config,
+            };
+
+            let mut workspace = crate::docker_workspace::DockerWorkspace::new(
+                ws_config,
+                Box::new(agent),
+                image.clone(),
+            )
+            .map_err(|e| Error::NonBlocking(format!("docker workspace: {e}")))?;
+
+            workspace
+                .start()
+                .map_err(|e| Error::NonBlocking(format!("docker workspace start: {e}")))?;
+
+            if let Ok(coord) = Coordination::open(project_dir) {
+                let _ = coord.register_agent(id, coordinator_id);
+                let _ = coord.set_status(id, clc_sdk::coordination::AgentStatus::Running);
+            }
+
+            eprintln!("dispatched worker for '{id}' (docker)");
+        }
     }
-
-    eprintln!("dispatched worker for '{id}' (pid {pid})");
 
     Ok(())
 }
