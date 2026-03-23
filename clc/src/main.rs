@@ -267,8 +267,6 @@ fn cmd_up() -> Result<(), Error> {
         &project_dir,
         &cfg.main_branch,
         &cfg.admin_branch,
-        &cfg.worker.permissions.default,
-        &cfg.worker.permissions.deny,
         &cfg.supervisor,
     );
     sup.run()

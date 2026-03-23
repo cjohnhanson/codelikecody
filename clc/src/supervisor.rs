@@ -1,8 +1,8 @@
 //! Supervisor: the `clc up` process.
 //!
-//! Non-agentic. Starts coordinator(s) in workspaces via the Workspace trait,
-//! monitors their health via the coordination DB, restarts crashed ones,
-//! surfaces escalations to the human.
+//! Non-agentic. Starts coordinator(s), monitors their health via the
+//! coordination DB, restarts crashed ones, surfaces escalations to the human.
+//! Coordinators run on trunk as `clc coordinator-run` processes.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -10,18 +10,14 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use clc_sdk::agent::{AgentConfig, ClaudeCodeAgent};
-use clc_sdk::workspace::{Workspace, WorkspaceConfig};
-
 use crate::config::{CoordinatorScope, SupervisorConfig};
 use crate::coordination::Coordination;
 use crate::error::Error;
 use crate::git;
-use crate::workspace::WorktreeWorkspace;
 
 struct CoordinatorState {
     scope: CoordinatorScope,
-    workspace: Option<WorktreeWorkspace>,
+    pid: Option<u32>,
     resume_count: u32,
     max_resumes: u32,
 }
@@ -30,8 +26,6 @@ pub struct Supervisor {
     project_dir: PathBuf,
     main_branch: String,
     admin_branch: String,
-    worker_perm_defaults: Vec<String>,
-    worker_perm_deny: Vec<String>,
     coordinators: Vec<CoordinatorState>,
     poll_interval: Duration,
     shutdown: Arc<AtomicBool>,
@@ -42,8 +36,6 @@ impl Supervisor {
         project_dir: &Path,
         main_branch: &str,
         admin_branch: &str,
-        worker_perm_defaults: &[String],
-        worker_perm_deny: &[String],
         config: &SupervisorConfig,
     ) -> Self {
         let coordinators = config
@@ -51,7 +43,7 @@ impl Supervisor {
             .iter()
             .map(|scope| CoordinatorState {
                 scope: scope.clone(),
-                workspace: None,
+                pid: None,
                 resume_count: 0,
                 max_resumes: 5,
             })
@@ -61,8 +53,6 @@ impl Supervisor {
             project_dir: project_dir.to_path_buf(),
             main_branch: main_branch.to_string(),
             admin_branch: admin_branch.to_string(),
-            worker_perm_defaults: worker_perm_defaults.to_vec(),
-            worker_perm_deny: worker_perm_deny.to_vec(),
             coordinators,
             poll_interval: Duration::from_secs(config.poll_interval),
             shutdown: Arc::new(AtomicBool::new(false)),
@@ -86,7 +76,6 @@ impl Supervisor {
         let _ = coord.register_agent("supervisor", None);
         let _ = coord.set_status("supervisor", clc_sdk::coordination::AgentStatus::Running);
 
-        // Install signal handler.
         let shutdown = Arc::clone(&self.shutdown);
         let _ = ctrlc::set_handler(move || {
             shutdown.store(true, Ordering::SeqCst);
@@ -94,20 +83,18 @@ impl Supervisor {
         });
 
         eprintln!(
-            "supervisor started ({} coordinator scope(s), poll every {:?})",
+            "supervisor started ({} coordinator(s), poll every {:?})",
             self.coordinators.len(),
             self.poll_interval
         );
 
-        // Start all coordinators.
         for i in 0..self.coordinators.len() {
             if self.shutdown.load(Ordering::SeqCst) {
                 break;
             }
-            self.start_coordinator(i, &coord);
+            self.start_coordinator(i);
         }
 
-        // Main loop.
         loop {
             if self.shutdown.load(Ordering::SeqCst) {
                 break;
@@ -115,26 +102,28 @@ impl Supervisor {
 
             let mut all_done = true;
             for i in 0..self.coordinators.len() {
-                let scope_id = &self.coordinators[i].scope.id;
-                let status = coord.get_status(scope_id);
-                match status {
-                    Ok(clc_sdk::coordination::AgentStatus::Completed) => {}
-                    Ok(clc_sdk::coordination::AgentStatus::Running) => {
+                let c = &self.coordinators[i];
+
+                // Check if process is alive.
+                if let Some(pid) = c.pid {
+                    if !is_process_alive(pid) {
+                        // Process exited. Check DB for status.
+                        let db_status = coord.get_status(&c.scope.id).ok();
+                        match db_status {
+                            Some(clc_sdk::coordination::AgentStatus::Completed) => {
+                                eprintln!("supervisor: coordinator '{}' completed", c.scope.id);
+                            }
+                            _ => {
+                                // Crashed or stopped — restart.
+                                all_done = false;
+                                self.restart_coordinator(i);
+                            }
+                        }
+                    } else {
                         all_done = false;
                     }
-                    Ok(
-                        clc_sdk::coordination::AgentStatus::Failed
-                        | clc_sdk::coordination::AgentStatus::Stopped,
-                    ) => {
-                        all_done = false;
-                        self.restart_coordinator(i, &coord);
-                    }
-                    Ok(clc_sdk::coordination::AgentStatus::Pending) => {
-                        all_done = false;
-                    }
-                    Err(_) => {
-                        all_done = false;
-                    }
+                } else {
+                    all_done = false;
                 }
             }
 
@@ -172,9 +161,12 @@ impl Supervisor {
 
         // Graceful shutdown.
         eprintln!("supervisor: stopping coordinators...");
-        for c in &mut self.coordinators {
-            if let Some(ref mut ws) = c.workspace {
-                let _ = ws.stop();
+        for c in &self.coordinators {
+            if let Some(pid) = c.pid {
+                if is_process_alive(pid) {
+                    let nix_pid = nix::unistd::Pid::from_raw(pid.cast_signed());
+                    let _ = nix::sys::signal::kill(nix_pid, nix::sys::signal::Signal::SIGTERM);
+                }
             }
         }
         let _ = coord.set_status("supervisor", clc_sdk::coordination::AgentStatus::Stopped);
@@ -182,59 +174,49 @@ impl Supervisor {
         Ok(())
     }
 
-    fn start_coordinator(&mut self, idx: usize, coord: &Coordination) {
+    fn start_coordinator(&mut self, idx: usize) {
         let scope = self.coordinators[idx].scope.clone();
         eprintln!("supervisor: starting coordinator '{}'", scope.id);
 
-        // Seed permissions for the coordinator workspace.
-        let _ = crate::permissions::seed_defaults(
-            &self.project_dir,
-            &self.worker_perm_defaults,
-            &self.worker_perm_deny,
+        let mut cmd = std::process::Command::new(
+            std::env::current_exe().unwrap_or_else(|_| "clc".into()),
         );
+        cmd.arg("coordinator-run");
+        cmd.arg("--id").arg(&scope.id);
+        cmd.arg("--max-workers").arg(scope.max_workers.to_string());
+        cmd.arg("--model").arg(&scope.model);
 
-        // Build coordinator system prompt with scope context.
-        let system_prompt = build_coordinator_system_prompt(&scope);
-        let initial_prompt = build_coordinator_initial_prompt(&scope);
+        if let Some(ref project) = scope.project {
+            cmd.arg("--project").arg(project);
+        }
+        if let Some(ref label) = scope.label {
+            cmd.arg("--label").arg(label);
+        }
+        if let Some(ref exclude_label) = scope.exclude_label {
+            cmd.arg("--exclude-label").arg(exclude_label);
+        }
+        for pattern in &scope.auto_grant {
+            cmd.arg("--auto-grant").arg(pattern);
+        }
+        for pattern in &scope.always_escalate {
+            cmd.arg("--always-escalate").arg(pattern);
+        }
 
-        let config = WorkspaceConfig {
-            tisket_id: scope.id.clone(),
-            project_dir: self.project_dir.clone(),
-            main_branch: self.main_branch.clone(),
-            agent_config: AgentConfig {
-                model: scope.model.clone(),
-                system_prompt,
-                initial_prompt,
-                extra_args: vec![],
-            },
-        };
+        cmd.current_dir(&self.project_dir);
 
-        let mut workspace = WorktreeWorkspace::new(
-            config,
-            Box::new(ClaudeCodeAgent::new()),
-        );
-
-        match workspace.start() {
-            Ok(()) => {
-                eprintln!("supervisor: coordinator '{}' started", scope.id);
-                // Register in coordination DB.
-                let _ = coord.register_agent(&scope.id, Some("supervisor"));
-                let _ = coord.set_status(
-                    &scope.id,
-                    clc_sdk::coordination::AgentStatus::Running,
-                );
-                self.coordinators[idx].workspace = Some(workspace);
+        match cmd.spawn() {
+            Ok(child) => {
+                let pid = child.id();
+                self.coordinators[idx].pid = Some(pid);
+                eprintln!("supervisor: coordinator '{}' started (pid {pid})", scope.id);
             }
             Err(e) => {
-                eprintln!(
-                    "supervisor: failed to start coordinator '{}': {e}",
-                    scope.id
-                );
+                eprintln!("supervisor: failed to start coordinator '{}': {e}", scope.id);
             }
         }
     }
 
-    fn restart_coordinator(&mut self, idx: usize, coord: &Coordination) {
+    fn restart_coordinator(&mut self, idx: usize) {
         let c = &mut self.coordinators[idx];
         if c.resume_count >= c.max_resumes {
             eprintln!(
@@ -248,50 +230,10 @@ impl Supervisor {
             "supervisor: restarting coordinator '{}' ({}/{})",
             c.scope.id, c.resume_count, c.max_resumes
         );
-        self.start_coordinator(idx, coord);
+        self.start_coordinator(idx);
     }
 }
 
-fn build_coordinator_system_prompt(scope: &CoordinatorScope) -> String {
-    let mut prompt = String::from(
-        "You are a coordinator agent managing autonomous workers. \
-         Your tools are clc commands: `clc dispatch`, `clc land`, \
-         `clc workers`, `clc worker <id> check`, `clc worker <id> send`, \
-         `clc permissions grant/deny/list`. \
-         Monitor workers, handle permission requests, land completed work, \
-         and resume stuck workers.",
-    );
-
-    if !scope.auto_grant.is_empty() {
-        prompt.push_str("\n\nAuto-grant these permission patterns without asking: ");
-        prompt.push_str(&scope.auto_grant.join(", "));
-    }
-
-    if !scope.always_escalate.is_empty() {
-        prompt.push_str("\n\nAlways escalate these to the admin: ");
-        prompt.push_str(&scope.always_escalate.join(", "));
-    }
-
-    prompt
-}
-
-fn build_coordinator_initial_prompt(scope: &CoordinatorScope) -> String {
-    let mut prompt = format!(
-        "You are coordinator '{}'. ",
-        scope.id
-    );
-
-    if let Some(ref project) = scope.project {
-        prompt.push_str(&format!("Scope: project '{project}'. "));
-    }
-    if let Some(ref label) = scope.label {
-        prompt.push_str(&format!("Label filter: '{label}'. "));
-    }
-
-    prompt.push_str(
-        "Check for pickable tiskets with `tisket issue list` and dispatch workers. \
-         Monitor their progress. Land completed work. Handle permissions."
-    );
-
-    prompt
+fn is_process_alive(pid: u32) -> bool {
+    nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid.cast_signed()), None).is_ok()
 }
