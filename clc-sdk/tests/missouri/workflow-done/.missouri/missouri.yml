@@ -1,0 +1,33 @@
+assertions:
+  - name: "results file was written"
+    command: "test -f coordination-results.txt"
+
+  - name: "all agents registered"
+    command: "grep -q 'registered: 3' coordination-results.txt"
+
+  - name: "duplicate registration rejected"
+    command: "grep -q 'duplicate registration: rejected' coordination-results.txt"
+
+  - name: "permission grant delivered"
+    command: "grep -q 'worker-1 received grant: true' coordination-results.txt"
+
+  - name: "permission denial delivered"
+    command: "grep -q 'worker-2 received denial: true' coordination-results.txt"
+
+  - name: "review approval delivered"
+    command: "grep -q 'worker-1 received approval: true' coordination-results.txt"
+
+  - name: "status update received by coordinator"
+    command: "grep -q 'coordinator received status: true' coordination-results.txt"
+
+  - name: "output received by coordinator"
+    command: "grep -q 'coordinator received output: true' coordination-results.txt"
+
+  - name: "parent filter returns correct count"
+    command: "grep -q 'coordinator children: 2' coordination-results.txt"
+
+  - name: "final statuses correct"
+    command: "grep -q 'final: coordinator=Pending, worker-1=Completed, worker-2=Running' coordination-results.txt"
+
+  - name: "nonexistent agent not found"
+    command: "grep -q 'ghost agent: not found' coordination-results.txt"

@@ -2,6 +2,7 @@ use std::fmt;
 use std::path::Path;
 use std::str::FromStr;
 
+use crate::coordination::Coordination;
 use crate::error::Error;
 
 const STATE_FILENAME: &str = "state";
@@ -196,7 +197,37 @@ pub fn set(project_dir: &Path, target: &str, required_attempts: u32) -> Result<(
     }
 
     // Transition succeeds — write new phase with attempts reset.
-    write_state(project_dir, target_phase, 0)
+    write_state(project_dir, target_phase, 0)?;
+
+    // Record phase transition in coordination database if it already exists.
+    // Don't create the DB here — phase::set runs in contexts (bare tests,
+    // pickup) where creating coordination.db would be a surprise side effect.
+    let db_path = project_dir.join(".clc").join("coordination.db");
+    if db_path.exists() {
+        if let Ok(coord) = Coordination::open(project_dir) {
+            let branch = crate::git::current_branch(project_dir).unwrap_or_default();
+            let msg = clc_sdk::coordination::Message {
+                id: format!(
+                    "phase-{}-{}",
+                    target_phase,
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis()
+                ),
+                from: branch,
+                to: "coordinator".into(),
+                kind: clc_sdk::coordination::MessageKind::StatusUpdate {
+                    phase: target_phase.to_string(),
+                    detail: format!("transitioned to {target_phase}"),
+                },
+                timestamp: std::time::SystemTime::now(),
+            };
+            let _ = coord.send(msg);
+        }
+    }
+
+    Ok(())
 }
 
 fn write_state(project_dir: &Path, phase: Phase, attempts: u32) -> Result<(), Error> {

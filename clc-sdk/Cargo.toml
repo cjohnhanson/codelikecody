@@ -15,8 +15,19 @@ module_name_repetitions = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 
+[features]
+default = []
+postgres = ["sea-orm/sqlx-postgres", "sea-orm/runtime-tokio-rustls", "dep:sea-orm", "dep:chrono"]
+sqlite = ["sea-orm/sqlx-sqlite", "sea-orm/runtime-tokio-rustls", "dep:sea-orm", "dep:chrono"]
+
 [dependencies]
+async-trait = "0.1"
 claude-code = { path = "../claude-code" }
+chrono = { version = "0.4", optional = true }
+sea-orm = { version = "1", optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [dev-dependencies]
 tempfile = "3.26.0"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros"] }

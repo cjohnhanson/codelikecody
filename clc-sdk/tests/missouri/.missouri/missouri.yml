@@ -1,0 +1,5 @@
+setup:
+  - name: "build coordination exercise"
+    command: "cargo build --quiet -p clc-sdk --example coordination_exercise --manifest-path ../../../Cargo.toml"
+  - name: "link binary into project bin"
+    command: "mkdir -p .missouri/bin && ln -sf $(cd ../../.. && pwd)/target/debug/examples/coordination_exercise .missouri/bin/coordination-exercise"

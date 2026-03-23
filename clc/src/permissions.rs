@@ -9,6 +9,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::coordination::Coordination;
 use crate::error::Error;
 use crate::worker;
 
@@ -55,6 +56,26 @@ pub fn request(cwd: &Path, description: &str) -> Result<(), Error> {
     let json = serde_json::to_string_pretty(&req)?;
     fs::write(&request_path, json)?;
 
+    // Also record in coordination database if it exists.
+    let db_path = cwd.join(".clc").join("coordination.db");
+    if db_path.exists() {
+    if let Ok(coord) = Coordination::open(cwd) {
+        let msg = clc_sdk::coordination::Message {
+            id: format!("perm-req-{}", std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis()),
+            from: cwd.file_name().unwrap_or_default().to_string_lossy().to_string(),
+            to: "coordinator".into(),
+            kind: clc_sdk::coordination::MessageKind::PermissionRequest {
+                tool_name: description.to_string(),
+                reason: description.to_string(),
+            },
+            timestamp: std::time::SystemTime::now(),
+        };
+        let _ = coord.send(msg);
+    }}
+
     eprintln!(
         "Permission request filed: \"{description}\"\n\
          Stopping to await coordinator approval. \
@@ -94,6 +115,30 @@ pub fn grant(project_dir: &Path, worker_id: &str, permission: &str) -> Result<()
         .join(format!("{worker_id}.json"));
     if escalation_path.exists() {
         fs::remove_file(&escalation_path)?;
+    }
+
+    // Record grant in coordination DB.
+    let db_path = project_dir.join(".clc").join("coordination.db");
+    if db_path.exists() {
+        if let Ok(coord) = Coordination::open(project_dir) {
+            let msg = clc_sdk::coordination::Message {
+                id: format!(
+                    "perm-grant-{}",
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis()
+                ),
+                from: "coordinator".into(),
+                to: worker_id.into(),
+                kind: clc_sdk::coordination::MessageKind::PermissionGrant {
+                    request_id: format!("perm-req:{worker_id}"),
+                    scope: permission.to_string(),
+                },
+                timestamp: std::time::SystemTime::now(),
+            };
+            let _ = coord.send(msg);
+        }
     }
 
     eprintln!(
@@ -320,8 +365,29 @@ fn add_permission_rule(settings_path: &Path, permission: &str) -> Result<(), Err
 
 /// List pending permission requests across all workers.
 ///
-/// Checks coordinator on trunk and all worktree workers.
+/// Checks coordination database first, falls back to filesystem scan.
 pub fn list(project_dir: &Path) -> Result<(), Error> {
+    // Try coordination database first, if it exists.
+    let db_path = project_dir.join(".clc").join("coordination.db");
+    if db_path.exists() {
+    if let Ok(coord) = Coordination::open(project_dir) {
+        if let Ok(pending) = coord.pending_permissions("coordinator") {
+            if !pending.is_empty() {
+                for msg in &pending {
+                    if let clc_sdk::coordination::MessageKind::PermissionRequest {
+                        ref tool_name,
+                        ref reason,
+                    } = msg.kind
+                    {
+                        println!("{}\t{tool_name}: {reason}", msg.from);
+                    }
+                }
+                return Ok(());
+            }
+        }
+    }}
+
+    // Fall back to filesystem scan.
     let mut found = false;
 
     // Check coordinator on trunk.
@@ -399,6 +465,30 @@ pub fn escalate(project_dir: &Path, worker_id: &str, description: &str) -> Resul
     let json = serde_json::to_string_pretty(&escalation)?;
     fs::write(&path, json)?;
 
+    // Record escalation in coordination DB.
+    let db_path = project_dir.join(".clc").join("coordination.db");
+    if db_path.exists() {
+        if let Ok(coord) = Coordination::open(project_dir) {
+            let msg = clc_sdk::coordination::Message {
+                id: format!(
+                    "escalation-{}",
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis()
+                ),
+                from: "coordinator".into(),
+                to: "admin".into(),
+                kind: clc_sdk::coordination::MessageKind::PermissionRequest {
+                    tool_name: format!("escalation:{worker_id}"),
+                    reason: description.to_string(),
+                },
+                timestamp: std::time::SystemTime::now(),
+            };
+            let _ = coord.send(msg);
+        }
+    }
+
     eprintln!(
         "Escalated to user: worker '{worker_id}' — {description}\n\
          User: run `clc permissions inbox` to review pending escalations."
@@ -431,6 +521,30 @@ pub fn deny(project_dir: &Path, worker_id: &str, reason: &str) -> Result<(), Err
         req.denial_reason = Some(reason.to_string());
         let json = serde_json::to_string_pretty(&req)?;
         fs::write(&request_path, json)?;
+    }
+
+    // Record denial in coordination DB.
+    let db_path = project_dir.join(".clc").join("coordination.db");
+    if db_path.exists() {
+        if let Ok(coord) = Coordination::open(project_dir) {
+            let msg = clc_sdk::coordination::Message {
+                id: format!(
+                    "perm-deny-{}",
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis()
+                ),
+                from: "admin".into(),
+                to: worker_id.into(),
+                kind: clc_sdk::coordination::MessageKind::PermissionDenied {
+                    request_id: format!("escalation:{worker_id}"),
+                    reason: reason.to_string(),
+                },
+                timestamp: std::time::SystemTime::now(),
+            };
+            let _ = coord.send(msg);
+        }
     }
 
     eprintln!(

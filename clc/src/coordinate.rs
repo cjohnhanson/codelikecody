@@ -176,6 +176,15 @@ pub fn coordinate_with<W: Workspace>(
     Ok(())
 }
 
+/// Public entry point for resolving the permission policy.
+#[allow(dead_code)]
+pub fn resolve_policy_pub(
+    config: &CoordinatorConfig,
+    filters: &CoordinateFilters<'_>,
+) -> Result<PermissionPolicy, Error> {
+    resolve_policy(config, filters)
+}
+
 /// Resolve the permission policy from config, CLI flags, and optional external file.
 ///
 /// Merging order: config → grant-config file → CLI flags. Duplicates are preserved

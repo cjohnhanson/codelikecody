@@ -1,0 +1,673 @@
+//! Database-backed [`CoordinationBackend`] via SeaORM.
+//!
+//! Works with both SQLite and Postgres. Enabled by the `sqlite` or
+//! `postgres` feature flags respectively.
+
+use sea_orm::entity::prelude::*;
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseConnection,
+    EntityTrait, QueryFilter, QueryOrder, Set, Statement,
+};
+
+use crate::coordination::{
+    AgentId, AgentStatus, CoordinationBackend, CoordinationError, Cursor,
+    Message, MessageId, MessageKind, ReviewVerdict,
+};
+
+/// SeaORM entity for the `coordination_agents` table.
+mod agent_entity {
+    use sea_orm::entity::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
+    #[sea_orm(table_name = "coordination_agents")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: String,
+        pub parent_id: Option<String>,
+        pub status: String,
+        pub pid: Option<i32>,
+        pub created_at: DateTimeUtc,
+        pub updated_at: DateTimeUtc,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+/// SeaORM entity for the `coordination_messages` table.
+mod message_entity {
+    use sea_orm::entity::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
+    #[sea_orm(table_name = "coordination_messages")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: String,
+        /// Auto-incrementing sequence for cursor-based retrieval.
+        /// Database assigns the value on insert (BIGSERIAL/AUTOINCREMENT).
+        #[sea_orm(unique, default_value = "0")]
+        pub seq: i64,
+        pub from_agent: String,
+        pub to_agent: String,
+        /// Message kind discriminator (text, output, permission_request, etc.).
+        pub kind: String,
+        /// JSON payload for the message kind's fields.
+        pub payload: String,
+        pub created_at: DateTimeUtc,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+/// Database-backed coordination backend via SeaORM.
+///
+/// Works with any SeaORM-supported database (SQLite, Postgres).
+/// The database type is detected from the connection and appropriate
+/// DDL is used for table creation.
+pub struct DbBackend {
+    db: DatabaseConnection,
+}
+
+impl DbBackend {
+    /// Create a new backend from an existing database connection.
+    pub fn new(db: DatabaseConnection) -> Self {
+        Self { db }
+    }
+
+    /// Connect to a database by URL and create a backend.
+    ///
+    /// SQLite: `sqlite:///path/to/db.sqlite?mode=rwc`
+    /// Postgres: `postgres://user@host/dbname`
+    pub async fn connect(url: &str) -> Result<Self, CoordinationError> {
+        let db = sea_orm::Database::connect(url)
+            .await
+            .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+        Ok(Self { db })
+    }
+
+    /// Create the tables if they don't exist. Call once at startup.
+    pub async fn create_tables(&self) -> Result<(), CoordinationError> {
+        let backend = self.db.get_database_backend();
+        let statements: &[&str] = match backend {
+            sea_orm::DatabaseBackend::Postgres => &POSTGRES_DDL,
+            sea_orm::DatabaseBackend::Sqlite => &SQLITE_DDL,
+            sea_orm::DatabaseBackend::MySql => {
+                return Err(CoordinationError::Storage(
+                    "MySQL not supported".to_string(),
+                ));
+            }
+        };
+
+        for sql in statements {
+            self.db
+                .execute(Statement::from_string(backend, (*sql).to_string()))
+                .await
+                .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+        }
+
+        Ok(())
+    }
+
+    /// Access the underlying database connection.
+    pub fn connection(&self) -> &DatabaseConnection {
+        &self.db
+    }
+}
+
+const POSTGRES_DDL: &[&str] = &[
+    "CREATE TABLE IF NOT EXISTS coordination_agents (
+        id TEXT PRIMARY KEY,
+        parent_id TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        pid INTEGER,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )",
+    "CREATE TABLE IF NOT EXISTS coordination_messages (
+        id TEXT PRIMARY KEY,
+        seq BIGSERIAL UNIQUE NOT NULL,
+        from_agent TEXT NOT NULL,
+        to_agent TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        payload TEXT NOT NULL DEFAULT '{}',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )",
+    "CREATE INDEX IF NOT EXISTS idx_messages_to_seq
+        ON coordination_messages (to_agent, seq)",
+    "CREATE INDEX IF NOT EXISTS idx_messages_kind_to
+        ON coordination_messages (kind, to_agent)",
+];
+
+const SQLITE_DDL: &[&str] = &[
+    "CREATE TABLE IF NOT EXISTS coordination_agents (
+        id TEXT PRIMARY KEY,
+        parent_id TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        pid INTEGER,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )",
+    "CREATE TABLE IF NOT EXISTS coordination_messages (
+        id TEXT PRIMARY KEY,
+        seq INTEGER,
+        from_agent TEXT NOT NULL,
+        to_agent TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        payload TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )",
+    "CREATE INDEX IF NOT EXISTS idx_messages_to_seq
+        ON coordination_messages (to_agent, seq)",
+    "CREATE INDEX IF NOT EXISTS idx_messages_kind_to
+        ON coordination_messages (kind, to_agent)",
+];
+
+fn status_to_str(status: &AgentStatus) -> &'static str {
+    match status {
+        AgentStatus::Pending => "pending",
+        AgentStatus::Running => "running",
+        AgentStatus::Completed => "completed",
+        AgentStatus::Failed => "failed",
+        AgentStatus::Stopped => "stopped",
+    }
+}
+
+fn str_to_status(s: &str) -> Result<AgentStatus, CoordinationError> {
+    match s {
+        "pending" => Ok(AgentStatus::Pending),
+        "running" => Ok(AgentStatus::Running),
+        "completed" => Ok(AgentStatus::Completed),
+        "failed" => Ok(AgentStatus::Failed),
+        "stopped" => Ok(AgentStatus::Stopped),
+        other => Err(CoordinationError::Storage(format!(
+            "unknown agent status: {other}"
+        ))),
+    }
+}
+
+fn kind_to_str(kind: &MessageKind) -> &'static str {
+    match kind {
+        MessageKind::Text(_) => "text",
+        MessageKind::Output(_) => "output",
+        MessageKind::PermissionRequest { .. } => "permission_request",
+        MessageKind::PermissionGrant { .. } => "permission_grant",
+        MessageKind::PermissionDenied { .. } => "permission_denied",
+        MessageKind::ReviewRequest { .. } => "review_request",
+        MessageKind::ReviewResult { .. } => "review_result",
+        MessageKind::StatusUpdate { .. } => "status_update",
+    }
+}
+
+fn kind_to_payload(kind: &MessageKind) -> String {
+    match kind {
+        MessageKind::Text(t) => serde_json::json!({ "text": t }).to_string(),
+        MessageKind::Output(t) => serde_json::json!({ "output": t }).to_string(),
+        MessageKind::PermissionRequest { tool_name, reason } => {
+            serde_json::json!({ "tool_name": tool_name, "reason": reason }).to_string()
+        }
+        MessageKind::PermissionGrant { request_id, scope } => {
+            serde_json::json!({ "request_id": request_id, "scope": scope }).to_string()
+        }
+        MessageKind::PermissionDenied { request_id, reason } => {
+            serde_json::json!({ "request_id": request_id, "reason": reason }).to_string()
+        }
+        MessageKind::ReviewRequest { branch, summary } => {
+            serde_json::json!({ "branch": branch, "summary": summary }).to_string()
+        }
+        MessageKind::ReviewResult {
+            request_id,
+            verdict,
+            comments,
+        } => {
+            let v = match verdict {
+                ReviewVerdict::Approved => "approved",
+                ReviewVerdict::ChangesRequested => "changes_requested",
+                ReviewVerdict::Rejected => "rejected",
+            };
+            serde_json::json!({ "request_id": request_id, "verdict": v, "comments": comments })
+                .to_string()
+        }
+        MessageKind::StatusUpdate { phase, detail } => {
+            serde_json::json!({ "phase": phase, "detail": detail }).to_string()
+        }
+    }
+}
+
+fn payload_to_kind(
+    kind_str: &str,
+    payload: &str,
+) -> Result<MessageKind, CoordinationError> {
+    let v: serde_json::Value = serde_json::from_str(payload)
+        .map_err(|e| CoordinationError::Storage(format!("bad payload JSON: {e}")))?;
+
+    match kind_str {
+        "text" => Ok(MessageKind::Text(
+            v["text"].as_str().unwrap_or_default().to_string(),
+        )),
+        "output" => Ok(MessageKind::Output(
+            v["output"].as_str().unwrap_or_default().to_string(),
+        )),
+        "permission_request" => Ok(MessageKind::PermissionRequest {
+            tool_name: v["tool_name"].as_str().unwrap_or_default().to_string(),
+            reason: v["reason"].as_str().unwrap_or_default().to_string(),
+        }),
+        "permission_grant" => Ok(MessageKind::PermissionGrant {
+            request_id: v["request_id"].as_str().unwrap_or_default().to_string(),
+            scope: v["scope"].as_str().unwrap_or_default().to_string(),
+        }),
+        "permission_denied" => Ok(MessageKind::PermissionDenied {
+            request_id: v["request_id"].as_str().unwrap_or_default().to_string(),
+            reason: v["reason"].as_str().unwrap_or_default().to_string(),
+        }),
+        "review_request" => Ok(MessageKind::ReviewRequest {
+            branch: v["branch"].as_str().unwrap_or_default().to_string(),
+            summary: v["summary"].as_str().unwrap_or_default().to_string(),
+        }),
+        "review_result" => {
+            let verdict = match v["verdict"].as_str().unwrap_or_default() {
+                "approved" => ReviewVerdict::Approved,
+                "changes_requested" => ReviewVerdict::ChangesRequested,
+                "rejected" => ReviewVerdict::Rejected,
+                other => {
+                    return Err(CoordinationError::Storage(format!(
+                        "unknown verdict: {other}"
+                    )));
+                }
+            };
+            Ok(MessageKind::ReviewResult {
+                request_id: v["request_id"].as_str().unwrap_or_default().to_string(),
+                verdict,
+                comments: v["comments"].as_str().unwrap_or_default().to_string(),
+            })
+        }
+        "status_update" => Ok(MessageKind::StatusUpdate {
+            phase: v["phase"].as_str().unwrap_or_default().to_string(),
+            detail: v["detail"].as_str().unwrap_or_default().to_string(),
+        }),
+        other => Err(CoordinationError::Storage(format!(
+            "unknown message kind: {other}"
+        ))),
+    }
+}
+
+fn model_to_message(
+    model: &message_entity::Model,
+) -> Result<Message, CoordinationError> {
+    let kind = payload_to_kind(&model.kind, &model.payload)?;
+    Ok(Message {
+        id: model.id.clone(),
+        from: model.from_agent.clone(),
+        to: model.to_agent.clone(),
+        kind,
+        timestamp: model.created_at.into(),
+    })
+}
+
+#[async_trait::async_trait]
+impl CoordinationBackend for DbBackend {
+    async fn register_agent(
+        &self,
+        id: &str,
+        parent_id: Option<&str>,
+    ) -> Result<(), CoordinationError> {
+        let existing = agent_entity::Entity::find_by_id(id.to_string())
+            .one(&self.db)
+            .await
+            .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+
+        if existing.is_some() {
+            return Err(CoordinationError::InvalidState(format!(
+                "agent {id} already registered"
+            )));
+        }
+
+        let now = chrono::Utc::now();
+        let model = agent_entity::ActiveModel {
+            id: Set(id.to_string()),
+            parent_id: Set(parent_id.map(str::to_string)),
+            status: Set("pending".to_string()),
+            pid: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+        };
+
+        model
+            .insert(&self.db)
+            .await
+            .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn set_status(
+        &self,
+        agent_id: &str,
+        status: AgentStatus,
+    ) -> Result<(), CoordinationError> {
+        let existing = agent_entity::Entity::find_by_id(agent_id.to_string())
+            .one(&self.db)
+            .await
+            .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+
+        let model = existing
+            .ok_or_else(|| CoordinationError::NotFound(agent_id.to_string()))?;
+
+        let mut active: agent_entity::ActiveModel = model.into();
+        active.status = Set(status_to_str(&status).to_string());
+        active.updated_at = Set(chrono::Utc::now());
+
+        active
+            .update(&self.db)
+            .await
+            .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn get_status(
+        &self,
+        agent_id: &str,
+    ) -> Result<AgentStatus, CoordinationError> {
+        let model = agent_entity::Entity::find_by_id(agent_id.to_string())
+            .one(&self.db)
+            .await
+            .map_err(|e| CoordinationError::Storage(e.to_string()))?
+            .ok_or_else(|| CoordinationError::NotFound(agent_id.to_string()))?;
+
+        str_to_status(&model.status)
+    }
+
+    async fn send(
+        &self,
+        msg: Message,
+    ) -> Result<MessageId, CoordinationError> {
+        let id = msg.id.clone();
+
+        // SQLite lacks BIGSERIAL; compute next seq manually.
+        // Postgres uses BIGSERIAL (NotSet lets the DB assign it).
+        let seq = if self.db.get_database_backend() == sea_orm::DatabaseBackend::Sqlite {
+            let row = self.db
+                .query_one(Statement::from_string(
+                    sea_orm::DatabaseBackend::Sqlite,
+                    "SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM coordination_messages".to_string(),
+                ))
+                .await
+                .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+            let next: i64 = row
+                .map(|r| r.try_get_by_index::<i64>(0).unwrap_or(1))
+                .unwrap_or(1);
+            Set(next)
+        } else {
+            sea_orm::ActiveValue::NotSet
+        };
+
+        let model = message_entity::ActiveModel {
+            id: Set(msg.id),
+            seq,
+            from_agent: Set(msg.from),
+            to_agent: Set(msg.to),
+            kind: Set(kind_to_str(&msg.kind).to_string()),
+            payload: Set(kind_to_payload(&msg.kind)),
+            created_at: Set(chrono::Utc::now()),
+        };
+
+        model
+            .insert(&self.db)
+            .await
+            .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+
+        Ok(id)
+    }
+
+    async fn recv(
+        &self,
+        agent_id: &str,
+        cursor: &Cursor,
+    ) -> Result<(Vec<Message>, Cursor), CoordinationError> {
+        let models = message_entity::Entity::find()
+            .filter(
+                Condition::all()
+                    .add(message_entity::Column::ToAgent.eq(agent_id))
+                    .add(message_entity::Column::Seq.gt(cursor.0)),
+            )
+            .order_by_asc(message_entity::Column::Seq)
+            .all(&self.db)
+            .await
+            .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+
+        let new_cursor = models
+            .last()
+            .map_or(Cursor(cursor.0), |m| Cursor(m.seq));
+
+        let msgs: Result<Vec<_>, _> =
+            models.iter().map(model_to_message).collect();
+
+        Ok((msgs?, new_cursor))
+    }
+
+    async fn pending_permissions(
+        &self,
+        grantor_id: &str,
+    ) -> Result<Vec<Message>, CoordinationError> {
+        let models = message_entity::Entity::find()
+            .filter(
+                Condition::all()
+                    .add(message_entity::Column::ToAgent.eq(grantor_id))
+                    .add(message_entity::Column::Kind.eq("permission_request")),
+            )
+            .order_by_asc(message_entity::Column::Seq)
+            .all(&self.db)
+            .await
+            .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+
+        models.iter().map(model_to_message).collect()
+    }
+
+    async fn pending_reviews(
+        &self,
+        reviewer_id: &str,
+    ) -> Result<Vec<Message>, CoordinationError> {
+        let models = message_entity::Entity::find()
+            .filter(
+                Condition::all()
+                    .add(message_entity::Column::ToAgent.eq(reviewer_id))
+                    .add(message_entity::Column::Kind.eq("review_request")),
+            )
+            .order_by_asc(message_entity::Column::Seq)
+            .all(&self.db)
+            .await
+            .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+
+        models.iter().map(model_to_message).collect()
+    }
+
+    async fn list_agents(
+        &self,
+        parent_id: Option<&str>,
+    ) -> Result<Vec<(AgentId, AgentStatus)>, CoordinationError> {
+        let query = match parent_id {
+            None => agent_entity::Entity::find(),
+            Some(pid) => agent_entity::Entity::find()
+                .filter(agent_entity::Column::ParentId.eq(pid.to_string())),
+        };
+
+        let models = query
+            .all(&self.db)
+            .await
+            .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+
+        models
+            .iter()
+            .map(|m| {
+                let status = str_to_status(&m.status)?;
+                Ok((m.id.clone(), status))
+            })
+            .collect()
+    }
+}
+
+impl DbBackend {
+    /// Store a process ID for an agent. Not part of the trait — specific to
+    /// process-based agent implementations.
+    pub async fn set_pid(
+        &self,
+        agent_id: &str,
+        pid: Option<i32>,
+    ) -> Result<(), CoordinationError> {
+        let existing = agent_entity::Entity::find_by_id(agent_id.to_string())
+            .one(&self.db)
+            .await
+            .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+
+        let model = existing
+            .ok_or_else(|| CoordinationError::NotFound(agent_id.to_string()))?;
+
+        let mut active: agent_entity::ActiveModel = model.into();
+        active.pid = Set(pid);
+        active.updated_at = Set(chrono::Utc::now());
+
+        active
+            .update(&self.db)
+            .await
+            .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Get the stored PID for an agent.
+    pub async fn get_pid(
+        &self,
+        agent_id: &str,
+    ) -> Result<Option<i32>, CoordinationError> {
+        let model = agent_entity::Entity::find_by_id(agent_id.to_string())
+            .one(&self.db)
+            .await
+            .map_err(|e| CoordinationError::Storage(e.to_string()))?
+            .ok_or_else(|| CoordinationError::NotFound(agent_id.to_string()))?;
+
+        Ok(model.pid)
+    }
+}
+
+/// Convenience alias for the Postgres-backed variant.
+pub type PostgresBackend = DbBackend;
+
+/// Convenience alias for the SQLite-backed variant.
+pub type SqliteBackend = DbBackend;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::coordination::contract_tests;
+
+    async fn sqlite_backend() -> DbBackend {
+        let backend = DbBackend::connect("sqlite::memory:")
+            .await
+            .expect("connect to in-memory SQLite");
+        backend
+            .create_tables()
+            .await
+            .expect("create tables in SQLite");
+        backend
+    }
+
+    macro_rules! db_contract_test {
+        ($name:ident) => {
+            #[tokio::test]
+            async fn $name() {
+                let backend = sqlite_backend().await;
+                contract_tests::$name(&backend).await;
+            }
+        };
+    }
+
+    db_contract_test!(register_starts_pending);
+    db_contract_test!(register_duplicate_errors);
+    db_contract_test!(set_and_get_status);
+    db_contract_test!(status_lifecycle);
+    db_contract_test!(status_not_found);
+    db_contract_test!(set_status_not_found);
+    db_contract_test!(send_and_recv);
+    db_contract_test!(recv_filters_by_recipient);
+    db_contract_test!(cursor_tracks_position);
+    db_contract_test!(recv_empty);
+    db_contract_test!(permission_request_flow);
+    db_contract_test!(permission_denied_flow);
+    db_contract_test!(review_request_flow);
+    db_contract_test!(pending_permissions_filters_kind);
+    db_contract_test!(pending_reviews_filters_kind);
+    db_contract_test!(list_agents_all);
+    db_contract_test!(list_agents_by_parent);
+    db_contract_test!(list_agents_parentless_excluded);
+    db_contract_test!(status_update_message);
+    db_contract_test!(output_message);
+    db_contract_test!(message_ordering);
+    db_contract_test!(send_returns_id);
+
+    /// Postgres contract tests — requires DATABASE_URL env var.
+    mod postgres {
+        use super::*;
+
+        async fn pg_backend() -> Option<DbBackend> {
+            let url = std::env::var("DATABASE_URL").ok()?;
+            let backend = DbBackend::connect(&url).await.ok()?;
+            backend.create_tables().await.ok()?;
+
+            let db_backend = backend.db.get_database_backend();
+            let _ = backend
+                .db
+                .execute(Statement::from_string(
+                    db_backend,
+                    "DELETE FROM coordination_messages; DELETE FROM coordination_agents;"
+                        .to_string(),
+                ))
+                .await;
+
+            Some(backend)
+        }
+
+        macro_rules! pg_contract_test {
+            ($name:ident) => {
+                #[tokio::test]
+                async fn $name() {
+                    let Some(backend) = pg_backend().await else {
+                        eprintln!(
+                            "Skipping {}: no DATABASE_URL set",
+                            stringify!($name)
+                        );
+                        return;
+                    };
+                    contract_tests::$name(&backend).await;
+                }
+            };
+        }
+
+        pg_contract_test!(register_starts_pending);
+        pg_contract_test!(register_duplicate_errors);
+        pg_contract_test!(set_and_get_status);
+        pg_contract_test!(status_lifecycle);
+        pg_contract_test!(status_not_found);
+        pg_contract_test!(set_status_not_found);
+        pg_contract_test!(send_and_recv);
+        pg_contract_test!(recv_filters_by_recipient);
+        pg_contract_test!(cursor_tracks_position);
+        pg_contract_test!(recv_empty);
+        pg_contract_test!(permission_request_flow);
+        pg_contract_test!(permission_denied_flow);
+        pg_contract_test!(review_request_flow);
+        pg_contract_test!(pending_permissions_filters_kind);
+        pg_contract_test!(pending_reviews_filters_kind);
+        pg_contract_test!(list_agents_all);
+        pg_contract_test!(list_agents_by_parent);
+        pg_contract_test!(list_agents_parentless_excluded);
+        pg_contract_test!(status_update_message);
+        pg_contract_test!(output_message);
+        pg_contract_test!(message_ordering);
+        pg_contract_test!(send_returns_id);
+    }
+}

@@ -32,3 +32,10 @@ pub fn detect(cwd: &Path, main_branch: &str, admin_branch: &str) -> Option<GitSt
         is_worktree,
     })
 }
+
+/// Return the current branch name, or empty string if not in a git repo.
+pub fn current_branch(cwd: &Path) -> Option<String> {
+    let repo = gix::discover(cwd).ok()?;
+    let head = repo.head().ok()?;
+    Some(head.referent_name()?.shorten().to_string())
+}

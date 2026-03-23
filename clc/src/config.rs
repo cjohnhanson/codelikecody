@@ -35,6 +35,9 @@ struct TomlFile {
     coordinator: CoordinatorConfig,
 
     #[serde(default)]
+    supervisor: SupervisorConfig,
+
+    #[serde(default)]
     workflows: HashMap<String, WorkflowDef>,
 
     #[serde(default)]
@@ -101,6 +104,53 @@ pub struct CoordinatorConfig {
     pub always_escalate: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CoordinatorScope {
+    pub id: String,
+
+    #[serde(default)]
+    pub project: Option<String>,
+
+    #[serde(default)]
+    pub label: Option<String>,
+
+    #[serde(default)]
+    pub exclude_label: Option<String>,
+
+    #[serde(default = "default_max_workers")]
+    pub max_workers: usize,
+
+    #[serde(default = "default_coordinator_model")]
+    pub model: String,
+
+    #[serde(default)]
+    pub auto_grant: Vec<String>,
+
+    #[serde(default)]
+    pub always_escalate: Vec<String>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct SupervisorConfig {
+    #[serde(default = "default_poll_interval")]
+    pub poll_interval: u64,
+
+    #[serde(default)]
+    pub coordinators: Vec<CoordinatorScope>,
+}
+
+const fn default_poll_interval() -> u64 {
+    10
+}
+
+const fn default_max_workers() -> usize {
+    3
+}
+
+fn default_coordinator_model() -> String {
+    "opus".to_string()
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default = "default_main_branch")]
@@ -120,6 +170,9 @@ pub struct Config {
 
     #[serde(default)]
     pub coordinator: CoordinatorConfig,
+
+    #[serde(default)]
+    pub supervisor: SupervisorConfig,
 
     #[serde(default)]
     pub workflows: HashMap<String, WorkflowDef>,
@@ -172,6 +225,7 @@ impl Default for Config {
             permissions: PermissionsConfig::default(),
             worker: WorkerConfig::default(),
             coordinator: CoordinatorConfig::default(),
+            supervisor: SupervisorConfig::default(),
             workflows: HashMap::new(),
             rules: Vec::new(),
             skills: Vec::new(),
@@ -188,6 +242,7 @@ impl From<TomlFile> for Config {
             permissions: PermissionsConfig::default(),
             worker: toml.worker,
             coordinator: toml.coordinator,
+            supervisor: toml.supervisor,
             workflows: toml.workflows,
             rules: toml.rules,
             skills: toml.skills,
