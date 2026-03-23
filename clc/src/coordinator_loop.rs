@@ -4,16 +4,116 @@
 //! Started by the supervisor via `clc coordinator-run`. Communicates with
 //! workers and the supervisor entirely through the coordination DB.
 
+use std::io::Write;
 use std::path::Path;
+use std::process::Stdio;
 use std::thread;
 use std::time::Duration;
 
 use camino::Utf8Path;
+use clc_sdk::agent::{Agent, AgentConfig, ClaudeCodeAgent};
 
 use crate::config::CoordinatorScope;
 use crate::coordination::Coordination;
 use crate::error::Error;
 use crate::git;
+
+/// Persistent state for the coordinator's Claude session.
+struct CoordinatorSession {
+    agent: ClaudeCodeAgent,
+    session_id: Option<String>,
+    model: String,
+    project_dir: std::path::PathBuf,
+}
+
+impl CoordinatorSession {
+    fn new(model: &str, project_dir: &Path) -> Self {
+        Self {
+            agent: ClaudeCodeAgent::new(),
+            session_id: None,
+            model: model.to_string(),
+            project_dir: project_dir.to_path_buf(),
+        }
+    }
+
+    /// Invoke the Claude session with a message. Returns Claude's text response.
+    /// First call starts a new session; subsequent calls resume the same session.
+    fn invoke(&mut self, message: &str) -> Result<String, Error> {
+        let mut cmd = if let Some(ref sid) = self.session_id {
+            self.agent
+                .build_resume_command(sid, &self.project_dir)
+                .map_err(|e| Error::NonBlocking(format!("build resume command: {e}")))?
+        } else {
+            let config = AgentConfig {
+                model: self.model.clone(),
+                system_prompt: coordinator_system_prompt(),
+                initial_prompt: String::new(),
+                extra_args: vec![],
+            };
+            self.agent
+                .build_start_command(&config, &self.project_dir)
+                .map_err(|e| Error::NonBlocking(format!("build start command: {e}")))?
+        };
+
+        cmd.stdin(Stdio::piped());
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::null());
+
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| Error::NonBlocking(format!("spawn claude: {e}")))?;
+
+        // Send the message via stdin.
+        if let Some(mut stdin) = child.stdin.take() {
+            let input = claude_code::protocol::InputMessage::user(message);
+            let json = serde_json::to_string(&input)?;
+            let _ = writeln!(stdin, "{json}");
+        }
+
+        let output = child
+            .wait_with_output()
+            .map_err(|e| Error::NonBlocking(format!("wait for claude: {e}")))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        // Extract session ID and text response from NDJSON output.
+        let mut response_text = String::new();
+        for line in stdout.lines() {
+            if let Ok(msg) = serde_json::from_str::<claude_code::protocol::OutputMessage>(line) {
+                match msg {
+                    claude_code::protocol::OutputMessage::System(ref sys) => {
+                        if let Some(ref sid) = sys.session_id {
+                            self.session_id = Some(sid.clone());
+                        }
+                    }
+                    claude_code::protocol::OutputMessage::Assistant(ref a) => {
+                        for block in &a.message.content {
+                            if let claude_code::protocol::ContentBlock::Text { text } = block {
+                                response_text.push_str(text);
+                                response_text.push('\n');
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        Ok(response_text)
+    }
+}
+
+fn coordinator_system_prompt() -> String {
+    "You are a coordinator agent. When asked about a permission request, \
+     respond with exactly one of:\n\
+     GRANT: <permission pattern>\n\
+     DENY: <reason>\n\
+     ESCALATE: <reason>\n\n\
+     When asked about a stuck worker, respond with advice to send to the worker.\n\
+     When asked about merge conflicts, provide the resolution.\n\
+     Be concise. One decision per response."
+        .to_string()
+}
 
 /// Run the coordinator loop. Blocks until all work is done or the process is killed.
 pub fn run(
@@ -38,14 +138,15 @@ pub fn run(
     let coord = Coordination::open(project_dir)
         .map_err(|e| Error::NonBlocking(format!("coordination DB: {e}")))?;
 
-    // Register this coordinator.
     let _ = coord.register_agent(&scope.id, Some("supervisor"));
     let _ = coord.set_status(&scope.id, clc_sdk::coordination::AgentStatus::Running);
+
+    let mut session = CoordinatorSession::new(&scope.model, project_dir);
 
     eprintln!("coordinator '{}' started (poll every {poll_interval:?})", scope.id);
 
     loop {
-        match tick(project_dir, main_branch, admin_branch, scope, worker_perm_defaults, worker_perm_deny, &coord) {
+        match tick(project_dir, main_branch, admin_branch, scope, worker_perm_defaults, worker_perm_deny, &coord, &mut session) {
             Ok(TickResult::Continue) => {}
             Ok(TickResult::AllDone) => {
                 eprintln!("coordinator '{}': all work completed", scope.id);
@@ -75,6 +176,7 @@ fn tick(
     worker_perm_defaults: &[String],
     worker_perm_deny: &[String],
     coord: &Coordination,
+    session: &mut CoordinatorSession,
 ) -> Result<TickResult, Error> {
     // 1. Dispatch pickable tiskets up to max_workers.
     let running = coord
@@ -114,8 +216,16 @@ fn tick(
             match crate::merge::merge(project_dir, id, main_branch, admin_branch) {
                 Ok(()) => eprintln!("coordinator '{}': landed '{id}'", scope.id),
                 Err(e) => {
-                    // TODO: merge conflict → invoke Claude for resolution
-                    eprintln!("coordinator '{}': land failed for '{id}': {e}", scope.id);
+                    // Merge failed — invoke Claude for help.
+                    eprintln!("coordinator '{}': land failed for '{id}', asking Claude: {e}", scope.id);
+                    let msg = format!(
+                        "Landing worker '{id}' failed with: {e}\n\
+                         What should be done? If this is a merge conflict, provide resolution steps."
+                    );
+                    match session.invoke(&msg) {
+                        Ok(response) => eprintln!("coordinator '{}': Claude says: {}", scope.id, response.trim()),
+                        Err(e) => eprintln!("coordinator '{}': Claude invocation failed: {e}", scope.id),
+                    }
                 }
             }
         }
@@ -161,13 +271,44 @@ fn tick(
                 continue;
             }
 
-            // Judgment call: neither pattern matches → escalate to admin for now.
-            // TODO: invoke coordinator's Claude session for judgment
+            // Judgment: ask Claude.
             eprintln!(
-                "coordinator '{}': escalating unknown permission '{tool_name}' for '{worker_id}'",
+                "coordinator '{}': asking Claude about permission '{tool_name}' for '{worker_id}'",
                 scope.id
             );
-            let _ = crate::permissions::escalate(project_dir, worker_id, reason);
+            let prompt = format!(
+                "Worker '{worker_id}' requests permission for '{tool_name}'.\n\
+                 Reason: {reason}\n\
+                 Respond with GRANT, DENY, or ESCALATE."
+            );
+            match session.invoke(&prompt) {
+                Ok(response) => {
+                    let trimmed = response.trim().to_uppercase();
+                    if trimmed.starts_with("GRANT") {
+                        let pattern = trimmed
+                            .strip_prefix("GRANT:")
+                            .or_else(|| trimmed.strip_prefix("GRANT"))
+                            .map(str::trim)
+                            .unwrap_or(tool_name);
+                        let _ = crate::permissions::grant(project_dir, worker_id, pattern);
+                    } else if trimmed.starts_with("DENY") {
+                        let deny_reason = trimmed
+                            .strip_prefix("DENY:")
+                            .or_else(|| trimmed.strip_prefix("DENY"))
+                            .map(str::trim)
+                            .unwrap_or("denied by coordinator");
+                        let _ = crate::permissions::deny(project_dir, worker_id, deny_reason);
+                    } else {
+                        // Default: escalate.
+                        let _ = crate::permissions::escalate(project_dir, worker_id, reason);
+                    }
+                }
+                Err(e) => {
+                    // Claude failed — escalate.
+                    eprintln!("coordinator '{}': Claude failed ({e}), escalating", scope.id);
+                    let _ = crate::permissions::escalate(project_dir, worker_id, reason);
+                }
+            }
         }
     }
 
