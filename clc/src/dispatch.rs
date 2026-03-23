@@ -19,6 +19,7 @@ use camino::Utf8Path;
 use nix::sys::stat::Mode;
 use nix::unistd::{self, Pid};
 
+use crate::coordination::Coordination;
 use crate::error::Error;
 use crate::git;
 use crate::permissions;
@@ -89,6 +90,12 @@ pub fn dispatch(
 
     let worker_dir = worktree_dir.join(".clc").join(WORKER_DIR);
     let pid = spawn_agent_process(cmd, &worker_dir, &initial_prompt)?;
+
+    // Register the worker in the coordination database.
+    if let Ok(coord) = Coordination::open(project_dir) {
+        let _ = coord.register_agent(id, coordinator_id);
+        let _ = coord.set_status(id, clc_sdk::coordination::AgentStatus::Running);
+    }
 
     eprintln!("dispatched worker for '{id}' (pid {pid})");
 

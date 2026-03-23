@@ -6,7 +6,7 @@
 use sea_orm::entity::prelude::*;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseConnection,
-    EntityTrait, FromQueryResult, QueryFilter, QueryOrder, Set, Statement,
+    EntityTrait, QueryFilter, QueryOrder, Set, Statement,
 };
 
 use crate::coordination::{

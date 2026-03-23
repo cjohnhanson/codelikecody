@@ -3,6 +3,7 @@ mod admin;
 mod cli;
 mod config;
 mod coordinate;
+mod coordination;
 mod docs;
 mod coordinator_mgmt;
 mod dispatch;
