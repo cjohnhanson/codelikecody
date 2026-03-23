@@ -17,6 +17,15 @@ Currently, worker stop behavior is handled by the `check_stop` function in `guar
 
 Without a loop wrapper, workers that hit permission denials sit idle until a coordinator or human manually resumes them. Workers that hit context limits simply die. The coordinator must poll for these conditions rather than being notified, and resumption requires reconstructing context from scratch.
 
+## Recent Changes (io9i)
+
+The io9i landing introduced two layers of resume/restart:
+
+- **coordinator_loop.rs** implements external resume via poll-based monitoring — it watches worker status and auto-restarts workers that have stopped or failed. This is the "loop wrapper" described above, implemented at the coordinator level.
+- **worker.rs** gained a `supervise()` function for CLI-level auto-resume, providing process-level restart when a worker exits.
+
+The original problem (human intervention required on every unexpected exit) is substantially addressed for the common cases. The remaining question is whether workers should also self-loop internally — managing their own context (compaction, scratch note checkpointing) and recovering from transient failures without requiring a full process restart.
+
 ## Open Questions
 
 - Should the loop wrapper live in clc (wrapping the dispatch spawn) or in a separate daemon process?
