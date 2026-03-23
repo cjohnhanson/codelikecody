@@ -95,6 +95,7 @@ pub fn dispatch(
     if let Ok(coord) = Coordination::open(project_dir) {
         let _ = coord.register_agent(id, coordinator_id);
         let _ = coord.set_status(id, clc_sdk::coordination::AgentStatus::Running);
+        let _ = coord.set_pid(id, Some(pid.cast_signed()));
     }
 
     eprintln!("dispatched worker for '{id}' (pid {pid})");

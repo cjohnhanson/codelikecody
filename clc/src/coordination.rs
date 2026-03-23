@@ -104,6 +104,22 @@ impl Coordination {
             .block_on(self.backend.pending_reviews(reviewer_id))
     }
 
+    pub fn set_pid(
+        &self,
+        agent_id: &str,
+        pid: Option<i32>,
+    ) -> Result<(), CoordinationError> {
+        self.rt.block_on(self.backend.set_pid(agent_id, pid))
+    }
+
+    #[allow(dead_code)]
+    pub fn get_pid(
+        &self,
+        agent_id: &str,
+    ) -> Result<Option<i32>, CoordinationError> {
+        self.rt.block_on(self.backend.get_pid(agent_id))
+    }
+
     #[allow(dead_code)] // Will replace filesystem scan when output format migrates.
     pub fn list_agents(
         &self,

@@ -32,7 +32,19 @@ struct WorkerInfo {
 
 /// List workers across worktrees. By default only shows live workers; pass `all=true` to include dead ones.
 pub fn list_workers(project_dir: &Path, all: bool) -> Result<(), Error> {
-    let workers = collect_workers(project_dir)?;
+    let mut workers = collect_workers(project_dir)?;
+
+    // Enrich with coordination DB status if available.
+    let db_path = project_dir.join(".clc").join("coordination.db");
+    if db_path.exists() {
+        if let Ok(coord) = Coordination::open(project_dir) {
+            for w in &mut workers {
+                if let Ok(status) = coord.get_status(&w.id) {
+                    w.alive = status == clc_sdk::coordination::AgentStatus::Running;
+                }
+            }
+        }
+    }
 
     let visible: Vec<&WorkerInfo> = workers.iter().filter(|w| all || w.alive).collect();
 
@@ -142,7 +154,9 @@ fn collect_workers(project_dir: &Path) -> Result<Vec<WorkerInfo>, Error> {
 
 /// Show activity since last check (cursor-based).
 pub fn check(project_dir: &Path, id: &str) -> Result<(), Error> {
-    // Check coordination DB for messages addressed to us about this worker.
+    // Check coordination DB for messages if it exists.
+    let db_path = project_dir.join(".clc").join("coordination.db");
+    if db_path.exists() {
     if let Ok(coord) = Coordination::open(project_dir) {
         if let Ok((msgs, _)) = coord.recv(id, &clc_sdk::coordination::Cursor::default()) {
             for msg in &msgs {
@@ -160,7 +174,7 @@ pub fn check(project_dir: &Path, id: &str) -> Result<(), Error> {
                 }
             }
         }
-    }
+    }}
 
     let stdout_path = worker_stdout_path(project_dir, id);
     if !stdout_path.exists() {
@@ -274,9 +288,12 @@ pub fn stop(project_dir: &Path, id: &str) -> Result<(), Error> {
         eprintln!("worker '{id}' already dead (pid {pid})");
     }
 
-    // Update coordination database.
-    if let Ok(coord) = Coordination::open(project_dir) {
-        let _ = coord.set_status(id, clc_sdk::coordination::AgentStatus::Stopped);
+    // Update coordination database if it exists.
+    let db_path = project_dir.join(".clc").join("coordination.db");
+    if db_path.exists() {
+        if let Ok(coord) = Coordination::open(project_dir) {
+            let _ = coord.set_status(id, clc_sdk::coordination::AgentStatus::Stopped);
+        }
     }
 
     Ok(())
@@ -359,13 +376,24 @@ pub fn resume(project_dir: &Path, id: &str) -> Result<(), Error> {
     writeln!(pipe, "{json}")?;
     pipe.flush()?;
 
+    // Update coordination database.
+    let db_path = project_dir.join(".clc").join("coordination.db");
+    if db_path.exists() {
+        if let Ok(coord) = Coordination::open(project_dir) {
+            let _ = coord.set_status(id, clc_sdk::coordination::AgentStatus::Running);
+            let _ = coord.set_pid(id, Some(pid.cast_signed()));
+        }
+    }
+
     eprintln!("resumed worker '{id}' (pid {pid}, session {session_id})");
     Ok(())
 }
 
 /// Supervise a worker: poll until it reaches done, auto-resuming if it stops early.
 pub fn supervise(project_dir: &Path, id: &str, max_resumes: u32) -> Result<(), Error> {
-    // Check coordination DB status first.
+    // Check coordination DB status first, if it exists.
+    let db_path = project_dir.join(".clc").join("coordination.db");
+    if db_path.exists() {
     if let Ok(coord) = Coordination::open(project_dir) {
         if let Ok(status) = coord.get_status(id) {
             if status == clc_sdk::coordination::AgentStatus::Completed {
@@ -373,7 +401,7 @@ pub fn supervise(project_dir: &Path, id: &str, max_resumes: u32) -> Result<(), E
                 return Ok(());
             }
         }
-    }
+    }}
 
     let work_dir = working_dir_for(project_dir, id);
     let wdir = worker_dir_for(project_dir, id);

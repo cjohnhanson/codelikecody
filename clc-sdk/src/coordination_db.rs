@@ -25,6 +25,7 @@ mod agent_entity {
         pub id: String,
         pub parent_id: Option<String>,
         pub status: String,
+        pub pid: Option<i32>,
         pub created_at: DateTimeUtc,
         pub updated_at: DateTimeUtc,
     }
@@ -123,6 +124,7 @@ const POSTGRES_DDL: &[&str] = &[
         id TEXT PRIMARY KEY,
         parent_id TEXT,
         status TEXT NOT NULL DEFAULT 'pending',
+        pid INTEGER,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )",
@@ -146,6 +148,7 @@ const SQLITE_DDL: &[&str] = &[
         id TEXT PRIMARY KEY,
         parent_id TEXT,
         status TEXT NOT NULL DEFAULT 'pending',
+        pid INTEGER,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     )",
@@ -328,6 +331,7 @@ impl CoordinationBackend for DbBackend {
             id: Set(id.to_string()),
             parent_id: Set(parent_id.map(str::to_string)),
             status: Set("pending".to_string()),
+            pid: Set(None),
             created_at: Set(now),
             updated_at: Set(now),
         };
@@ -504,6 +508,49 @@ impl CoordinationBackend for DbBackend {
                 Ok((m.id.clone(), status))
             })
             .collect()
+    }
+}
+
+impl DbBackend {
+    /// Store a process ID for an agent. Not part of the trait — specific to
+    /// process-based agent implementations.
+    pub async fn set_pid(
+        &self,
+        agent_id: &str,
+        pid: Option<i32>,
+    ) -> Result<(), CoordinationError> {
+        let existing = agent_entity::Entity::find_by_id(agent_id.to_string())
+            .one(&self.db)
+            .await
+            .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+
+        let model = existing
+            .ok_or_else(|| CoordinationError::NotFound(agent_id.to_string()))?;
+
+        let mut active: agent_entity::ActiveModel = model.into();
+        active.pid = Set(pid);
+        active.updated_at = Set(chrono::Utc::now());
+
+        active
+            .update(&self.db)
+            .await
+            .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Get the stored PID for an agent.
+    pub async fn get_pid(
+        &self,
+        agent_id: &str,
+    ) -> Result<Option<i32>, CoordinationError> {
+        let model = agent_entity::Entity::find_by_id(agent_id.to_string())
+            .one(&self.db)
+            .await
+            .map_err(|e| CoordinationError::Storage(e.to_string()))?
+            .ok_or_else(|| CoordinationError::NotFound(agent_id.to_string()))?;
+
+        Ok(model.pid)
     }
 }
 

@@ -56,7 +56,9 @@ pub fn request(cwd: &Path, description: &str) -> Result<(), Error> {
     let json = serde_json::to_string_pretty(&req)?;
     fs::write(&request_path, json)?;
 
-    // Also record in coordination database.
+    // Also record in coordination database if it exists.
+    let db_path = cwd.join(".clc").join("coordination.db");
+    if db_path.exists() {
     if let Ok(coord) = Coordination::open(cwd) {
         let msg = clc_sdk::coordination::Message {
             id: format!("perm-req-{}", std::time::SystemTime::now()
@@ -72,7 +74,7 @@ pub fn request(cwd: &Path, description: &str) -> Result<(), Error> {
             timestamp: std::time::SystemTime::now(),
         };
         let _ = coord.send(msg);
-    }
+    }}
 
     eprintln!(
         "Permission request filed: \"{description}\"\n\
@@ -341,7 +343,9 @@ fn add_permission_rule(settings_path: &Path, permission: &str) -> Result<(), Err
 ///
 /// Checks coordination database first, falls back to filesystem scan.
 pub fn list(project_dir: &Path) -> Result<(), Error> {
-    // Try coordination database first.
+    // Try coordination database first, if it exists.
+    let db_path = project_dir.join(".clc").join("coordination.db");
+    if db_path.exists() {
     if let Ok(coord) = Coordination::open(project_dir) {
         if let Ok(pending) = coord.pending_permissions("coordinator") {
             if !pending.is_empty() {
@@ -357,7 +361,7 @@ pub fn list(project_dir: &Path) -> Result<(), Error> {
                 return Ok(());
             }
         }
-    }
+    }}
 
     // Fall back to filesystem scan.
     let mut found = false;
