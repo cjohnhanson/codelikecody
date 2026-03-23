@@ -92,7 +92,6 @@ members:
 | `packages` | list | `[]` | Nix packages to provide via `nix shell` |
 | `test_dir` | string | none | Directory for state discovery (relative to config) |
 | `members` | list | `[]` | Workspace member directories |
-| `microsandbox` | bool | `false` | Run transitions inside microsandbox microVMs |
 
 ### Setup commands
 
