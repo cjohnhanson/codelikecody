@@ -57,7 +57,9 @@
               || (builtins.match ".*\\.txt$" path != null)
               || (builtins.match ".*\\.missouri.*" path != null)
               || (builtins.match ".*/docs$" path != null)
-              || (builtins.match ".*/docs/.*" path != null);
+              || (builtins.match ".*/docs/.*" path != null)
+              || (builtins.match ".*/skills$" path != null)
+              || (builtins.match ".*/skills/.*" path != null);
           };
 
           commonArgs = {
