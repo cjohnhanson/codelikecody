@@ -20,13 +20,17 @@ pub enum GitAddCheck {
 ///
 /// The `cwd` is used to resolve relative paths for directory checks.
 pub fn validate(command: &str, cwd: &Path) -> GitAddCheck {
-    // Split on command separators to isolate individual commands.
-    // This handles `git add file && git commit` without treating
-    // commit args as git-add args.
+    let mut found_git_add = false;
+
     for subcmd in split_commands(command) {
         let trimmed = subcmd.trim();
         if !is_git_add(trimmed) {
             continue;
+        }
+        found_git_add = true;
+
+        if let Some(reason) = check_bulk_flags(trimmed) {
+            return GitAddCheck::Blocked(reason);
         }
         let args = extract_git_add_args(trimmed);
         if let Some(reason) = check_args(&args, cwd) {
@@ -34,9 +38,7 @@ pub fn validate(command: &str, cwd: &Path) -> GitAddCheck {
         }
     }
 
-    // If we found at least one git add and none were blocked, it's allowed.
-    // If we found no git add at all, it's not our concern.
-    if split_commands(command).any(|s| is_git_add(s.trim())) {
+    if found_git_add {
         GitAddCheck::Allowed
     } else {
         GitAddCheck::NotGitAdd
@@ -45,8 +47,8 @@ pub fn validate(command: &str, cwd: &Path) -> GitAddCheck {
 
 /// Check if a (sub)command starts with `git add`.
 fn is_git_add(cmd: &str) -> bool {
-    let normalized = cmd.split_whitespace().collect::<Vec<_>>();
-    normalized.len() >= 2 && normalized[0] == "git" && normalized[1] == "add"
+    let mut words = cmd.split_whitespace();
+    words.next() == Some("git") && words.next() == Some("add")
 }
 
 /// Extract arguments after `git add`, skipping known flags.
@@ -82,31 +84,49 @@ fn extract_git_add_args(cmd: &str) -> Vec<String> {
     args
 }
 
-/// Check extracted args for bulk-add patterns. Returns the block reason
+/// Check for bulk-staging flags in the raw command tokens, before arg extraction
+/// strips them. Returns a block reason if a bulk flag is found.
+fn check_bulk_flags(cmd: &str) -> Option<String> {
+    for token in cmd.split_whitespace().skip(2) {
+        match token {
+            "-A" | "--all" => {
+                return Some("git add -A stages everything — stage files individually".to_string())
+            }
+            "-u" | "--update" => {
+                return Some(
+                    "git add -u stages all tracked changes — stage files individually".to_string(),
+                )
+            }
+            "--" => break, // flags after -- are paths
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Check extracted path args for bulk-add patterns. Returns the block reason
 /// or None if all args are valid file paths.
 fn check_args(args: &[String], cwd: &Path) -> Option<String> {
-    if args.is_empty() {
-        return Some("git add with no paths — stage files individually".to_string());
-    }
-
     for arg in args {
-        // Exact blocklist.
-        match arg.as_str() {
-            "." => return Some("git add . stages everything — stage files individually".to_string()),
-            "-A" | "--all" => return Some("git add -A stages everything — stage files individually".to_string()),
-            "-u" => return Some("git add -u stages all tracked changes — stage files individually".to_string()),
-            _ => {}
+        if arg == "." {
+            return Some(
+                "git add . stages everything — stage files individually".to_string(),
+            );
         }
 
         // Glob patterns.
         if arg.contains('*') || arg.contains('?') {
-            return Some(format!("git add with glob '{arg}' — stage files individually"));
+            return Some(format!(
+                "git add with glob '{arg}' — stage files individually"
+            ));
         }
 
         // Directory check: resolve against cwd.
         let path = cwd.join(arg);
         if path.is_dir() {
-            return Some(format!("git add targets directory '{arg}' — stage files individually"));
+            return Some(format!(
+                "git add targets directory '{arg}' — stage files individually"
+            ));
         }
     }
 
