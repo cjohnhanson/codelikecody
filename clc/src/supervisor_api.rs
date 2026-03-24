@@ -42,6 +42,10 @@ pub async fn start(
         .route("/agents/{id}/permissions", get(pending_permissions))
         // Phase
         .route("/agents/{id}/phase", get(get_phase).put(set_phase))
+        // Worker output (raw NDJSON — supervisor reads from workspace)
+        .route("/agents/{id}/output", get(get_output))
+        // Worker stdin (write a message to the worker's stdin pipe)
+        .route("/agents/{id}/stdin", post(write_stdin))
         // Escalations
         .route("/escalations", get(list_escalations))
         // Health
@@ -366,6 +370,69 @@ async fn list_escalations(
         .collect();
 
     Ok(Json(data))
+}
+
+/// Get raw NDJSON output for a worker. Cursor-based via ?after= (line count).
+/// The supervisor reads the output from the workspace — currently from the
+/// local filesystem, but will be over SSH for remote workspaces.
+async fn get_output(
+    State(state): State<Arc<ApiState>>,
+    Path(id): Path<String>,
+    Query(query): Query<RecvMessagesQuery>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let cursor = query.after.unwrap_or(0) as usize;
+
+    // Read stdout.jsonl from the workspace's worker dir.
+    let stdout_path = state
+        .project_dir
+        .join(".worktrees")
+        .join(&id)
+        .join(".clc")
+        .join("worker")
+        .join("stdout.jsonl");
+
+    let content = tokio::fs::read_to_string(&stdout_path)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+
+    let lines: Vec<&str> = content.lines().collect();
+    let new_lines: Vec<&str> = lines.iter().skip(cursor).copied().collect();
+
+    Ok(Json(serde_json::json!({
+        "agent_id": id,
+        "lines": new_lines,
+        "cursor": lines.len(),
+    })))
+}
+
+/// Write a message to a worker's stdin pipe.
+async fn write_stdin(
+    State(state): State<Arc<ApiState>>,
+    Path(id): Path<String>,
+    Json(req): Json<serde_json::Value>,
+) -> Result<StatusCode, StatusCode> {
+    let message = req["message"]
+        .as_str()
+        .ok_or(StatusCode::BAD_REQUEST)?;
+
+    let pipe_path = state
+        .project_dir
+        .join(".worktrees")
+        .join(&id)
+        .join(".clc")
+        .join("worker")
+        .join("stdin.pipe");
+
+    // Write the message as stream-json input.
+    let input = claude_code::protocol::InputMessage::user(message);
+    let json = serde_json::to_string(&input)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    tokio::fs::write(&pipe_path, format!("{json}\n"))
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+
+    Ok(StatusCode::OK)
 }
 
 // --- Helpers ---

@@ -139,16 +139,35 @@ impl Workspace for SSHWorkspace {
                 .map_err(|e| WorkspaceError::Process(format!("reverse tunnel: {e}")))
         })?;
 
-        // 6. Fix git worktree reference to container path.
-        let wt_name = &self.config.workspace_config.tisket_id;
+        // 6. Set up reverse tunnel for git access to host repo.
+        //    The container can't reach the host directly. A reverse tunnel
+        //    maps container's localhost:GIT_PORT → host's localhost:22 (sshd).
+        //    The container clones from the host repo over this tunnel.
+        let git_tunnel_port: u16 = self.tunnel_port + 100; // Separate from API tunnel.
         self.rt.block_on(async {
             session
-                .write_file(
-                    "/project/.git",
-                    &format!("gitdir: /project-git/worktrees/{wt_name}\n"),
-                )
+                .setup_reverse_tunnel(git_tunnel_port, 22)
                 .await
-                .map_err(|e| WorkspaceError::Process(format!("fix .git: {e}")))
+                .map_err(|e| WorkspaceError::Process(format!("git tunnel: {e}")))
+        })?;
+
+        // Clone the project repo inside the container via the git tunnel.
+        let branch_name = self.config.workspace_config.tisket_id.clone();
+        let host_user = std::env::var("USER").unwrap_or_else(|_| "root".to_string());
+        let project_path = self.config.workspace_config.project_dir.display();
+        let clone_url = format!(
+            "ssh://{host_user}@localhost:{git_tunnel_port}{project_path}"
+        );
+        self.rt.block_on(async {
+            // Clone with the specific branch. Use GIT_SSH_COMMAND to skip host key check
+            // since this is localhost through a tunnel.
+            session
+                .exec(&format!(
+                    "GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null' \
+                     git clone -b {branch_name} '{clone_url}' /project"
+                ))
+                .await
+                .map_err(|e| WorkspaceError::Process(format!("git clone: {e}")))
         })?;
 
         // 7. Set up worker state directory and stdio infrastructure
@@ -336,12 +355,10 @@ impl Environment for DockerEnvironment {
             .map_err(|e| WorkspaceError::Process(format!("docker: {e}")))?;
 
         let container_id = self.rt.block_on(async {
-            // Mount worktree, project .git, and SSH public key.
-            let worktree_mount = format!("{}:/project", self.worktree_dir.display());
-            let git_mount = format!("{}/.git:/project-git:ro", self.project_dir.display());
-            let mut binds = vec![worktree_mount, git_mount];
+            // Only mount SSH public key for authentication. No project code —
+            // the repo is pushed via gix over SSH after the container starts.
+            let mut binds: Vec<String> = Vec::new();
 
-            // Mount user's SSH public key for authentication.
             let pub_key_path = dirs::home_dir()
                 .unwrap_or_default()
                 .join(".ssh")

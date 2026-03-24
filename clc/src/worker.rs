@@ -176,6 +176,46 @@ pub fn check(project_dir: &Path, id: &str) -> Result<(), Error> {
         }
     }}
 
+    // If CLC_API_URL is set, read output from the supervisor API.
+    if let Ok(api_url) = std::env::var("CLC_API_URL") {
+        let cursor_path = cursor_path(project_dir, id);
+        let cursor = read_cursor(&cursor_path);
+
+        let url = format!("{api_url}/agents/{id}/output?after={cursor}");
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| Error::NonBlocking(format!("tokio: {e}")))?;
+
+        let body: serde_json::Value = rt.block_on(async {
+            reqwest::get(&url)
+                .await
+                .map_err(|e| Error::NonBlocking(format!("http: {e}")))?
+                .json()
+                .await
+                .map_err(|e| Error::NonBlocking(format!("json: {e}")))
+        })?;
+
+        let lines = body["lines"].as_array();
+        let new_cursor = body["cursor"].as_u64().unwrap_or(cursor as u64) as usize;
+
+        if let Some(lines) = lines {
+            if lines.is_empty() {
+                eprintln!("no new activity for '{id}'");
+            } else {
+                for line in lines {
+                    if let Some(s) = line.as_str() {
+                        print_parsed_line(s);
+                    }
+                }
+            }
+        }
+
+        write_cursor(&cursor_path, new_cursor)?;
+        return Ok(());
+    }
+
+    // Fall back to local filesystem.
     let stdout_path = worker_stdout_path(project_dir, id);
     if !stdout_path.exists() {
         return Err(Error::NonBlocking(format!("no worker output for '{id}'")));
@@ -226,8 +266,39 @@ pub fn log(project_dir: &Path, id: &str, max_lines: usize) -> Result<(), Error> 
     Ok(())
 }
 
-/// Send a follow-up message to the worker via the named pipe.
+/// Send a follow-up message to the worker via the named pipe or API.
 pub fn send(project_dir: &Path, id: &str, message: &str) -> Result<(), Error> {
+    // If CLC_API_URL is set, send through the supervisor API.
+    if let Ok(api_url) = std::env::var("CLC_API_URL") {
+        let url = format!("{api_url}/agents/{id}/stdin");
+        let body = serde_json::json!({ "message": message });
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| Error::NonBlocking(format!("tokio: {e}")))?;
+
+        let status = rt.block_on(async {
+            reqwest::Client::new()
+                .post(&url)
+                .json(&body)
+                .send()
+                .await
+                .map_err(|e| Error::NonBlocking(format!("http: {e}")))
+                .map(|r| r.status())
+        })?;
+
+        if !status.is_success() {
+            return Err(Error::NonBlocking(format!(
+                "failed to send to worker '{id}': HTTP {status}"
+            )));
+        }
+
+        eprintln!("sent message to '{id}' via API");
+        return Ok(());
+    }
+
+    // Fall back to local named pipe.
     let wdir = worker_dir_for(project_dir, id);
     let pipe_path = wdir.join("stdin.pipe");
 
