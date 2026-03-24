@@ -427,9 +427,51 @@ fn cmd_workspace(action: &cli::WorkspaceAction) -> Result<(), Error> {
             eprintln!("workspace initialized at {}", cwd.display());
             Ok(())
         }
-        cli::WorkspaceAction::Receive { bundle, branch } => {
-            let bundle_path = std::path::Path::new(bundle);
-            git_bundle::extract_bundle(bundle_path, &cwd, branch)?;
+        cli::WorkspaceAction::WriteFile { path } => {
+            use std::io::Read;
+            let mut data = Vec::new();
+            std::io::stdin()
+                .read_to_end(&mut data)
+                .map_err(|e| Error::NonBlocking(format!("read stdin: {e}")))?;
+            if let Some(parent) = std::path::Path::new(path.as_str()).parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            std::fs::write(path, &data)
+                .map_err(|e| Error::NonBlocking(format!("write file: {e}")))?;
+            Ok(())
+        }
+        cli::WorkspaceAction::Receive {
+            bundle,
+            branch,
+            stdin,
+            dir,
+        } => {
+            let target_dir = dir
+                .as_ref()
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| cwd.clone());
+
+            if *stdin {
+                // Read bundle from stdin.
+                use std::io::Read;
+                let mut data = Vec::new();
+                std::io::stdin()
+                    .read_to_end(&mut data)
+                    .map_err(|e| Error::NonBlocking(format!("read stdin: {e}")))?;
+
+                // Write to temp file for extraction.
+                let tmp = target_dir.join(".clc-bundle-tmp.tar");
+                std::fs::write(&tmp, &data)
+                    .map_err(|e| Error::NonBlocking(format!("write temp: {e}")))?;
+                git_bundle::extract_bundle(&tmp, &target_dir, branch)?;
+                let _ = std::fs::remove_file(&tmp);
+            } else {
+                let path = bundle
+                    .as_ref()
+                    .ok_or_else(|| Error::NonBlocking("bundle path required when not using --stdin".into()))?;
+                git_bundle::extract_bundle(std::path::Path::new(path), &target_dir, branch)?;
+            }
+
             eprintln!("received repo, checked out branch '{branch}'");
             Ok(())
         }

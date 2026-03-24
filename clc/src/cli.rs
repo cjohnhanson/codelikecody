@@ -382,12 +382,23 @@ pub enum ConfigAction {
 pub enum WorkspaceAction {
     /// Initialize a workspace: create project dir, .clc/worker/ with stdio pipes.
     Init,
+    /// Write stdin to a file. Used by the supervisor to deploy files.
+    WriteFile {
+        /// Path to write to.
+        path: String,
+    },
     /// Receive a repo bundle and extract it, checking out the specified branch.
     Receive {
-        /// Path to the bundle file.
-        bundle: String,
+        /// Path to the bundle file (omit if using --stdin).
+        bundle: Option<String>,
         /// Branch to checkout.
         #[arg(long)]
         branch: String,
+        /// Read bundle from stdin instead of a file.
+        #[arg(long)]
+        stdin: bool,
+        /// Target directory (default: current directory).
+        #[arg(long)]
+        dir: Option<String>,
     },
 }

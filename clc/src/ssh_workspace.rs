@@ -149,32 +149,22 @@ impl Workspace for SSHWorkspace {
         )
         .map_err(|e| WorkspaceError::Process(format!("create bundle: {e}")))?;
 
-        // Transfer bundle to container.
+        // Transfer bundle directly to clc workspace receive via stdin.
+        // No intermediate files, no shell commands — just clc on both ends.
         let bundle_data = std::fs::read(&bundle_path)
             .map_err(|e| WorkspaceError::Process(format!("read bundle: {e}")))?;
         self.rt.block_on(async {
-            // Write binary data via base64 encoding to avoid heredoc issues.
-            let b64 = base64_encode(&bundle_data);
             session
-                .exec(&format!(
-                    "echo '{b64}' | base64 -d > /tmp/repo.bundle"
-                ))
+                .exec_with_stdin(
+                    &format!("clc workspace receive --stdin --branch {branch_name} --dir /project"),
+                    &bundle_data,
+                )
                 .await
-                .map_err(|e| WorkspaceError::Process(format!("transfer bundle: {e}")))
+                .map_err(|e| WorkspaceError::Process(format!("receive bundle: {e}")))
         })?;
 
         // Clean up local bundle.
         let _ = std::fs::remove_file(&bundle_path);
-
-        // Extract bundle and checkout branch using clc inside the container.
-        self.rt.block_on(async {
-            session
-                .exec(&format!(
-                    "cd /project && clc workspace receive /tmp/repo.bundle --branch {branch_name}"
-                ))
-                .await
-                .map_err(|e| WorkspaceError::Process(format!("receive bundle: {e}")))
-        })?;
 
         // 7. Initialize workspace: creates .clc/worker/ with stdio pipes and hooks.
         self.rt.block_on(async {

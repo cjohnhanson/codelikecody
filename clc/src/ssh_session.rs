@@ -102,16 +102,56 @@ impl SSHSession {
         Ok(stdout)
     }
 
-    /// Write a file on the remote host.
+    /// Write a text file on the remote host via clc.
     pub async fn write_file(
         &mut self,
         path: &str,
         content: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        // Single-quoted heredoc delimiter prevents all shell interpretation.
-        self.exec(&format!("cat > {path} << 'CLCEOF'\n{content}\nCLCEOF"))
-            .await?;
+        self.exec_with_stdin(
+            &format!("clc workspace write-file {path}"),
+            content.as_bytes(),
+        )
+        .await?;
         Ok(())
+    }
+
+    /// Run a command on the remote host, piping binary data to its stdin.
+    /// Returns stdout as bytes.
+    pub async fn exec_with_stdin(
+        &mut self,
+        command: &str,
+        stdin_data: &[u8],
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        let mut channel = self.session.channel_open_session().await?;
+        channel
+            .exec(true, command.as_bytes().to_vec())
+            .await?;
+
+        // Write data to the command's stdin.
+        channel.data(stdin_data).await?;
+        channel.eof().await?;
+
+        // Read stdout.
+        let mut stdout = Vec::new();
+        loop {
+            match channel.wait().await {
+                Some(russh::ChannelMsg::Data { data }) => {
+                    stdout.extend_from_slice(&data);
+                }
+                Some(russh::ChannelMsg::ExitStatus { exit_status }) => {
+                    if exit_status != 0 {
+                        return Err(format!("command exited with {exit_status}").into());
+                    }
+                    break;
+                }
+                Some(russh::ChannelMsg::Eof) => break,
+                None => break,
+                _ => {}
+            }
+        }
+
+        Ok(stdout)
     }
 
     /// Start a long-running command (agent process). Returns immediately.
