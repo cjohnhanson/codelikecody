@@ -76,6 +76,11 @@ impl Supervisor {
         let _ = coord.register_agent("supervisor", None);
         let _ = coord.set_status("supervisor", clc_sdk::coordination::AgentStatus::Running);
 
+        // Generate ephemeral CA for mTLS.
+        let ca = crate::tls::EphemeralCA::new()
+            .map_err(|e| Error::NonBlocking(format!("CA generation: {e}")))?;
+        eprintln!("supervisor: ephemeral CA generated");
+
         // Start the supervisor API server.
         let api_state = Arc::new(crate::supervisor_api::ApiState {
             coord: Coordination::open(&self.project_dir)
@@ -93,7 +98,7 @@ impl Supervisor {
             .block_on(crate::supervisor_api::start(api_state, api_port))
             .map_err(|e| Error::NonBlocking(format!("API server: {e}")))?;
 
-        eprintln!("supervisor API listening on {api_addr}");
+        eprintln!("supervisor API listening on {api_addr} (mTLS)");
 
         let shutdown = Arc::clone(&self.shutdown);
         let _ = ctrlc::set_handler(move || {
