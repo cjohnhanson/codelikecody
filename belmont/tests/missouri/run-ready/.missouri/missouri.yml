@@ -1,0 +1,12 @@
+assertions:
+  - name: "check succeeds when all secrets available"
+    command: "belmont check"
+  - name: "run scrubs secret from echo output"
+    command: "belmont run -- echo '$MY_SECRET'"
+    stdout: "belmont://MY_SECRET\r\n"
+  - name: "run propagates exit code"
+    command: "belmont run -- false"
+    should_fail: true
+  - name: "run passes through non-secret output"
+    command: "belmont run -- echo hello"
+    stdout: "hello\r\n"

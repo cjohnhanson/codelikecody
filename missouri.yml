@@ -1,4 +1,5 @@
 members:
+  - belmont/tests/missouri
   - clc-api/tests/missouri
   - clc/tests/missouri
   - tisket/tests/missouri

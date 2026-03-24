@@ -1,0 +1,7 @@
+setup:
+  - name: "build belmont"
+    command: "cargo build --quiet --manifest-path ../../Cargo.toml"
+
+env:
+  NO_COLOR: "1"
+  BELMONT_TEST_SECRET: "super-secret-value-12345"

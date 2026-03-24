@@ -1,0 +1,4 @@
+backends: {}
+secrets:
+  MY_SECRET: "ref+env://BELMONT_TEST_SECRET"
+  MISSING_ONE: "ref+env://BELMONT_DEFINITELY_NOT_SET"

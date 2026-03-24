@@ -1,0 +1,15 @@
+transitions:
+  - name: "belmont init"
+    command: "belmont init"
+    target: "../initialized"
+    stderr: "initialized belmont.yml\n"
+
+assertions:
+  - name: "list fails before init"
+    command: "belmont list"
+    should_fail: true
+    stderr: "error: not initialized (belmont.yml not found)\n"
+  - name: "check fails before init"
+    command: "belmont check"
+    should_fail: true
+    stderr: "error: not initialized (belmont.yml not found)\n"

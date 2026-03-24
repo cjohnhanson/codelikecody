@@ -1,0 +1,20 @@
+transitions:
+  - name: "remove missing secret for run"
+    command: |
+      cat > belmont.yml << 'YAML'
+      backends: {}
+      secrets:
+        MY_SECRET: "ref+env://BELMONT_TEST_SECRET"
+      YAML
+    target: "../run-ready"
+
+assertions:
+  - name: "list shows belmont:// references"
+    command: "belmont list"
+    stdout: "belmont://MISSING_ONE\nbelmont://MY_SECRET\n"
+  - name: "check exits nonzero when secrets missing"
+    command: "belmont check"
+    should_fail: true
+  - name: "run refuses when secrets missing"
+    command: "belmont run -- echo hello"
+    should_fail: true

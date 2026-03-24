@@ -1,0 +1,19 @@
+transitions:
+  - name: "add secrets config"
+    command: |
+      cat > belmont.yml << 'YAML'
+      backends: {}
+      secrets:
+        MY_SECRET: "ref+env://BELMONT_TEST_SECRET"
+        MISSING_ONE: "ref+env://BELMONT_DEFINITELY_NOT_SET"
+      YAML
+    target: "../has-secrets"
+
+assertions:
+  - name: "list shows no secrets"
+    command: "belmont list"
+    stderr: "no secrets declared\n"
+  - name: "init fails when already initialized"
+    command: "belmont init"
+    should_fail: true
+    stderr: "error: already initialized (belmont.yml exists)\n"
