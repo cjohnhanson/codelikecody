@@ -4,6 +4,8 @@ use clap::Parser;
 use crate::config::BelmontConfig;
 use crate::error::Result;
 use crate::registry::SecretRegistry;
+use crate::runner;
+use crate::scrub::Scrubber;
 
 #[derive(Parser)]
 #[command(
@@ -89,8 +91,23 @@ fn cmd_check(root: &Utf8PathBuf) -> Result<()> {
     }
 }
 
-fn cmd_run(_root: &Utf8PathBuf, _run_args: &RunArgs) -> Result<()> {
-    // TODO: PTY-based runner
-    eprintln!("belmont run not yet implemented");
-    std::process::exit(1);
+fn cmd_run(root: &Utf8PathBuf, run_args: &RunArgs) -> Result<()> {
+    let config = BelmontConfig::load(root.as_ref())?;
+    let registry = SecretRegistry::resolve(&config);
+
+    if !registry.all_resolved() {
+        let missing = registry.missing();
+        eprintln!(
+            "belmont: {} secret(s) missing, run `belmont check` for details",
+            missing.len()
+        );
+        std::process::exit(1);
+    }
+
+    let pairs = registry.resolved_pairs();
+    let mut scrubber = Scrubber::new(pairs.clone());
+    let env_map = registry.env_map();
+
+    let exit_code = runner::run_command(&run_args.command, env_map, &mut scrubber)?;
+    std::process::exit(exit_code);
 }
