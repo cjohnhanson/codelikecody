@@ -1,7 +1,7 @@
-//! Coordination layer: sync wrapper around the async CoordinationBackend.
+//! Coordination layer: sync interface for coordination operations.
 //!
-//! Manages the SQLite database lifecycle and provides blocking methods
-//! for the synchronous CLI code.
+//! Detects `CLC_API_URL` env var. If set, operations go through HTTP
+//! to the supervisor API. If not, opens SQLite directly (local mode).
 
 use std::path::Path;
 use std::sync::Arc;
@@ -12,19 +12,34 @@ use clc_sdk::coordination::{
 };
 use clc_sdk::coordination_db::DbBackend;
 
-/// Sync coordination handle. Wraps the async backend with a tokio runtime.
+use crate::coordination_client::ApiClient;
+
+enum Backend {
+    Db {
+        backend: Arc<DbBackend>,
+        rt: tokio::runtime::Runtime,
+    },
+    Api(ApiClient),
+}
+
+/// Sync coordination handle. Routes to SQLite or HTTP based on env.
 pub struct Coordination {
-    backend: Arc<DbBackend>,
-    rt: tokio::runtime::Runtime,
+    inner: Backend,
 }
 
 impl Coordination {
-    /// Open or create the coordination database at `.clc/coordination.db`
-    /// inside `project_dir`.
+    /// Open coordination. If `CLC_API_URL` is set, use the HTTP API.
+    /// Otherwise, open SQLite at `.clc/coordination.db`.
     pub fn open(project_dir: &Path) -> Result<Self, CoordinationError> {
+        if let Ok(api_url) = std::env::var("CLC_API_URL") {
+            let client = ApiClient::new(&api_url)?;
+            return Ok(Self {
+                inner: Backend::Api(client),
+            });
+        }
+
         let db_path = project_dir.join(".clc").join("coordination.db");
 
-        // Ensure parent directory exists.
         if let Some(parent) = db_path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| {
                 CoordinationError::Storage(format!("create .clc dir: {e}"))
@@ -45,8 +60,10 @@ impl Coordination {
         })?;
 
         Ok(Self {
-            backend: Arc::new(backend),
-            rt,
+            inner: Backend::Db {
+                backend: Arc::new(backend),
+                rt,
+            },
         })
     }
 
@@ -55,8 +72,10 @@ impl Coordination {
         id: &str,
         parent_id: Option<&str>,
     ) -> Result<(), CoordinationError> {
-        self.rt
-            .block_on(self.backend.register_agent(id, parent_id))
+        match &self.inner {
+            Backend::Db { backend, rt } => rt.block_on(backend.register_agent(id, parent_id)),
+            Backend::Api(client) => client.register_agent(id, parent_id),
+        }
     }
 
     pub fn set_status(
@@ -64,19 +83,27 @@ impl Coordination {
         agent_id: &str,
         status: AgentStatus,
     ) -> Result<(), CoordinationError> {
-        self.rt
-            .block_on(self.backend.set_status(agent_id, status))
+        match &self.inner {
+            Backend::Db { backend, rt } => rt.block_on(backend.set_status(agent_id, status)),
+            Backend::Api(client) => client.set_status(agent_id, status),
+        }
     }
 
     pub fn get_status(
         &self,
         agent_id: &str,
     ) -> Result<AgentStatus, CoordinationError> {
-        self.rt.block_on(self.backend.get_status(agent_id))
+        match &self.inner {
+            Backend::Db { backend, rt } => rt.block_on(backend.get_status(agent_id)),
+            Backend::Api(client) => client.get_status(agent_id),
+        }
     }
 
     pub fn send(&self, msg: Message) -> Result<MessageId, CoordinationError> {
-        self.rt.block_on(self.backend.send(msg))
+        match &self.inner {
+            Backend::Db { backend, rt } => rt.block_on(backend.send(msg)),
+            Backend::Api(client) => client.send(msg),
+        }
     }
 
     pub fn recv(
@@ -84,24 +111,46 @@ impl Coordination {
         agent_id: &str,
         cursor: &Cursor,
     ) -> Result<(Vec<Message>, Cursor), CoordinationError> {
-        self.rt.block_on(self.backend.recv(agent_id, cursor))
+        match &self.inner {
+            Backend::Db { backend, rt } => rt.block_on(backend.recv(agent_id, cursor)),
+            Backend::Api(client) => client.recv(agent_id, cursor),
+        }
     }
 
     pub fn pending_permissions(
         &self,
         grantor_id: &str,
     ) -> Result<Vec<Message>, CoordinationError> {
-        self.rt
-            .block_on(self.backend.pending_permissions(grantor_id))
+        match &self.inner {
+            Backend::Db { backend, rt } => {
+                rt.block_on(backend.pending_permissions(grantor_id))
+            }
+            Backend::Api(client) => client.pending_permissions(grantor_id),
+        }
     }
 
-    #[allow(dead_code)] // Will be wired when review flows are implemented.
+    #[allow(dead_code)]
     pub fn pending_reviews(
         &self,
         reviewer_id: &str,
     ) -> Result<Vec<Message>, CoordinationError> {
-        self.rt
-            .block_on(self.backend.pending_reviews(reviewer_id))
+        match &self.inner {
+            Backend::Db { backend, rt } => {
+                rt.block_on(backend.pending_reviews(reviewer_id))
+            }
+            Backend::Api(_) => Ok(Vec::new()), // Not yet implemented in API.
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn list_agents(
+        &self,
+        parent_id: Option<&str>,
+    ) -> Result<Vec<(AgentId, AgentStatus)>, CoordinationError> {
+        match &self.inner {
+            Backend::Db { backend, rt } => rt.block_on(backend.list_agents(parent_id)),
+            Backend::Api(client) => client.list_agents(parent_id),
+        }
     }
 
     pub fn set_pid(
@@ -109,7 +158,14 @@ impl Coordination {
         agent_id: &str,
         pid: Option<i32>,
     ) -> Result<(), CoordinationError> {
-        self.rt.block_on(self.backend.set_pid(agent_id, pid))
+        match &self.inner {
+            Backend::Db { backend, rt } => rt.block_on(backend.set_pid(agent_id, pid)),
+            Backend::Api(_) => {
+                // PID tracking goes through PATCH /agents/:id {pid}
+                // For now, skip for API clients — pid is a local concern.
+                Ok(())
+            }
+        }
     }
 
     #[allow(dead_code)]
@@ -117,14 +173,9 @@ impl Coordination {
         &self,
         agent_id: &str,
     ) -> Result<Option<i32>, CoordinationError> {
-        self.rt.block_on(self.backend.get_pid(agent_id))
-    }
-
-    #[allow(dead_code)] // Will replace filesystem scan when output format migrates.
-    pub fn list_agents(
-        &self,
-        parent_id: Option<&str>,
-    ) -> Result<Vec<(AgentId, AgentStatus)>, CoordinationError> {
-        self.rt.block_on(self.backend.list_agents(parent_id))
+        match &self.inner {
+            Backend::Db { backend, rt } => rt.block_on(backend.get_pid(agent_id)),
+            Backend::Api(_) => Ok(None),
+        }
     }
 }

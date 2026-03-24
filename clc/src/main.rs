@@ -4,6 +4,7 @@ mod cli;
 mod config;
 mod coordinate;
 mod coordination;
+mod coordination_client;
 mod docs;
 mod coordinator_loop;
 mod coordinator_mgmt;
