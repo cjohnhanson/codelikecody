@@ -139,51 +139,51 @@ impl Workspace for SSHWorkspace {
                 .map_err(|e| WorkspaceError::Process(format!("reverse tunnel: {e}")))
         })?;
 
-        // 6. Set up reverse tunnel for git access to host repo.
-        //    The container can't reach the host directly. A reverse tunnel
-        //    maps container's localhost:GIT_PORT → host's localhost:22 (sshd).
-        //    The container clones from the host repo over this tunnel.
-        let git_tunnel_port: u16 = self.tunnel_port + 100; // Separate from API tunnel.
-        self.rt.block_on(async {
-            session
-                .setup_reverse_tunnel(git_tunnel_port, 22)
-                .await
-                .map_err(|e| WorkspaceError::Process(format!("git tunnel: {e}")))
-        })?;
-
-        // Clone the project repo inside the container via the git tunnel.
+        // 6. Create bundle of the repo on the host, transfer to container,
+        //    and extract via clc workspace commands. No git CLI needed.
         let branch_name = self.config.workspace_config.tisket_id.clone();
-        let host_user = std::env::var("USER").unwrap_or_else(|_| "root".to_string());
-        let project_path = self.config.workspace_config.project_dir.display();
-        let clone_url = format!(
-            "ssh://{host_user}@localhost:{git_tunnel_port}{project_path}"
-        );
+        let bundle_path = std::env::temp_dir().join(format!("clc-bundle-{branch_name}.tar"));
+        crate::git_bundle::create_bundle(
+            &self.config.workspace_config.project_dir,
+            &bundle_path,
+        )
+        .map_err(|e| WorkspaceError::Process(format!("create bundle: {e}")))?;
+
+        // Transfer bundle to container.
+        let bundle_data = std::fs::read(&bundle_path)
+            .map_err(|e| WorkspaceError::Process(format!("read bundle: {e}")))?;
         self.rt.block_on(async {
-            // Clone with the specific branch. Use GIT_SSH_COMMAND to skip host key check
-            // since this is localhost through a tunnel.
+            // Write binary data via base64 encoding to avoid heredoc issues.
+            let b64 = base64_encode(&bundle_data);
             session
                 .exec(&format!(
-                    "GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null' \
-                     git clone -b {branch_name} '{clone_url}' /project"
+                    "echo '{b64}' | base64 -d > /tmp/repo.bundle"
                 ))
                 .await
-                .map_err(|e| WorkspaceError::Process(format!("git clone: {e}")))
+                .map_err(|e| WorkspaceError::Process(format!("transfer bundle: {e}")))
         })?;
 
-        // 7. Set up worker state directory and stdio infrastructure
-        //    Same pattern as spawn_agent_process: mkfifo for stdin, files for stdout/stderr.
-        let worker_dir = "/project/.clc/worker";
+        // Clean up local bundle.
+        let _ = std::fs::remove_file(&bundle_path);
+
+        // Extract bundle and checkout branch using clc inside the container.
         self.rt.block_on(async {
             session
                 .exec(&format!(
-                    "mkdir -p {worker_dir} && \
-                     rm -f {worker_dir}/stdin.pipe && \
-                     mkfifo {worker_dir}/stdin.pipe && \
-                     touch {worker_dir}/stdout.jsonl {worker_dir}/stderr.log"
+                    "cd /project && clc workspace receive /tmp/repo.bundle --branch {branch_name}"
                 ))
                 .await
-                .map_err(|e| WorkspaceError::Process(format!("setup worker dir: {e}")))
+                .map_err(|e| WorkspaceError::Process(format!("receive bundle: {e}")))
         })?;
+
+        // 7. Initialize workspace: creates .clc/worker/ with stdio pipes and hooks.
+        self.rt.block_on(async {
+            session
+                .exec("cd /project && clc workspace init")
+                .await
+                .map_err(|e| WorkspaceError::Process(format!("workspace init: {e}")))
+        })?;
+        let worker_dir = "/project/.clc/worker";
 
         // 7. Build env var exports.
         let mut env_parts = vec![
@@ -312,6 +312,62 @@ impl Workspace for SSHWorkspace {
         self.status = WorkspaceStatus::Failed;
         Ok(())
     }
+}
+
+/// Base64 encode binary data for safe transfer over SSH exec.
+fn base64_encode(data: &[u8]) -> String {
+    use std::io::Write;
+    let mut buf = Vec::new();
+    let mut encoder = base64_writer(&mut buf);
+    encoder.write_all(data).unwrap();
+    drop(encoder);
+    String::from_utf8(buf).unwrap_or_default()
+}
+
+fn base64_writer(w: &mut Vec<u8>) -> impl std::io::Write + '_ {
+    // Simple base64 encoder — no external crate needed.
+    struct B64Writer<'a>(&'a mut Vec<u8>, Vec<u8>);
+
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    impl<'a> std::io::Write for B64Writer<'a> {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.1.extend_from_slice(buf);
+            while self.1.len() >= 3 {
+                let chunk: [u8; 3] = [self.1[0], self.1[1], self.1[2]];
+                self.0.push(CHARS[((chunk[0] >> 2) & 0x3F) as usize]);
+                self.0.push(CHARS[(((chunk[0] & 0x03) << 4) | (chunk[1] >> 4)) as usize]);
+                self.0.push(CHARS[(((chunk[1] & 0x0F) << 2) | (chunk[2] >> 6)) as usize]);
+                self.0.push(CHARS[(chunk[2] & 0x3F) as usize]);
+                self.1.drain(..3);
+            }
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            let len = self.1.len();
+            if len == 1 {
+                self.0.push(CHARS[((self.1[0] >> 2) & 0x3F) as usize]);
+                self.0.push(CHARS[((self.1[0] & 0x03) << 4) as usize]);
+                self.0.push(b'=');
+                self.0.push(b'=');
+            } else if len == 2 {
+                self.0.push(CHARS[((self.1[0] >> 2) & 0x3F) as usize]);
+                self.0.push(CHARS[(((self.1[0] & 0x03) << 4) | (self.1[1] >> 4)) as usize]);
+                self.0.push(CHARS[((self.1[1] & 0x0F) << 2) as usize]);
+                self.0.push(b'=');
+            }
+            self.1.clear();
+            Ok(())
+        }
+    }
+
+    impl<'a> Drop for B64Writer<'a> {
+        fn drop(&mut self) {
+            let _ = std::io::Write::flush(self);
+        }
+    }
+
+    B64Writer(w, Vec::new())
 }
 
 /// Docker environment: creates a container with sshd, returns SSH target.

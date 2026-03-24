@@ -15,6 +15,7 @@ mod error;
 mod event;
 mod git;
 mod git_add;
+mod git_bundle;
 mod gix_ops;
 mod guard;
 mod home;
@@ -153,6 +154,7 @@ fn main() {
         cli::Command::Inbox { ref action } => cmd_inbox(action),
         cli::Command::Outbox { ref action } => cmd_outbox(action),
         cli::Command::Integrate { ref action } => cmd_integrate(action),
+        cli::Command::Workspace { ref action } => cmd_workspace(action),
         cli::Command::Coordinators { all } => cmd_coordinators(all),
         cli::Command::Coordinator { ref id, ref action } => cmd_coordinator(id, action),
         cli::Command::Remind {
@@ -393,6 +395,45 @@ fn cmd_pickup(id: &str) -> Result<(), Error> {
     pickup::pickup(&project_dir, id, &cfg.main_branch, &cfg.admin_branch, None)?;
     eprintln!("picked up '{id}' — worktree at .worktrees/{id}");
     Ok(())
+}
+
+fn cmd_workspace(action: &cli::WorkspaceAction) -> Result<(), Error> {
+    let cwd = std::env::current_dir()?;
+
+    match action {
+        cli::WorkspaceAction::Init => {
+            // Create project dir structure and worker stdio infrastructure.
+            let worker_dir = cwd.join(".clc").join("worker");
+            std::fs::create_dir_all(&worker_dir)?;
+
+            // Create named pipe for stdin.
+            let pipe_path = worker_dir.join("stdin.pipe");
+            if pipe_path.exists() {
+                std::fs::remove_file(&pipe_path)?;
+            }
+            nix::unistd::mkfifo(
+                &pipe_path,
+                nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
+            )
+            .map_err(|e| Error::NonBlocking(format!("mkfifo: {e}")))?;
+
+            // Create stdout/stderr files.
+            std::fs::File::create(worker_dir.join("stdout.jsonl"))?;
+            std::fs::File::create(worker_dir.join("stderr.log"))?;
+
+            // Initialize clc hooks.
+            init::init(&cwd, false, true)?;
+
+            eprintln!("workspace initialized at {}", cwd.display());
+            Ok(())
+        }
+        cli::WorkspaceAction::Receive { bundle, branch } => {
+            let bundle_path = std::path::Path::new(bundle);
+            git_bundle::extract_bundle(bundle_path, &cwd, branch)?;
+            eprintln!("received repo, checked out branch '{branch}'");
+            Ok(())
+        }
+    }
 }
 
 fn cmd_done() -> Result<(), Error> {

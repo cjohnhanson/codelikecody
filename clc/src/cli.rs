@@ -222,6 +222,11 @@ pub enum Command {
         #[arg(long, default_value = "0")]
         repeat: u32,
     },
+    /// Workspace setup commands (run inside workspaces, not by humans).
+    Workspace {
+        #[command(subcommand)]
+        action: WorkspaceAction,
+    },
     /// List running coordinators with status.
     Coordinators {
         /// Show all coordinators including dead ones.
@@ -371,4 +376,18 @@ pub enum StatusAction {
 pub enum ConfigAction {
     /// Print the effective configuration.
     Show,
+}
+
+#[derive(Subcommand)]
+pub enum WorkspaceAction {
+    /// Initialize a workspace: create project dir, .clc/worker/ with stdio pipes.
+    Init,
+    /// Receive a repo bundle and extract it, checking out the specified branch.
+    Receive {
+        /// Path to the bundle file.
+        bundle: String,
+        /// Branch to checkout.
+        #[arg(long)]
+        branch: String,
+    },
 }

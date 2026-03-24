@@ -831,6 +831,7 @@ dependencies = [
  "serde_json",
  "serde_yml",
  "sigpipe",
+ "tar",
  "tempfile",
  "thiserror 2.0.18",
  "tisket",
