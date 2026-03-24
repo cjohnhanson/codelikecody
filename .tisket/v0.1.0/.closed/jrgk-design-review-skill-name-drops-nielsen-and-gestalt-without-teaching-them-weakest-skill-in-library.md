@@ -1,12 +1,12 @@
 ---
 title: "design-review skill name-drops Nielsen and Gestalt without teaching them — weakest skill in library"
-status: todo
+status: done
 priority:
 assignee:
 labels: [skills, quality]
 depends_on: []
-created: "2026-03-23T03:12:25Z"
-updated: "2026-03-23T03:12:25Z"
+created: 2026-03-23T03:12:25Z
+updated: "2026-03-24T03:32:00Z"
 ---
 
 ## Problem
