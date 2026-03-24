@@ -77,7 +77,7 @@ impl Supervisor {
         let _ = coord.set_status("supervisor", clc_sdk::coordination::AgentStatus::Running);
 
         // Generate ephemeral CA for mTLS.
-        let ca = crate::tls::EphemeralCA::new()
+        let _ca = crate::tls::EphemeralCA::new()
             .map_err(|e| Error::NonBlocking(format!("CA generation: {e}")))?;
         eprintln!("supervisor: ephemeral CA generated");
 

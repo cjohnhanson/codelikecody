@@ -10,7 +10,6 @@ mod docs;
 mod coordinator_loop;
 mod coordinator_mgmt;
 mod dispatch;
-mod docker_workspace;
 mod done;
 mod error;
 mod event;

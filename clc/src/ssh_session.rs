@@ -154,14 +154,15 @@ impl SSHSession {
         Ok(stdout)
     }
 
-    /// Start a long-running command (agent process). Returns immediately.
+    /// Start a long-running command. Returns immediately.
+    #[allow(dead_code)]
     /// Uses setsid to detach from the SSH session so the process survives
     /// channel close.
     pub async fn exec_detached(
         &mut self,
         command: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let mut channel = self.session.channel_open_session().await?;
+        let channel = self.session.channel_open_session().await?;
         let detached_cmd = format!(
             "setsid sh -c '{command} > /tmp/agent-stdout.log 2>/tmp/agent-stderr.log' &"
         );
@@ -174,6 +175,7 @@ impl SSHSession {
     }
 
     /// Disconnect.
+    #[allow(dead_code)]
     pub async fn close(self) -> Result<(), Box<dyn std::error::Error>> {
         self.session
             .disconnect(russh::Disconnect::ByApplication, "", "")

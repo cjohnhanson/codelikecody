@@ -33,6 +33,7 @@ pub trait Environment: Send {
 /// SSH workspace configuration.
 pub struct SSHWorkspaceConfig {
     pub workspace_config: WorkspaceConfig,
+    #[allow(dead_code)] // Used by workspace start via Agent trait
     pub agent: Box<dyn clc_sdk::agent::Agent>,
     pub ca: Arc<EphemeralCA>,
     pub api_port: u16,
@@ -324,7 +325,9 @@ fn base64_writer(w: &mut Vec<u8>) -> impl std::io::Write + '_ {
 pub struct DockerEnvironment {
     image: String,
     container_id: Option<String>,
+    #[allow(dead_code)]
     project_dir: PathBuf,
+    #[allow(dead_code)]
     worktree_dir: PathBuf,
     rt: tokio::runtime::Runtime,
 }
@@ -354,7 +357,7 @@ impl DockerEnvironment {
 
 impl Environment for DockerEnvironment {
     fn create(&mut self) -> Result<SSHTarget, WorkspaceError> {
-        use bollard::container::{Config, CreateContainerOptions, RemoveContainerOptions};
+        use bollard::container::{Config, CreateContainerOptions};
         use bollard::models::HostConfig;
 
         let docker = bollard::Docker::connect_with_local_defaults()

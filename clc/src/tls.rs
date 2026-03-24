@@ -72,6 +72,7 @@ impl EphemeralCA {
     }
 
     /// Build a rustls ServerConfig that requires client certs signed by this CA.
+    #[allow(dead_code)]
     pub fn server_tls_config(&self) -> Result<Arc<rustls::ServerConfig>, Box<dyn std::error::Error>> {
         use rustls::pki_types::CertificateDer;
         use rustls::server::WebPkiClientVerifier;
