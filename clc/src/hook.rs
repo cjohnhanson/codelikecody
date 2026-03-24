@@ -274,25 +274,39 @@ fn assemble_prime(cwd: &Path, git: Option<&git::GitState>, phase: Option<phase::
     // --- clc remind section ---
     out.push_str(
         "## Reminders (`clc remind`)\n\n\
-         `clc remind` is a background timer that fires a message after a delay.\n\
-         Run it in the background when you need to be reminded of something\n\
-         in case context compaction or a stop event interrupts your work.\n\n\
+         `clc remind` is a background timer. It sleeps, then prints a message.\n\
+         Run it in the background as insurance against stopping mid-loop.\n\n\
+         ### Why this exists\n\n\
+         Context compaction, model decisions, and session limits can stop you\n\
+         mid-work. If you're in an iterative loop — making changes, dispatching\n\
+         reviews, resolving feedback, repeating until clean — a stop means the\n\
+         loop dies silently. `clc remind` prevents that: if you stop, the\n\
+         reminder fires and tells you to resume.\n\n\
          ### Usage\n\n\
          \x20 clc remind <seconds> <message>              One-shot reminder\n\
          \x20 clc remind <seconds> <message> --repeat N   Fires N+1 times total\n\n\
          When `--repeat` is set, the output includes a command to re-run with\n\
-         the count decremented. Run it in the background again to continue.\n\n\
-         ### When to use\n\n\
-         - **Iterative loops**: told to keep working until a condition is met?\n\
-           Set a reminder to check progress and resume if you stop unexpectedly.\n\
-         - **Long builds**: kicked off a build? Remind yourself to check the result.\n\
-         - **Waiting on external**: polling a deploy, CI run, or external process?\n\
-           Remind yourself to check back.\n\n\
+         the decremented count. Run that command in the background to continue.\n\n\
+         ### When to set a reminder\n\n\
+         Any time you're told to loop or iterate without stopping until a\n\
+         condition is met. The pattern:\n\n\
+         1. Start the work loop\n\
+         2. Set a background reminder with enough time for one iteration\n\
+         3. Do the work\n\
+         4. If the reminder fires before you're done, you stopped — resume\n\
+            the loop and set the reminder again\n\
+         5. If you finish before the reminder fires, the reminder is harmless\n\n\
          ### Example\n\n\
+         User says: \"Iterate on this code. Dispatch review agents, resolve\n\
+         their feedback, repeat until reviews come back clean. Don't stop.\"\n\n\
          ```bash\n\
-         # Remind in 5 minutes to check build, repeat 3 times\n\
-         clc remind 300 'Check build status and resume work if stopped' --repeat 3 &\n\
-         ```\n\n",
+         # Set a 5-minute reminder with 10 repeats as insurance\n\
+         clc remind 300 'You were iterating: make changes, dispatch review \\\n\
+         agents, resolve feedback, repeat until clean. Resume the loop.' \\\n\
+         --repeat 10 &\n\
+         ```\n\n\
+         The message should describe what you were doing so you can resume\n\
+         with context if the reminder fires in a new session.\n\n",
     );
 
     out
