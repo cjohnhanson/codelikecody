@@ -586,7 +586,7 @@ fn cmd_workspace(action: &cli::WorkspaceAction) -> Result<(), Error> {
     }
 }
 
-fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
+pub(crate) fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
     const DECODE: [u8; 256] = {
         let mut t = [255u8; 256];
         let chars = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

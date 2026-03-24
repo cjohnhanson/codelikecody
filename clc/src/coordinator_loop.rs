@@ -240,6 +240,24 @@ fn tick(
     for (id, status) in &agents {
         if *status == clc_sdk::coordination::AgentStatus::Completed {
             eprintln!("coordinator '{}': landing '{id}'", scope.id);
+
+            // For Docker workspaces, import the pack from the workspace first.
+            if matches!(scope.workspace, crate::config::WorkspaceType::Docker) {
+                let api_port = std::env::var("CLC_API_PORT")
+                    .ok()
+                    .and_then(|p| p.parse().ok())
+                    .unwrap_or(19100u16);
+                let api_url = format!("http://127.0.0.1:{api_port}");
+
+                match import_workspace_pack(&api_url, id, project_dir) {
+                    Ok(()) => eprintln!("coordinator '{}': imported pack from '{id}'", scope.id),
+                    Err(e) => {
+                        eprintln!("coordinator '{}': pack import failed for '{id}': {e}", scope.id);
+                        continue;
+                    }
+                }
+            }
+
             match crate::merge::merge(project_dir, id, main_branch, admin_branch) {
                 Ok(()) => eprintln!("coordinator '{}': landed '{id}'", scope.id),
                 Err(e) => {
@@ -339,6 +357,58 @@ fn tick(
     }
 
     Ok(TickResult::Continue)
+}
+
+/// Fetch pack from workspace via the supervisor API and import into host repo.
+fn import_workspace_pack(
+    api_url: &str,
+    worker_id: &str,
+    project_dir: &Path,
+) -> Result<(), crate::error::Error> {
+    use crate::error::Error;
+
+    let url = format!("{api_url}/agents/{worker_id}/pack");
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| Error::NonBlocking(format!("tokio: {e}")))?;
+
+    let body: serde_json::Value = rt.block_on(async {
+        let client = crate::coordination_client::build_api_client()
+            .map_err(|e| Error::NonBlocking(format!("http client: {e}")))?;
+        let resp = client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| Error::NonBlocking(format!("fetch pack: {e}")))?;
+        resp.json()
+            .await
+            .map_err(|e| Error::NonBlocking(format!("parse pack: {e}")))
+    })?;
+
+    let pack_b64 = body["pack"]
+        .as_str()
+        .ok_or_else(|| Error::NonBlocking("missing pack field".into()))?;
+    let pack_data = crate::base64_decode(pack_b64)
+        .map_err(|e| Error::NonBlocking(format!("decode pack: {e}")))?;
+
+    let refs: Vec<(String, String)> = body["refs"]
+        .as_array()
+        .unwrap_or(&Vec::new())
+        .iter()
+        .filter_map(|r| {
+            let arr = r.as_array()?;
+            Some((
+                arr.first()?.as_str()?.to_string(),
+                arr.get(1)?.as_str()?.to_string(),
+            ))
+        })
+        .collect();
+
+    crate::git_pack::import_pack(&pack_data, &refs, project_dir)?;
+
+    Ok(())
 }
 
 fn find_undispatched(
