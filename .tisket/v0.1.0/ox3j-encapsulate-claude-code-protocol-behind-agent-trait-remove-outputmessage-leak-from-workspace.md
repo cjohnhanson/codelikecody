@@ -1,12 +1,12 @@
 ---
 title: "Encapsulate claude-code protocol behind Agent trait — remove OutputMessage leak from Workspace"
-status: discovery
+status: todo
 priority: 2
 assignee:
-labels: [agent, architecture]
+labels: [agent, architecture, clc-up-target]
 depends_on: []
-created: "2026-03-24T13:07:08Z"
-updated: "2026-03-24T13:07:08Z"
+created: 2026-03-24T13:07:08Z
+updated: "2026-03-24T23:18:37Z"
 ---
 
 The Workspace trait returns `Vec<claude_code::protocol::OutputMessage>` from
