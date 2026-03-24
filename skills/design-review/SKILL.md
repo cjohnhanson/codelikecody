@@ -35,7 +35,8 @@ Dispatch sub-agents as independent evaluators. Each evaluator reviews
 the entire interface against all 10 heuristics, documenting violations
 with severity ratings.
 
-**The heuristics:**
+**The heuristics** (summary — load `references/nielsens-heuristics.md`
+for full explanations, violation examples, and severity guidance):
 
 1. **Visibility of system status** — is the user informed of what's happening?
 2. **Match between system and real world** — does it use the user's language, not internal jargon?
@@ -57,7 +58,9 @@ with severity ratings.
 
 ## Phase 3 — Visual Evaluation (Gestalt + Norman)
 
-Evaluate visual design using perceptual and interaction oracles:
+Evaluate visual design using perceptual and interaction oracles
+(load `references/visual-design-principles.md` for full explanations
+and violation examples):
 
 **Gestalt (perceptual consistency):**
 - **Proximity** — are related items grouped spatially?

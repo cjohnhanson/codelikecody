@@ -58,7 +58,9 @@ Parallelize independent flows. Sequence dependent ones.
 
 ## Phase 3 — Evaluate (oracles)
 
-Review sub-agent results against FEW HICCUPPS consistency oracles:
+Review sub-agent results against FEW HICCUPPS consistency oracles
+(load `references/few-hiccupps.md` for full explanations, diagnostic
+questions, violation examples, and prioritization guidance):
 
 - **Familiar**: does it work like things that work?
 - **Explainable**: can the behavior be explained?
