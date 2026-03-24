@@ -1,4 +1,5 @@
 pub mod env;
+pub mod keyring;
 
 use crate::error::{Error, Result};
 
@@ -31,6 +32,7 @@ pub fn resolve(uri: &str) -> Result<String> {
     let parsed = parse_ref_uri(uri)?;
     match parsed.scheme.as_str() {
         "env" => env::resolve(&parsed.path),
+        "keyring" => keyring::resolve(&parsed.path),
         other => Err(Error::UnknownBackend(other.to_string())),
     }
 }

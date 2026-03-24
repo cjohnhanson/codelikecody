@@ -26,6 +26,9 @@ pub enum Error {
 
     #[error("env: variable '{0}' not set")]
     EnvNotSet(String),
+
+    #[error("keyring: {0}")]
+    KeyringError(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

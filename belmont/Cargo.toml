@@ -6,6 +6,7 @@ description = "Secrets management for coding agents"
 
 [dependencies]
 camino = { version = "1", features = ["serde1"] }
+keyring = { version = "3", features = ["apple-native"] }
 clap = { version = "4", features = ["derive", "env", "unicode", "wrap_help"] }
 serde = { version = "1", features = ["derive"] }
 serde_yml = "0.0"
