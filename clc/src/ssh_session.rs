@@ -108,21 +108,28 @@ impl SSHSession {
         path: &str,
         content: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let escaped = content.replace('\'', "'\\''");
-        self.exec(&format!("cat > {path} << 'CLCEOF'\n{escaped}\nCLCEOF"))
+        // Single-quoted heredoc delimiter prevents all shell interpretation.
+        self.exec(&format!("cat > {path} << 'CLCEOF'\n{content}\nCLCEOF"))
             .await?;
         Ok(())
     }
 
     /// Start a long-running command (agent process). Returns immediately.
+    /// Uses setsid to detach from the SSH session so the process survives
+    /// channel close.
     pub async fn exec_detached(
         &mut self,
         command: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let mut channel = self.session.channel_open_session().await?;
+        let detached_cmd = format!(
+            "setsid sh -c '{command} > /tmp/agent-stdout.log 2>/tmp/agent-stderr.log' &"
+        );
         channel
-            .exec(true, format!("nohup {command} &").into_bytes())
+            .exec(true, detached_cmd.into_bytes())
             .await?;
+        // Wait briefly for the process to start, then close channel.
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         Ok(())
     }
 

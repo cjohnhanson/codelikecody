@@ -263,6 +263,9 @@ impl Supervisor {
             crate::config::WorkspaceType::Worktree => {}
         }
 
+        // Pass API port so coordinator can set up reverse tunnels for Docker workers.
+        cmd.env("CLC_API_PORT", "19100");
+
         cmd.current_dir(&self.project_dir);
 
         match cmd.spawn() {

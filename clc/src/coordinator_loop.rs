@@ -200,9 +200,23 @@ fn tick(
             eprintln!("coordinator '{}': dispatching '{id}'", scope.id);
             let ws_type = match scope.workspace {
                 crate::config::WorkspaceType::Worktree => crate::dispatch::DispatchWorkspace::Worktree,
-                crate::config::WorkspaceType::Docker => crate::dispatch::DispatchWorkspace::Docker {
-                    image: scope.docker_image.clone(),
-                },
+                crate::config::WorkspaceType::Docker => {
+                    let ca = std::sync::Arc::new(
+                        crate::tls::EphemeralCA::new().expect("ephemeral CA for dispatch"),
+                    );
+                    let api_port = std::env::var("CLC_API_PORT")
+                        .ok()
+                        .and_then(|p| p.parse().ok())
+                        .unwrap_or(19100);
+                    // Each worker gets a unique tunnel port.
+                    let tunnel_port = 19200 + (running + pickable.iter().position(|x| x == id).unwrap_or(0)) as u16;
+                    crate::dispatch::DispatchWorkspace::Docker {
+                        image: scope.docker_image.clone(),
+                        ca: Some(ca),
+                        api_port,
+                        tunnel_port,
+                    }
+                }
             };
             match crate::dispatch::dispatch_with_workspace(
                 project_dir,

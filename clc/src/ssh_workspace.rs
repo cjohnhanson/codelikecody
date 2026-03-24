@@ -139,7 +139,47 @@ impl Workspace for SSHWorkspace {
                 .map_err(|e| WorkspaceError::Process(format!("reverse tunnel: {e}")))
         })?;
 
-        // 6. Build and start the agent command.
+        // 6. Fix git worktree reference to container path.
+        let wt_name = &self.config.workspace_config.tisket_id;
+        self.rt.block_on(async {
+            session
+                .write_file(
+                    "/project/.git",
+                    &format!("gitdir: /project-git/worktrees/{wt_name}\n"),
+                )
+                .await
+                .map_err(|e| WorkspaceError::Process(format!("fix .git: {e}")))
+        })?;
+
+        // 7. Set up worker state directory and stdio infrastructure
+        //    Same pattern as spawn_agent_process: mkfifo for stdin, files for stdout/stderr.
+        let worker_dir = "/project/.clc/worker";
+        self.rt.block_on(async {
+            session
+                .exec(&format!(
+                    "mkdir -p {worker_dir} && \
+                     rm -f {worker_dir}/stdin.pipe && \
+                     mkfifo {worker_dir}/stdin.pipe && \
+                     touch {worker_dir}/stdout.jsonl {worker_dir}/stderr.log"
+                ))
+                .await
+                .map_err(|e| WorkspaceError::Process(format!("setup worker dir: {e}")))
+        })?;
+
+        // 7. Build env var exports.
+        let mut env_parts = vec![
+            format!("CLC_API_URL=http://localhost:{tunnel_port}"),
+            format!("CLC_API_CERT=/tmp/workspace-cert.pem"),
+            format!("CLC_API_KEY=/tmp/workspace-key.pem"),
+            format!("CLC_API_CA=/tmp/ca-cert.pem"),
+            "HOME=/root".to_string(),
+        ];
+
+        if let Some(ref token) = self.config.oauth_token {
+            env_parts.push(format!("CLAUDE_CODE_OAUTH_TOKEN={token}"));
+        }
+
+        // 8. Build the agent command from the Agent trait.
         let cmd = self
             .config
             .agent
@@ -155,17 +195,11 @@ impl Workspace for SSHWorkspace {
             .map(|a| a.to_string_lossy().to_string())
             .collect();
 
-        // Build env var exports.
-        let mut env_parts = vec![
-            format!("CLC_API_URL=http://localhost:{tunnel_port}"),
-            format!("CLC_API_CERT=/tmp/workspace-cert.pem"),
-            format!("CLC_API_KEY=/tmp/workspace-key.pem"),
-            format!("CLC_API_CA=/tmp/ca-cert.pem"),
-        ];
-
-        if let Some(ref token) = self.config.oauth_token {
-            env_parts.push(format!("CLAUDE_CODE_OAUTH_TOKEN={token}"));
-        }
+        let quoted_args: Vec<String> = std::iter::once(program)
+            .chain(args)
+            .map(|a| format!("'{}'", a.replace('\'', "'\\''")))
+            .collect();
+        let agent_cmd = quoted_args.join(" ");
 
         let env_exports = env_parts
             .iter()
@@ -173,7 +207,7 @@ impl Workspace for SSHWorkspace {
             .collect::<Vec<_>>()
             .join("; ");
 
-        // Write initial prompt to a file.
+        // 9. Write initial prompt to stdin pipe (via a temp file).
         let initial_prompt = &self.config.workspace_config.agent_config.initial_prompt;
         if !initial_prompt.is_empty() {
             let input = claude_code::protocol::InputMessage::user(initial_prompt);
@@ -186,27 +220,34 @@ impl Workspace for SSHWorkspace {
             })?;
         }
 
-        // Quote args for shell.
-        let quoted_args: Vec<String> = std::iter::once(program)
-            .chain(args)
-            .map(|a| format!("'{}'", a.replace('\'', "'\\''")))
-            .collect();
-        let agent_cmd = quoted_args.join(" ");
+        // 10. Start the agent process — same stdio pattern as spawn_agent_process:
+        //     stdin from named pipe, stdout/stderr to files.
+        //     Open pipe rw to prevent blocking, start agent, write prompt.
+        let spawn_cmd = format!(
+            "{env_exports}; cd /project; \
+             exec 3<>{worker_dir}/stdin.pipe; \
+             {agent_cmd} \
+               <&3 \
+               > {worker_dir}/stdout.jsonl \
+               2> {worker_dir}/stderr.log &\n\
+             AGENT_PID=$!; \
+             echo $AGENT_PID > {worker_dir}/pid; \
+             cat /tmp/initial-prompt.jsonl >&3; \
+             exec 3>&-; \
+             echo $AGENT_PID"
+        );
 
-        let full_cmd = if initial_prompt.is_empty() {
-            format!("{env_exports}; cd /project; {agent_cmd}")
-        } else {
-            format!(
-                "{env_exports}; cd /project; {agent_cmd} < /tmp/initial-prompt.jsonl"
-            )
-        };
-
-        self.rt.block_on(async {
+        let pid_output = self.rt.block_on(async {
             session
-                .exec_detached(&full_cmd)
+                .exec(&spawn_cmd)
                 .await
                 .map_err(|e| WorkspaceError::Process(format!("start agent: {e}")))
         })?;
+
+        eprintln!(
+            "ssh workspace: agent started (pid {})",
+            pid_output.trim()
+        );
 
         self.target = Some(target);
         self.cert = Some(cert);
