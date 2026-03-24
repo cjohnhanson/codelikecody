@@ -1,12 +1,12 @@
 ---
 title: "Phase and workflow state lives in flat files instead of the coordination database"
-status: discovery
+status: in_progress
 priority: 3
 assignee:
 labels: [clc, architecture]
 depends_on: []
-created: "2026-03-24T00:53:21Z"
-updated: "2026-03-24T00:53:21Z"
+created: 2026-03-24T00:53:21Z
+updated: "2026-03-24T01:06:20Z"
 ---
 
 ## Problem
@@ -80,3 +80,5 @@ coordination. When a coordinator, multiple workers, and a supervisor
 are all running, the DB is the only reliable way to share state. The
 files work for single-agent interactive use but become a liability
 under autonomous operation.
+
+## Scratch Notes
