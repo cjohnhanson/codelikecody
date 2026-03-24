@@ -1,0 +1,5 @@
+setup:
+  - name: "build clc"
+    command: "cargo build --quiet -p clc --manifest-path ../../../Cargo.toml"
+  - name: "link binary"
+    command: "mkdir -p .missouri/bin && ln -sf $(cd ../../.. && pwd)/target/debug/clc .missouri/bin/clc"

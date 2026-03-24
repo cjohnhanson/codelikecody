@@ -1,0 +1,3 @@
+assertions:
+  - name: "workspace init completed"
+    command: "true"

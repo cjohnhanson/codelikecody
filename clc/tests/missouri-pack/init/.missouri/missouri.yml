@@ -1,0 +1,66 @@
+doc: |
+  Create a git repo with a branch, then pack it and receive it in another dir.
+  Verifies the full git pack round-trip: create_pack → receive_pack.
+
+transitions:
+  - name: "create repo, branch, pack, receive, and verify"
+    command: |
+      set -e
+      TMPDIR=$(mktemp -d)
+
+      # Create a source repo with a file on a branch.
+      mkdir -p $TMPDIR/src-repo && cd $TMPDIR/src-repo
+      git init -q -b main
+      git config user.name test && git config user.email t@t
+      echo "hello world" > hello.txt
+      mkdir -p src && echo "fn main() {}" > src/main.rs
+      git add -A && git commit -q -m "initial"
+      git checkout -q -b test-branch
+      echo "branch content" > branch.txt
+      git add branch.txt && git commit -q -m "branch commit"
+
+      # Export pack from the branch.
+      cd $TMPDIR/src-repo
+      clc workspace export --branch test-branch > $TMPDIR/envelope.json
+
+      # Receive pack in a new directory.
+      rm -rf $TMPDIR/dst-repo && mkdir -p $TMPDIR/dst-repo
+      clc workspace receive --stdin --branch test-branch --dir $TMPDIR/dst-repo < $TMPDIR/envelope.json
+
+      # Verify files exist.
+      test -f $TMPDIR/dst-repo/hello.txt || (echo "FAIL: hello.txt missing" && exit 1)
+      test -f $TMPDIR/dst-repo/branch.txt || (echo "FAIL: branch.txt missing" && exit 1)
+      test -f $TMPDIR/dst-repo/src/main.rs || (echo "FAIL: src/main.rs missing" && exit 1)
+
+      # Verify content.
+      grep -q "hello world" $TMPDIR/dst-repo/hello.txt || (echo "FAIL: wrong hello.txt content" && exit 1)
+      grep -q "branch content" $TMPDIR/dst-repo/branch.txt || (echo "FAIL: wrong branch.txt content" && exit 1)
+
+      # Verify git repo.
+      test -d $TMPDIR/dst-repo/.git || (echo "FAIL: .git missing" && exit 1)
+
+      # Clean up.
+      rm -rf $TMPDIR
+
+      echo "PACK_ROUNDTRIP_OK"
+    target: ../received
+    stdout: "PACK_ROUNDTRIP_OK\n"
+
+  - name: "workspace init creates worker infrastructure"
+    command: |
+      set -e
+      TMPDIR=$(mktemp -d)
+      cd $TMPDIR
+      git init -q -b main
+      git config user.name test && git config user.email t@t
+      echo "test" > f.txt && git add f.txt && git commit -q -m "init"
+      clc workspace init 1>&2
+      test -p .clc/worker/stdin.pipe || (echo "FAIL: no stdin pipe" && exit 1)
+      test -f .clc/worker/stdout.jsonl || (echo "FAIL: no stdout.jsonl" && exit 1)
+      test -f .clc/worker/stderr.log || (echo "FAIL: no stderr.log" && exit 1)
+      test -f .claude/settings.local.json || (echo "FAIL: no settings" && exit 1)
+      grep -q "clc hook" .claude/settings.local.json || (echo "FAIL: hooks not configured" && exit 1)
+      rm -rf $TMPDIR
+      echo "WORKSPACE_INIT_OK"
+    target: ../workspace-init
+    stdout: "WORKSPACE_INIT_OK\n"

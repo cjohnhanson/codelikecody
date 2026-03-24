@@ -1,0 +1,3 @@
+assertions:
+  - name: "pack round-trip completed successfully"
+    command: "true"
