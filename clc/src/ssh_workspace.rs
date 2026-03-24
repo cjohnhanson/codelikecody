@@ -13,6 +13,7 @@ use clc_sdk::workspace::{
     PermissionDenial, Workspace, WorkspaceConfig, WorkspaceError, WorkspaceStatus,
 };
 
+use crate::ssh_session::SSHSession;
 use crate::tls::{EphemeralCA, WorkspaceCert};
 
 /// SSH connection target returned by an Environment.
@@ -43,11 +44,13 @@ pub struct SSHWorkspace {
     config: SSHWorkspaceConfig,
     env: Box<dyn Environment>,
     target: Option<SSHTarget>,
+    session: Option<SSHSession>,
     tunnel_port: u16,
     status: WorkspaceStatus,
     denials: Vec<PermissionDenial>,
     cert: Option<WorkspaceCert>,
     project_dir: PathBuf,
+    rt: tokio::runtime::Runtime,
 }
 
 impl SSHWorkspace {
@@ -55,18 +58,25 @@ impl SSHWorkspace {
         config: SSHWorkspaceConfig,
         env: Box<dyn Environment>,
         tunnel_port: u16,
-    ) -> Self {
+    ) -> Result<Self, WorkspaceError> {
         let project_dir = config.workspace_config.project_dir.clone();
-        Self {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| WorkspaceError::Process(format!("tokio: {e}")))?;
+
+        Ok(Self {
             config,
             env,
             target: None,
+            session: None,
             tunnel_port,
             status: WorkspaceStatus::NotStarted,
             denials: Vec::new(),
             cert: None,
             project_dir,
-        }
+            rt,
+        })
     }
 }
 
@@ -80,20 +90,127 @@ impl Workspace for SSHWorkspace {
         let target = self.env.create()?;
 
         // 2. Sign a workspace cert.
-        let agent_id = &self.config.workspace_config.tisket_id;
+        let agent_id = self.config.workspace_config.tisket_id.clone();
         let cert = self
             .config
             .ca
-            .sign_workspace_cert(agent_id, "worker")
+            .sign_workspace_cert(&agent_id, "worker")
             .map_err(|e| WorkspaceError::Process(format!("cert signing: {e}")))?;
 
-        // 3. Connect via SSH and set up.
-        // For now, store the target and cert. The actual SSH connection
-        // and reverse tunnel setup will use russh.
-        // TODO: russh connection, reverse tunnel, cert deployment, agent start
+        // 3. Connect via SSH.
+        let ssh_key_path = dirs::home_dir()
+            .unwrap_or_default()
+            .join(".ssh")
+            .join("id_ed25519");
+
+        let mut session = self.rt.block_on(async {
+            // Wait for sshd to be ready.
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+            SSHSession::connect(&target, &ssh_key_path)
+                .await
+                .map_err(|e| WorkspaceError::Process(format!("SSH connect: {e}")))
+        })?;
+
+        // 4. Deploy workspace cert and CA cert.
+        self.rt.block_on(async {
+            session
+                .write_file("/tmp/workspace-cert.pem", &cert.cert_pem)
+                .await
+                .map_err(|e| WorkspaceError::Process(format!("deploy cert: {e}")))?;
+            session
+                .write_file("/tmp/workspace-key.pem", &cert.key_pem)
+                .await
+                .map_err(|e| WorkspaceError::Process(format!("deploy key: {e}")))?;
+            session
+                .write_file("/tmp/ca-cert.pem", &self.config.ca.ca_cert_pem)
+                .await
+                .map_err(|e| WorkspaceError::Process(format!("deploy CA: {e}")))?;
+            Ok::<_, WorkspaceError>(())
+        })?;
+
+        // 5. Set up reverse tunnel: workspace's localhost:tunnel_port → supervisor's API.
+        let tunnel_port = self.tunnel_port;
+        let api_port = self.config.api_port;
+        self.rt.block_on(async {
+            session
+                .setup_reverse_tunnel(tunnel_port, api_port)
+                .await
+                .map_err(|e| WorkspaceError::Process(format!("reverse tunnel: {e}")))
+        })?;
+
+        // 6. Build and start the agent command.
+        let cmd = self
+            .config
+            .agent
+            .build_start_command(
+                &self.config.workspace_config.agent_config,
+                Path::new("/project"),
+            )
+            .map_err(|e| WorkspaceError::Process(format!("{e}")))?;
+
+        let program = cmd.get_program().to_string_lossy().to_string();
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().to_string())
+            .collect();
+
+        // Build env var exports.
+        let mut env_parts = vec![
+            format!("CLC_API_URL=https://localhost:{tunnel_port}"),
+            format!("CLC_API_CERT=/tmp/workspace-cert.pem"),
+            format!("CLC_API_KEY=/tmp/workspace-key.pem"),
+            format!("CLC_API_CA=/tmp/ca-cert.pem"),
+        ];
+
+        if let Some(ref token) = self.config.oauth_token {
+            env_parts.push(format!("CLAUDE_CODE_OAUTH_TOKEN={token}"));
+        }
+
+        let env_exports = env_parts
+            .iter()
+            .map(|e| format!("export {e}"))
+            .collect::<Vec<_>>()
+            .join("; ");
+
+        // Write initial prompt to a file.
+        let initial_prompt = &self.config.workspace_config.agent_config.initial_prompt;
+        if !initial_prompt.is_empty() {
+            let input = claude_code::protocol::InputMessage::user(initial_prompt);
+            let json = serde_json::to_string(&input).unwrap_or_default();
+            self.rt.block_on(async {
+                session
+                    .write_file("/tmp/initial-prompt.jsonl", &format!("{json}\n"))
+                    .await
+                    .map_err(|e| WorkspaceError::Process(format!("write prompt: {e}")))
+            })?;
+        }
+
+        // Quote args for shell.
+        let quoted_args: Vec<String> = std::iter::once(program)
+            .chain(args)
+            .map(|a| format!("'{}'", a.replace('\'', "'\\''")))
+            .collect();
+        let agent_cmd = quoted_args.join(" ");
+
+        let full_cmd = if initial_prompt.is_empty() {
+            format!("{env_exports}; cd /project; {agent_cmd}")
+        } else {
+            format!(
+                "{env_exports}; cd /project; {agent_cmd} < /tmp/initial-prompt.jsonl"
+            )
+        };
+
+        self.rt.block_on(async {
+            session
+                .exec_detached(&full_cmd)
+                .await
+                .map_err(|e| WorkspaceError::Process(format!("start agent: {e}")))
+        })?;
 
         self.target = Some(target);
         self.cert = Some(cert);
+        self.session = Some(session);
         self.status = WorkspaceStatus::Running;
 
         Ok(())
