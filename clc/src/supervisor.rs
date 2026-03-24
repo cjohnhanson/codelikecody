@@ -76,6 +76,25 @@ impl Supervisor {
         let _ = coord.register_agent("supervisor", None);
         let _ = coord.set_status("supervisor", clc_sdk::coordination::AgentStatus::Running);
 
+        // Start the supervisor API server.
+        let api_state = Arc::new(crate::supervisor_api::ApiState {
+            coord: Coordination::open(&self.project_dir)
+                .map_err(|e| Error::NonBlocking(format!("coordination DB for API: {e}")))?,
+            project_dir: self.project_dir.clone(),
+        });
+
+        let api_rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| Error::NonBlocking(format!("tokio runtime: {e}")))?;
+
+        let api_port = 19100; // TODO: configurable from SupervisorConfig
+        let api_addr = api_rt
+            .block_on(crate::supervisor_api::start(api_state, api_port))
+            .map_err(|e| Error::NonBlocking(format!("API server: {e}")))?;
+
+        eprintln!("supervisor API listening on {api_addr}");
+
         let shutdown = Arc::clone(&self.shutdown);
         let _ = ctrlc::set_handler(move || {
             shutdown.store(true, Ordering::SeqCst);

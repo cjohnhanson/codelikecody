@@ -27,6 +27,7 @@ mod phase;
 mod pickup;
 mod skills;
 mod supervisor;
+mod supervisor_api;
 mod tisket;
 mod topology;
 mod zettel;
