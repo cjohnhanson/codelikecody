@@ -29,6 +29,9 @@ pub enum Error {
 
     #[error("keyring: {0}")]
     KeyringError(String),
+
+    #[error("backend '{0}' is read-only")]
+    ReadOnlyBackend(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

@@ -10,6 +10,16 @@ pub struct RefUri {
     pub path: String,
 }
 
+/// Backend trait for resolving and storing secrets.
+pub trait Backend {
+    /// Resolve a secret value from this backend.
+    fn resolve(&self, path: &str) -> Result<String>;
+
+    /// Store a secret value in this backend.
+    /// Returns an error if the backend is read-only.
+    fn set(&self, path: &str, value: &str) -> Result<()>;
+}
+
 /// Parse a `ref+SCHEME://path` string into its components.
 pub fn parse_ref_uri(uri: &str) -> Result<RefUri> {
     let rest = uri
@@ -27,14 +37,25 @@ pub fn parse_ref_uri(uri: &str) -> Result<RefUri> {
     })
 }
 
+/// Get the backend implementation for a given scheme.
+fn backend_for(scheme: &str) -> Result<Box<dyn Backend>> {
+    match scheme {
+        "env" => Ok(Box::new(env::EnvBackend)),
+        "keyring" => Ok(Box::new(keyring::KeyringBackend)),
+        other => Err(Error::UnknownBackend(other.to_string())),
+    }
+}
+
 /// Resolve a ref URI to its secret value using the appropriate backend.
 pub fn resolve(uri: &str) -> Result<String> {
     let parsed = parse_ref_uri(uri)?;
-    match parsed.scheme.as_str() {
-        "env" => env::resolve(&parsed.path),
-        "keyring" => keyring::resolve(&parsed.path),
-        other => Err(Error::UnknownBackend(other.to_string())),
-    }
+    backend_for(&parsed.scheme)?.resolve(&parsed.path)
+}
+
+/// Store a value for a ref URI using the appropriate backend.
+pub fn set(uri: &str, value: &str) -> Result<()> {
+    let parsed = parse_ref_uri(uri)?;
+    backend_for(&parsed.scheme)?.set(&parsed.path, value)
 }
 
 #[cfg(test)]
@@ -90,5 +111,11 @@ mod tests {
     fn unknown_backend_fails() {
         let err = resolve("ref+vault://secret/path").unwrap_err();
         assert!(matches!(err, Error::UnknownBackend(_)));
+    }
+
+    #[test]
+    fn env_set_is_read_only() {
+        let err = set("ref+env://SOME_VAR", "value").unwrap_err();
+        assert!(matches!(err, Error::ReadOnlyBackend(_)));
     }
 }

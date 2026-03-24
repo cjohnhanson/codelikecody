@@ -1,0 +1,3 @@
+backends: {}
+secrets:
+  KEYRING_SECRET: "ref+keyring://belmont-test/missouri-secret"

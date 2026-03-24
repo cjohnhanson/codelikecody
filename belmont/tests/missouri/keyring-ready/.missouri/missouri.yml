@@ -1,0 +1,11 @@
+assertions:
+  - name: "set stores value in keychain"
+    command: "belmont set KEYRING_SECRET keyring-test-value-xyz"
+    stderr: "set belmont://KEYRING_SECRET\n"
+  - name: "check succeeds after set"
+    command: "belmont check"
+  - name: "run scrubs keyring secret from output"
+    command: "belmont run -- echo '$KEYRING_SECRET'"
+    stdout: "belmont://KEYRING_SECRET\r\n"
+  - name: "cleanup keyring entry"
+    command: "belmont set KEYRING_SECRET cleanup && security delete-generic-password -s belmont-test -a missouri-secret 2>/dev/null; true"

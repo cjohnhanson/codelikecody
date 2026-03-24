@@ -1,8 +1,9 @@
 use camino::Utf8PathBuf;
 use clap::Parser;
 
+use crate::backend;
 use crate::config::BelmontConfig;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::registry::SecretRegistry;
 use crate::runner;
 use crate::scrub::Scrubber;
@@ -33,6 +34,8 @@ pub enum Command {
     Check,
     /// Run a command with secrets injected and output scrubbed
     Run(RunArgs),
+    /// Set a secret value in its backend
+    Set(SetArgs),
 }
 
 #[derive(Parser)]
@@ -42,12 +45,21 @@ pub struct RunArgs {
     pub command: Vec<String>,
 }
 
+#[derive(Parser)]
+pub struct SetArgs {
+    /// Secret name (as declared in belmont.yml)
+    pub name: String,
+    /// Value to store (omit to read from stdin)
+    pub value: Option<String>,
+}
+
 pub fn run(args: Args) -> Result<()> {
     match args.command {
         Command::Init => cmd_init(&args.root),
         Command::List => cmd_list(&args.root),
         Command::Check => cmd_check(&args.root),
         Command::Run(run_args) => cmd_run(&args.root, &run_args),
+        Command::Set(set_args) => cmd_set(&args.root, &set_args),
     }
 }
 
@@ -89,6 +101,29 @@ fn cmd_check(root: &Utf8PathBuf) -> Result<()> {
         eprintln!("{} of {} secrets missing", missing.len(), registry.names().len());
         std::process::exit(1);
     }
+}
+
+fn cmd_set(root: &Utf8PathBuf, set_args: &SetArgs) -> Result<()> {
+    let config = BelmontConfig::load(root.as_ref())?;
+
+    let uri = config
+        .secrets
+        .get(&set_args.name)
+        .ok_or_else(|| Error::UnresolvableSecret(set_args.name.clone()))?;
+
+    let value = match &set_args.value {
+        Some(v) => v.clone(),
+        None => {
+            use std::io::Read;
+            let mut buf = String::new();
+            std::io::stdin().read_to_string(&mut buf)?;
+            buf.trim_end().to_string()
+        }
+    };
+
+    backend::set(uri, &value)?;
+    eprintln!("set belmont://{}", set_args.name);
+    Ok(())
 }
 
 fn cmd_run(root: &Utf8PathBuf, run_args: &RunArgs) -> Result<()> {

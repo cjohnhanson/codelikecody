@@ -1,10 +1,13 @@
 use crate::error::{Error, Result};
 
-/// Resolve a `ref+keyring://SERVICE/ACCOUNT` reference.
-///
-/// The path format is `SERVICE/ACCOUNT` where SERVICE maps to the keyring
-/// service name and ACCOUNT maps to the user/account name.
-pub fn resolve(path: &str) -> Result<String> {
+use super::Backend;
+
+/// Backend that reads and writes secrets via the OS credential store
+/// (macOS Keychain, Windows Credential Manager, Linux secret-service).
+pub struct KeyringBackend;
+
+/// Parse a `SERVICE/ACCOUNT` path, returning (service, account).
+fn parse_path(path: &str) -> Result<(&str, &str)> {
     let (service, account) = path
         .split_once('/')
         .ok_or_else(|| Error::InvalidRefUri(format!("ref+keyring://{path} — expected SERVICE/ACCOUNT")))?;
@@ -15,12 +18,31 @@ pub fn resolve(path: &str) -> Result<String> {
         )));
     }
 
-    let entry = keyring::Entry::new(service, account)
-        .map_err(|e| Error::KeyringError(format!("{service}/{account}: {e}")))?;
+    Ok((service, account))
+}
 
-    entry
-        .get_password()
-        .map_err(|e| Error::KeyringError(format!("{service}/{account}: {e}")))
+impl Backend for KeyringBackend {
+    fn resolve(&self, path: &str) -> Result<String> {
+        let (service, account) = parse_path(path)?;
+
+        let entry = keyring::Entry::new(service, account)
+            .map_err(|e| Error::KeyringError(format!("{service}/{account}: {e}")))?;
+
+        entry
+            .get_password()
+            .map_err(|e| Error::KeyringError(format!("{service}/{account}: {e}")))
+    }
+
+    fn set(&self, path: &str, value: &str) -> Result<()> {
+        let (service, account) = parse_path(path)?;
+
+        let entry = keyring::Entry::new(service, account)
+            .map_err(|e| Error::KeyringError(format!("{service}/{account}: {e}")))?;
+
+        entry
+            .set_password(value)
+            .map_err(|e| Error::KeyringError(format!("{service}/{account}: {e}")))
+    }
 }
 
 #[cfg(test)]
@@ -29,26 +51,47 @@ mod tests {
 
     #[test]
     fn missing_slash_fails() {
-        let err = resolve("no-slash").unwrap_err();
+        let backend = KeyringBackend;
+        let err = backend.resolve("no-slash").unwrap_err();
         assert!(matches!(err, Error::InvalidRefUri(_)));
     }
 
     #[test]
     fn empty_service_fails() {
-        let err = resolve("/account").unwrap_err();
+        let backend = KeyringBackend;
+        let err = backend.resolve("/account").unwrap_err();
         assert!(matches!(err, Error::InvalidRefUri(_)));
     }
 
     #[test]
     fn empty_account_fails() {
-        let err = resolve("service/").unwrap_err();
+        let backend = KeyringBackend;
+        let err = backend.resolve("service/").unwrap_err();
         assert!(matches!(err, Error::InvalidRefUri(_)));
     }
 
     #[test]
     fn nonexistent_entry_returns_error() {
-        // This should fail because no such keyring entry exists.
-        let result = resolve("belmont-test-nonexistent/does-not-exist");
+        let backend = KeyringBackend;
+        let result = backend.resolve("belmont-test-nonexistent/does-not-exist");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn roundtrip_set_then_resolve() {
+        let backend = KeyringBackend;
+        let path = "belmont-test/roundtrip-test";
+
+        // Set
+        backend.set(path, "test-value-12345").unwrap();
+
+        // Resolve
+        let value = backend.resolve(path).unwrap();
+        assert_eq!(value, "test-value-12345");
+
+        // Cleanup
+        let (service, account) = parse_path(path).unwrap();
+        let entry = keyring::Entry::new(service, account).unwrap();
+        let _ = entry.delete_credential();
     }
 }

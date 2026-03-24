@@ -1,3 +1,13 @@
+transitions:
+  - name: "switch to keyring config"
+    command: |
+      cat > belmont.yml << 'YAML'
+      backends: {}
+      secrets:
+        KEYRING_SECRET: "ref+keyring://belmont-test/missouri-secret"
+      YAML
+    target: "../keyring-ready"
+
 assertions:
   - name: "check succeeds when all secrets available"
     command: "belmont check"
