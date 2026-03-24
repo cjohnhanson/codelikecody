@@ -6,7 +6,7 @@ assertions:
     command: "test -f skills/test-skill/SKILL.md && test -f skills/another-skill/SKILL.md"
 
   - name: "prime includes skills section header"
-    command: "clc prime | grep -i 'Skills (almanac)'"
+    command: "clc prime | grep -i 'Almanac (skills)'"
 
   - name: "prime lists test-skill with description"
     command: "clc prime | grep 'test-skill' | grep 'A test skill for validation'"
@@ -18,7 +18,7 @@ assertions:
     command: "clc prime | grep 'test-skill' | grep 'file:'"
 
   - name: "SessionStart hook output includes skill index"
-    command: "echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook | jq -r '.hookSpecificOutput.additionalContext' | grep -i 'Skills (almanac)'"
+    command: "echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook | jq -r '.hookSpecificOutput.additionalContext' | grep -i 'Almanac (skills)'"
 
   - name: "SessionStart hook output lists both skills"
     command: "echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook | jq -r '.hookSpecificOutput.additionalContext' | grep 'test-skill' && echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\".\",\"source\":\"startup\"}' | clc hook | jq -r '.hookSpecificOutput.additionalContext' | grep 'another-skill'"
@@ -36,4 +36,4 @@ assertions:
     command: "! clc almanac show nonexistent 2>/dev/null"
 
   - name: "prime without skills config has no skills section"
-    command: "rm clc.yml && ! clc prime | grep -i 'Skills (almanac)'"
+    command: "rm clc.yml && ! clc prime | grep -i 'Almanac (skills)'"
