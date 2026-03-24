@@ -387,6 +387,21 @@ pub enum WorkspaceAction {
         /// Path to write to.
         path: String,
     },
+    /// Start the agent process with stdio wired to pipes/files.
+    Start {
+        /// Agent model.
+        #[arg(long, default_value = "opus")]
+        model: String,
+        /// Branch / tisket ID.
+        #[arg(long)]
+        branch: String,
+        /// CLC API URL for coordination.
+        #[arg(long)]
+        api_url: Option<String>,
+        /// OAuth token for the agent.
+        #[arg(long)]
+        oauth_token: Option<String>,
+    },
     /// Receive a repo bundle and extract it, checking out the specified branch.
     Receive {
         /// Path to the bundle file (omit if using --stdin).

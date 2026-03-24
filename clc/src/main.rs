@@ -427,6 +427,70 @@ fn cmd_workspace(action: &cli::WorkspaceAction) -> Result<(), Error> {
             eprintln!("workspace initialized at {}", cwd.display());
             Ok(())
         }
+        cli::WorkspaceAction::Start {
+            model,
+            branch,
+            api_url,
+            oauth_token,
+        } => {
+            use clc_sdk::agent::{Agent, AgentConfig, ClaudeCodeAgent};
+            use std::process::Stdio;
+
+            let worker_dir = cwd.join(".clc").join("worker");
+            let pid_path = worker_dir.join("pid");
+            let stdout_path = worker_dir.join("stdout.jsonl");
+            let stderr_path = worker_dir.join("stderr.log");
+            let stdin_pipe_path = worker_dir.join("stdin.pipe");
+
+            // Build prompts.
+            let system_prompt = dispatch::build_system_prompt(branch);
+            let initial_prompt = dispatch::build_worker_prompt_from_dir(&cwd, branch)?;
+
+            let agent = ClaudeCodeAgent::new();
+            let config = AgentConfig {
+                model: model.clone(),
+                system_prompt,
+                initial_prompt: initial_prompt.clone(),
+                extra_args: vec![],
+            };
+
+            let mut cmd = agent
+                .build_start_command(&config, &cwd)
+                .map_err(|e| Error::NonBlocking(format!("build command: {e}")))?;
+
+            // Set env vars via Command::env — no shell export.
+            if let Some(url) = api_url {
+                cmd.env("CLC_API_URL", url);
+            }
+            if let Some(token) = oauth_token {
+                cmd.env("CLAUDE_CODE_OAUTH_TOKEN", token);
+            }
+
+            // Wire stdio to pipes/files — same as spawn_agent_process.
+            let stdin_file = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&stdin_pipe_path)?;
+            let stdout_file = std::fs::File::create(&stdout_path)?;
+            let stderr_file = std::fs::File::create(&stderr_path)?;
+
+            cmd.stdin(Stdio::from(stdin_file));
+            cmd.stdout(Stdio::from(stdout_file));
+            cmd.stderr(Stdio::from(stderr_file));
+
+            let child = cmd
+                .spawn()
+                .map_err(|e| Error::NonBlocking(format!("spawn: {e}")))?;
+
+            let pid = child.id();
+            std::fs::write(&pid_path, pid.to_string())?;
+
+            // Send initial prompt to the pipe.
+            dispatch::send_prompt(&stdin_pipe_path, &initial_prompt)?;
+
+            eprintln!("agent started (pid {pid})");
+            Ok(())
+        }
         cli::WorkspaceAction::WriteFile { path } => {
             use std::io::Read;
             let mut data = Vec::new();

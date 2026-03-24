@@ -385,7 +385,7 @@ pub fn send_prompt(pipe_path: &Path, prompt: &str) -> Result<(), Error> {
     Ok(())
 }
 
-fn build_worker_prompt(project_dir: &Path, tisket_id: &str) -> Result<String, Error> {
+pub fn build_worker_prompt(project_dir: &Path, tisket_id: &str) -> Result<String, Error> {
     let utf8_dir = Utf8Path::new(
         project_dir
             .to_str()
@@ -408,7 +408,12 @@ fn build_worker_prompt(project_dir: &Path, tisket_id: &str) -> Result<String, Er
     ))
 }
 
-fn build_system_prompt(tisket_id: &str) -> String {
+/// Build worker prompt from the workspace directory itself (for clc workspace start).
+pub fn build_worker_prompt_from_dir(workspace_dir: &Path, tisket_id: &str) -> Result<String, Error> {
+    build_worker_prompt(workspace_dir, tisket_id)
+}
+
+pub fn build_system_prompt(tisket_id: &str) -> String {
     format!(
         "You are an autonomous worker agent managed by clc. \
          Your task is defined by tisket '{tisket_id}'. \
