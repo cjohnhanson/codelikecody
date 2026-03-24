@@ -8,9 +8,10 @@ use clc_sdk::coordination::{
     AgentId, AgentStatus, CoordinationError, Cursor, Message, MessageId, MessageKind,
 };
 
-/// HTTP-backed coordination client.
+/// HTTP-backed coordination client. Supports mTLS when cert env vars are set.
 pub struct ApiClient {
     base_url: String,
+    client: reqwest::Client,
     rt: tokio::runtime::Runtime,
 }
 
@@ -21,8 +22,13 @@ impl ApiClient {
             .build()
             .map_err(|e| CoordinationError::Storage(format!("tokio: {e}")))?;
 
+        // Build reqwest client with mTLS if cert env vars are set.
+        let client = build_api_client()
+            .map_err(|e| CoordinationError::Storage(format!("http client: {e}")))?;
+
         Ok(Self {
             base_url: base_url.trim_end_matches('/').to_string(),
+            client,
             rt,
         })
     }
@@ -42,7 +48,7 @@ impl ApiClient {
         });
 
         let status = self.rt.block_on(async {
-            let resp = reqwest::Client::new()
+            let resp = self.client.clone()
                 .post(self.url("/agents"))
                 .json(&body)
                 .send()
@@ -76,7 +82,7 @@ impl ApiClient {
         let body = serde_json::json!({ "status": status_str });
 
         let resp_status = self.rt.block_on(async {
-            let resp = reqwest::Client::new()
+            let resp = self.client.clone()
                 .patch(self.url(&format!("/agents/{agent_id}")))
                 .json(&body)
                 .send()
@@ -97,7 +103,7 @@ impl ApiClient {
         agent_id: &str,
     ) -> Result<AgentStatus, CoordinationError> {
         let body: serde_json::Value = self.rt.block_on(async {
-            let resp = reqwest::Client::new()
+            let resp = self.client.clone()
                 .get(self.url(&format!("/agents/{agent_id}")))
                 .send()
                 .await
@@ -135,7 +141,7 @@ impl ApiClient {
         });
 
         let resp_body: serde_json::Value = self.rt.block_on(async {
-            let resp = reqwest::Client::new()
+            let resp = self.client.clone()
                 .post(self.url(&format!("/agents/{}/messages", msg.to)))
                 .json(&body)
                 .send()
@@ -159,7 +165,7 @@ impl ApiClient {
         cursor: &Cursor,
     ) -> Result<(Vec<Message>, Cursor), CoordinationError> {
         let body: serde_json::Value = self.rt.block_on(async {
-            let resp = reqwest::Client::new()
+            let resp = self.client.clone()
                 .get(self.url(&format!(
                     "/agents/{agent_id}/messages?after={}",
                     cursor.0
@@ -191,7 +197,7 @@ impl ApiClient {
         grantor_id: &str,
     ) -> Result<Vec<Message>, CoordinationError> {
         let body: serde_json::Value = self.rt.block_on(async {
-            let resp = reqwest::Client::new()
+            let resp = self.client.clone()
                 .get(self.url(&format!("/agents/{grantor_id}/permissions")))
                 .send()
                 .await
@@ -221,7 +227,7 @@ impl ApiClient {
         };
 
         let body: serde_json::Value = self.rt.block_on(async {
-            let resp = reqwest::Client::new()
+            let resp = self.client.clone()
                 .get(&url)
                 .send()
                 .await
@@ -342,4 +348,30 @@ fn json_to_message(v: &serde_json::Value) -> Option<Message> {
         kind,
         timestamp: std::time::SystemTime::now(),
     })
+}
+
+/// Build a reqwest client with mTLS if CLC_API_CERT, CLC_API_KEY, and
+/// CLC_API_CA env vars are set. Otherwise returns a plain client.
+pub fn build_api_client() -> Result<reqwest::Client, Box<dyn std::error::Error>> {
+    let cert_path = std::env::var("CLC_API_CERT").ok();
+    let key_path = std::env::var("CLC_API_KEY").ok();
+    let ca_path = std::env::var("CLC_API_CA").ok();
+
+    match (cert_path, key_path, ca_path) {
+        (Some(cert), Some(key), Some(ca)) => {
+            let cert_pem = std::fs::read(&cert)?;
+            let key_pem = std::fs::read(&key)?;
+            let ca_pem = std::fs::read(&ca)?;
+
+            let identity = reqwest::Identity::from_pem(&[cert_pem, key_pem].concat())?;
+            let ca_cert = reqwest::Certificate::from_pem(&ca_pem)?;
+
+            Ok(reqwest::Client::builder()
+                .identity(identity)
+                .add_root_certificate(ca_cert)
+                .danger_accept_invalid_certs(false)
+                .build()?)
+        }
+        _ => Ok(reqwest::Client::new()),
+    }
 }

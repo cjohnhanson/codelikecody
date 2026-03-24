@@ -77,13 +77,17 @@ impl Supervisor {
         let _ = coord.set_status("supervisor", clc_sdk::coordination::AgentStatus::Running);
 
         // Generate ephemeral CA for mTLS.
-        let _ca = crate::tls::EphemeralCA::new()
+        let ca = crate::tls::EphemeralCA::new()
             .map_err(|e| Error::NonBlocking(format!("CA generation: {e}")))?;
-        eprintln!("supervisor: ephemeral CA generated");
+        let tls_config = ca
+            .server_tls_config()
+            .map_err(|e| Error::NonBlocking(format!("TLS config: {e}")))?;
+        eprintln!("supervisor: ephemeral CA generated, mTLS configured");
 
         // Start the supervisor API server on a dedicated thread.
         let api_project_dir = self.project_dir.clone();
         let api_port = 19100; // TODO: configurable from SupervisorConfig
+        let api_tls = tls_config;
         let (api_tx, api_rx) = std::sync::mpsc::channel();
 
         thread::spawn(move || {
@@ -105,7 +109,7 @@ impl Supervisor {
                     project_dir: api_project_dir,
                 });
 
-                match crate::supervisor_api::start(api_state, api_port).await {
+                match crate::supervisor_api::start(api_state, api_port, Some(api_tls)).await {
                     Ok(addr) => {
                         let _ = api_tx.send(Ok(addr));
                         // Keep the runtime alive so the server runs.

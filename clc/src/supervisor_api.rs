@@ -25,9 +25,11 @@ pub struct ApiState {
 }
 
 /// Start the supervisor API server. Returns the bound address.
+/// If `tls_config` is provided, the server uses mTLS. Otherwise plain HTTP.
 pub async fn start(
     state: Arc<ApiState>,
     port: u16,
+    tls_config: Option<Arc<rustls::ServerConfig>>,
 ) -> Result<SocketAddr, Box<dyn std::error::Error>> {
     let app = Router::new()
         // Agents
@@ -55,14 +57,31 @@ pub async fn start(
         .with_state(state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    let bound_addr = listener.local_addr()?;
 
-    tokio::spawn(async move {
-        axum::serve(listener, app).await.ok();
-    });
+    if let Some(tls) = tls_config {
+        // mTLS server via axum-server + rustls.
+        let rustls_config = axum_server::tls_rustls::RustlsConfig::from_config(tls);
+        let bound_addr = addr;
 
-    Ok(bound_addr)
+        tokio::spawn(async move {
+            axum_server::bind_rustls(addr, rustls_config)
+                .serve(app.into_make_service())
+                .await
+                .ok();
+        });
+
+        Ok(bound_addr)
+    } else {
+        // Plain HTTP (for local worktree mode or testing).
+        let listener = tokio::net::TcpListener::bind(addr).await?;
+        let bound_addr = listener.local_addr()?;
+
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.ok();
+        });
+
+        Ok(bound_addr)
+    }
 }
 
 // --- Request/Response types ---

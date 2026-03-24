@@ -188,7 +188,10 @@ pub fn check(project_dir: &Path, id: &str) -> Result<(), Error> {
             .map_err(|e| Error::NonBlocking(format!("tokio: {e}")))?;
 
         let body: serde_json::Value = rt.block_on(async {
-            reqwest::get(&url)
+            crate::coordination_client::build_api_client()
+                .map_err(|e| Error::NonBlocking(format!("http client: {e}")))?
+                .get(&url)
+                .send()
                 .await
                 .map_err(|e| Error::NonBlocking(format!("http: {e}")))?
                 .json()
@@ -279,7 +282,8 @@ pub fn send(project_dir: &Path, id: &str, message: &str) -> Result<(), Error> {
             .map_err(|e| Error::NonBlocking(format!("tokio: {e}")))?;
 
         let status = rt.block_on(async {
-            reqwest::Client::new()
+            crate::coordination_client::build_api_client()
+                .map_err(|e| Error::NonBlocking(format!("http client: {e}")))?
                 .post(&url)
                 .json(&body)
                 .send()

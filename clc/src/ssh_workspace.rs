@@ -197,7 +197,7 @@ impl Workspace for SSHWorkspace {
             self.config.workspace_config.agent_config.model.clone(),
         ];
 
-        let api_url = format!("http://localhost:{tunnel_port}");
+        let api_url = format!("https://localhost:{tunnel_port}");
         start_args.push("--api-url".to_string());
         start_args.push(api_url);
 
