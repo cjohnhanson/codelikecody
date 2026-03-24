@@ -808,6 +808,7 @@ name = "clc"
 version = "0.1.0"
 dependencies = [
  "almanac",
+ "async-trait",
  "axum",
  "axum-server",
  "bollard",
@@ -823,6 +824,7 @@ dependencies = [
  "nix",
  "rcgen",
  "russh",
+ "russh-keys",
  "rustls",
  "serde",
  "serde_json",
