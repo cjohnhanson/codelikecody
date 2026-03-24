@@ -15,7 +15,7 @@ mod error;
 mod event;
 mod git;
 mod git_add;
-mod git_bundle;
+mod git_pack;
 mod gix_ops;
 mod guard;
 mod home;
@@ -451,31 +451,78 @@ fn cmd_workspace(action: &cli::WorkspaceAction) -> Result<(), Error> {
                 .map(std::path::PathBuf::from)
                 .unwrap_or_else(|| cwd.clone());
 
+            // Read pack data + refs from stdin (JSON envelope).
+            use std::io::Read;
+            let mut data = Vec::new();
+
             if *stdin {
-                // Read bundle from stdin.
-                use std::io::Read;
-                let mut data = Vec::new();
                 std::io::stdin()
                     .read_to_end(&mut data)
                     .map_err(|e| Error::NonBlocking(format!("read stdin: {e}")))?;
-
-                // Write to temp file for extraction.
-                let tmp = target_dir.join(".clc-bundle-tmp.tar");
-                std::fs::write(&tmp, &data)
-                    .map_err(|e| Error::NonBlocking(format!("write temp: {e}")))?;
-                git_bundle::extract_bundle(&tmp, &target_dir, branch)?;
-                let _ = std::fs::remove_file(&tmp);
             } else {
                 let path = bundle
                     .as_ref()
-                    .ok_or_else(|| Error::NonBlocking("bundle path required when not using --stdin".into()))?;
-                git_bundle::extract_bundle(std::path::Path::new(path), &target_dir, branch)?;
+                    .ok_or_else(|| Error::NonBlocking("path required when not using --stdin".into()))?;
+                data = std::fs::read(path)
+                    .map_err(|e| Error::NonBlocking(format!("read file: {e}")))?;
             }
+
+            // Parse JSON envelope: { "pack": base64, "refs": [["oid", "refname"], ...] }
+            let envelope: serde_json::Value = serde_json::from_slice(&data)
+                .map_err(|e| Error::NonBlocking(format!("parse envelope: {e}")))?;
+
+            let pack_b64 = envelope["pack"]
+                .as_str()
+                .ok_or_else(|| Error::NonBlocking("missing pack field".into()))?;
+            let pack_data = base64_decode(pack_b64)
+                .map_err(|e| Error::NonBlocking(format!("decode pack: {e}")))?;
+
+            let refs: Vec<(String, String)> = envelope["refs"]
+                .as_array()
+                .unwrap_or(&Vec::new())
+                .iter()
+                .filter_map(|r| {
+                    let arr = r.as_array()?;
+                    Some((arr.first()?.as_str()?.to_string(), arr.get(1)?.as_str()?.to_string()))
+                })
+                .collect();
+
+            git_pack::receive_pack(&pack_data, &refs, &target_dir, branch)?;
 
             eprintln!("received repo, checked out branch '{branch}'");
             Ok(())
         }
     }
+}
+
+fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
+    const DECODE: [u8; 256] = {
+        let mut t = [255u8; 256];
+        let chars = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut i = 0;
+        while i < 64 {
+            t[chars[i] as usize] = i as u8;
+            i += 1;
+        }
+        t
+    };
+
+    let mut out = Vec::with_capacity(input.len() * 3 / 4);
+    let bytes: Vec<u8> = input.bytes().filter(|&b| b != b'\n' && b != b'\r' && b != b'=').collect();
+
+    for chunk in bytes.chunks(4) {
+        let a = DECODE[chunk[0] as usize] as u32;
+        let b = if chunk.len() > 1 { DECODE[chunk[1] as usize] as u32 } else { 0 };
+        let c = if chunk.len() > 2 { DECODE[chunk[2] as usize] as u32 } else { 0 };
+        let d = if chunk.len() > 3 { DECODE[chunk[3] as usize] as u32 } else { 0 };
+
+        let n = (a << 18) | (b << 12) | (c << 6) | d;
+        out.push((n >> 16) as u8);
+        if chunk.len() > 2 { out.push((n >> 8) as u8); }
+        if chunk.len() > 3 { out.push(n as u8); }
+    }
+
+    Ok(out)
 }
 
 fn cmd_done() -> Result<(), Error> {

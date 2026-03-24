@@ -139,32 +139,41 @@ impl Workspace for SSHWorkspace {
                 .map_err(|e| WorkspaceError::Process(format!("reverse tunnel: {e}")))
         })?;
 
-        // 6. Create bundle of the repo on the host, transfer to container,
-        //    and extract via clc workspace commands. No git CLI needed.
+        // 6. Create git pack on the host and pipe it to the workspace
+        //    via clc workspace receive. Pack created by gix, served as JSON
+        //    with base64-encoded pack data + refs.
         let branch_name = self.config.workspace_config.tisket_id.clone();
-        let bundle_path = std::env::temp_dir().join(format!("clc-bundle-{branch_name}.tar"));
-        crate::git_bundle::create_bundle(
+        let pack_data = crate::git_pack::create_pack(
             &self.config.workspace_config.project_dir,
-            &bundle_path,
+            &branch_name,
         )
-        .map_err(|e| WorkspaceError::Process(format!("create bundle: {e}")))?;
+        .map_err(|e| WorkspaceError::Process(format!("create pack: {e}")))?;
 
-        // Transfer bundle directly to clc workspace receive via stdin.
-        // No intermediate files, no shell commands — just clc on both ends.
-        let bundle_data = std::fs::read(&bundle_path)
-            .map_err(|e| WorkspaceError::Process(format!("read bundle: {e}")))?;
+        // Serialize as JSON envelope for clc workspace receive.
+        let b64 = base64_encode(&pack_data.pack);
+        let refs: Vec<serde_json::Value> = pack_data
+            .refs
+            .iter()
+            .map(|(oid, name)| serde_json::json!([oid, name]))
+            .collect();
+        let envelope = serde_json::json!({
+            "pack": b64,
+            "refs": refs,
+            "branch": branch_name,
+        });
+        let envelope_bytes = serde_json::to_vec(&envelope)
+            .map_err(|e| WorkspaceError::Process(format!("serialize: {e}")))?;
+
+        // Pipe to clc workspace receive on the container.
         self.rt.block_on(async {
             session
                 .exec_with_stdin(
                     &format!("clc workspace receive --stdin --branch {branch_name} --dir /project"),
-                    &bundle_data,
+                    &envelope_bytes,
                 )
                 .await
-                .map_err(|e| WorkspaceError::Process(format!("receive bundle: {e}")))
+                .map_err(|e| WorkspaceError::Process(format!("receive pack: {e}")))
         })?;
-
-        // Clean up local bundle.
-        let _ = std::fs::remove_file(&bundle_path);
 
         // 7. Initialize workspace: creates .clc/worker/ with stdio pipes and hooks.
         self.rt.block_on(async {
@@ -304,8 +313,8 @@ impl Workspace for SSHWorkspace {
     }
 }
 
-/// Base64 encode binary data for safe transfer over SSH exec.
-fn base64_encode(data: &[u8]) -> String {
+/// Base64 encode binary data.
+pub fn base64_encode(data: &[u8]) -> String {
     use std::io::Write;
     let mut buf = Vec::new();
     let mut encoder = base64_writer(&mut buf);

@@ -44,6 +44,8 @@ pub async fn start(
         .route("/agents/{id}/phase", get(get_phase).put(set_phase))
         // Worker output (raw NDJSON — supervisor reads from workspace)
         .route("/agents/{id}/output", get(get_output))
+        // Git pack for a branch (supervisor creates from local repo)
+        .route("/git/pack/{branch}", get(get_git_pack))
         // Worker stdin (write a message to the worker's stdin pipe)
         .route("/agents/{id}/stdin", post(write_stdin))
         // Escalations
@@ -402,6 +404,38 @@ async fn get_output(
         "agent_id": id,
         "lines": new_lines,
         "cursor": lines.len(),
+    })))
+}
+
+/// Serve a git pack for a branch. The pack contains all objects
+/// reachable from the branch tip, plus the refs. Returned as JSON
+/// with base64-encoded pack data.
+async fn get_git_pack(
+    State(state): State<Arc<ApiState>>,
+    Path(branch): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let pack_data = tokio::task::spawn_blocking({
+        let project_dir = state.project_dir.clone();
+        let branch = branch.clone();
+        move || crate::git_pack::create_pack(&project_dir, &branch)
+    })
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .map_err(|_| StatusCode::NOT_FOUND)?;
+
+    // Base64 encode the pack.
+    let b64 = crate::ssh_workspace::base64_encode(&pack_data.pack);
+
+    let refs: Vec<serde_json::Value> = pack_data
+        .refs
+        .iter()
+        .map(|(oid, name)| serde_json::json!([oid, name]))
+        .collect();
+
+    Ok(Json(serde_json::json!({
+        "pack": b64,
+        "refs": refs,
+        "branch": branch,
     })))
 }
 
