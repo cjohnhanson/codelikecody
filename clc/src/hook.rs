@@ -271,6 +271,30 @@ fn assemble_prime(cwd: &Path, git: Option<&git::GitState>, phase: Option<phase::
         out.push_str(&section);
     }
 
+    // --- clc remind section ---
+    out.push_str(
+        "## Reminders (`clc remind`)\n\n\
+         `clc remind` is a background timer that fires a message after a delay.\n\
+         Run it in the background when you need to be reminded of something\n\
+         in case context compaction or a stop event interrupts your work.\n\n\
+         ### Usage\n\n\
+         \x20 clc remind <seconds> <message>              One-shot reminder\n\
+         \x20 clc remind <seconds> <message> --repeat N   Fires N+1 times total\n\n\
+         When `--repeat` is set, the output includes a command to re-run with\n\
+         the count decremented. Run it in the background again to continue.\n\n\
+         ### When to use\n\n\
+         - **Iterative loops**: told to keep working until a condition is met?\n\
+           Set a reminder to check progress and resume if you stop unexpectedly.\n\
+         - **Long builds**: kicked off a build? Remind yourself to check the result.\n\
+         - **Waiting on external**: polling a deploy, CI run, or external process?\n\
+           Remind yourself to check back.\n\n\
+         ### Example\n\n\
+         ```bash\n\
+         # Remind in 5 minutes to check build, repeat 3 times\n\
+         clc remind 300 'Check build status and resume work if stopped' --repeat 3 &\n\
+         ```\n\n",
+    );
+
     out
 }
 

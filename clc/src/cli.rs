@@ -212,6 +212,16 @@ pub enum Command {
         #[command(subcommand)]
         action: IntegrateAction,
     },
+    /// Sleep, then print a message. For background reminders that fire after a delay.
+    Remind {
+        /// Seconds to sleep before printing the message.
+        seconds: u64,
+        /// The message to print when the timer fires.
+        message: String,
+        /// Number of times to repeat. Appends a re-run instruction with --repeat N-1.
+        #[arg(long, default_value = "0")]
+        repeat: u32,
+    },
     /// List running coordinators with status.
     Coordinators {
         /// Show all coordinators including dead ones.

@@ -27,6 +27,7 @@ mod phase;
 mod pickup;
 mod skills;
 mod supervisor;
+mod ssh_session;
 mod ssh_workspace;
 mod supervisor_api;
 mod tisket;
@@ -153,6 +154,11 @@ fn main() {
         cli::Command::Integrate { ref action } => cmd_integrate(action),
         cli::Command::Coordinators { all } => cmd_coordinators(all),
         cli::Command::Coordinator { ref id, ref action } => cmd_coordinator(id, action),
+        cli::Command::Remind {
+            seconds,
+            message,
+            repeat,
+        } => cmd_remind(seconds, &message, repeat),
         cli::Command::Hook => unreachable!(),
     };
 
@@ -399,6 +405,22 @@ fn cmd_done() -> Result<(), Error> {
 fn cmd_prime() -> Result<(), Error> {
     let text = hook::prime_text()?;
     print!("{text}");
+    Ok(())
+}
+
+fn cmd_remind(seconds: u64, message: &str, repeat: u32) -> Result<(), Error> {
+    std::thread::sleep(std::time::Duration::from_secs(seconds));
+    println!("{message}");
+    if repeat > 0 {
+        let next = repeat - 1;
+        let escaped = message.replace('\'', "'\\''");
+        println!(
+            "\nThis reminder has {next} repetition{} remaining. \
+             Run this command to continue:\n\n\
+             clc remind {seconds} '{escaped}' --repeat {next}",
+            if next == 1 { "" } else { "s" }
+        );
+    }
     Ok(())
 }
 
