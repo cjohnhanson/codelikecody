@@ -192,6 +192,11 @@ pub enum Command {
         #[command(subcommand)]
         command: ::zettel::cli::Command,
     },
+    /// Run belmont commands.
+    Belmont {
+        #[command(subcommand)]
+        command: ::belmont::cli::Command,
+    },
     /// Manage worker permissions (request, grant, list).
     Permissions {
         #[command(subcommand)]

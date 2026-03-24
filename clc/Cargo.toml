@@ -17,6 +17,7 @@ missing_panics_doc = "allow"
 
 [dependencies]
 almanac = { path = "../almanac", default-features = false }
+belmont = { path = "../belmont" }
 async-trait = "0.1"
 axum = "0.8"
 camino = "1"

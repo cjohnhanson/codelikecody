@@ -7,6 +7,7 @@ use serde_json::Value;
 
 use crate::adapter::Adapter;
 use crate::adapter::claude_code::ClaudeCodeAdapter;
+use crate::belmont;
 use crate::config::{self, Config};
 use crate::error::Error;
 use crate::event::{Event, Response};
@@ -264,6 +265,21 @@ fn assemble_prime(cwd: &Path, git: Option<&git::GitState>, phase: Option<phase::
         }
     }
 
+    // --- belmont section ---
+    match belmont::detect(cwd) {
+        Ok(belmont_state) if belmont_state.initialized => {
+            let section = belmont_state.prime(&ctx);
+            if !section.is_empty() {
+                out.push_str(&section);
+                out.push('\n');
+            }
+        }
+        Ok(_) => {} // not initialized — omit silently
+        Err(e) => {
+            let _ = write!(out, "## Belmont\n\nbelmont error: {e}\n\n");
+        }
+    }
+
     // --- almanac (skills) section ---
     let almanac_state = skills::detect(cwd, &cfg.skills);
     let section = almanac_state.prime(&ctx);
@@ -352,6 +368,16 @@ fn assemble_reinforcement(
             let line = zettel_state.status_basic();
             out.push_str(&line);
             out.push('\n');
+        }
+    }
+
+    if let Ok(belmont_state) = belmont::detect(cwd) {
+        if belmont_state.initialized {
+            let line = belmont_state.status_basic();
+            if !line.is_empty() {
+                out.push_str(&line);
+                out.push('\n');
+            }
         }
     }
 

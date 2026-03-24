@@ -1,5 +1,6 @@
 mod adapter;
 mod admin;
+mod belmont;
 mod cli;
 mod config;
 mod coordinate;
@@ -150,6 +151,7 @@ fn main() {
         cli::Command::Tisket { command } => cmd_tisket(command),
         cli::Command::Missouri { command } => cmd_missouri(command),
         cli::Command::Zettel { command } => cmd_zettel(command),
+        cli::Command::Belmont { command } => cmd_belmont(command),
         cli::Command::Permissions { ref action } => cmd_permissions(action),
         cli::Command::Inbox { ref action } => cmd_inbox(action),
         cli::Command::Outbox { ref action } => cmd_outbox(action),
@@ -238,6 +240,16 @@ fn cmd_status() -> Result<(), Error> {
         }
         Err(e) => {
             println!("zettel: error ({e})");
+        }
+    }
+
+    match belmont::detect(&cwd) {
+        Ok(state) if state.initialized => {
+            println!("{}", state.status_basic());
+        }
+        Ok(_) => {}
+        Err(e) => {
+            println!("belmont: error ({e})");
         }
     }
 
@@ -665,6 +677,17 @@ fn cmd_zettel(command: ::zettel::cli::Command) -> Result<(), Error> {
         command,
     };
     ::zettel::cli::run(args).map_err(|e: ::zettel::Error| Error::NonBlocking(e.to_string()))
+}
+
+fn cmd_belmont(command: ::belmont::cli::Command) -> Result<(), Error> {
+    let cwd = std::env::current_dir()?;
+    let root = camino::Utf8PathBuf::try_from(cwd)
+        .map_err(|e| Error::NonBlocking(format!("non-UTF8 path: {e}")))?;
+    let args = ::belmont::cli::Args {
+        root,
+        command,
+    };
+    ::belmont::cli::run(args).map_err(|e: ::belmont::Error| Error::NonBlocking(e.to_string()))
 }
 
 fn cmd_missouri(command: ::missouri::cli::Command) -> Result<(), Error> {
