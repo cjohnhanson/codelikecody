@@ -266,13 +266,16 @@ mission before invoking this oracle.
 
 ---
 
-## Standards
+## Statutes and Standards
 
-**Consistency with external standards, regulations, or conventions.**
+**Consistency with laws, regulations, and external standards.**
 
-A violation occurs when the product fails to meet applicable formal
-standards — WCAG, RFC specs, legal requirements, platform conventions,
-or industry norms with normative force.
+A violation occurs when the product fails to meet applicable legal
+requirements (statutes, regulations, acts) or formal voluntary
+standards — WCAG, RFC specs, platform conventions, or industry norms
+with normative force. Statutes carry legal obligation; standards carry
+professional or contractual obligation. Both are external authorities
+the product must satisfy.
 
 *Diagnostic question*: Does this meet the applicable formal standards
 for this type of product?
@@ -284,14 +287,24 @@ for this type of product?
 - A responsive layout breaks below 320px viewport width (WCAG 1.4.10
   reflow).
 
-**Real finding vs. false positive**: Standards violations are objective
-and verifiable. The main question is whether the standard actually
-applies — not every product must meet every standard. Check which
-standards are in scope before citing them.
+**Real finding vs. false positive**: Statutes and standards violations
+are objective and verifiable. The main question is whether the statute
+or standard actually applies — not every product must meet every
+standard, and not every regulation applies to every jurisdiction or
+domain. Check which statutes and standards are in scope before citing
+them.
 
 ---
 
 ## Prioritizing across oracles
+
+**Editorial note:** The ranking below is practical guidance for applying
+these oracles during QA work. It is not part of Bach and Bolton's
+framework. They explicitly reject fixed oracle ranking — oracles are
+"fallible and context-dependent; to be applied, not followed." Any
+oracle can be the most important one in the right situation. This
+ranking reflects editorial judgment about which oracles most often
+produce actionable findings in typical web product work.
 
 When a finding triggers multiple oracles, that's signal about severity.
 
@@ -299,7 +312,7 @@ When a finding triggers multiple oracles, that's signal about severity.
 sufficient):
 - Claims — the product contradicts its own words
 - Product — the product contradicts itself
-- Standards — a formal requirement is unmet
+- Statutes and Standards — a formal or legal requirement is unmet
 - World — reality is modeled incorrectly
 
 **Strong evidence, best paired with another oracle**:

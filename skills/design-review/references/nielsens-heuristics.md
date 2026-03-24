@@ -8,8 +8,25 @@ Severity ratings use the standard 0-4 scale throughout:
 - **0** — Not a usability problem
 - **1** — Cosmetic only; fix if time permits
 - **2** — Minor usability problem; low priority
-- **3** — Major usability problem; fix before release
-- **4** — Usability catastrophe; must fix immediately
+- **3** — Major usability problem; important to fix, should be given high priority
+- **4** — Usability catastrophe; imperative to fix before product can be released
+
+### Severity assessment methodology
+
+Nielsen's severity ratings are determined by three factors:
+
+- **Frequency** — How common is the problem? Is it encountered by many
+  users on many tasks, or is it rare?
+- **Impact** — How difficult is it for users to overcome the problem once
+  they encounter it? Can they work around it easily, or does it block them?
+- **Persistence** — Is it a one-time problem that users can overcome once
+  they know about it, or does it hurt them every time they encounter it?
+
+Beyond these three, market impact also matters: the problem's effect on
+the product's competitive position, user satisfaction, and the
+organization's credibility. A severity-2 issue in a commodity feature
+may matter more than a severity-3 issue in a niche workflow if it
+damages trust at scale.
 
 ---
 

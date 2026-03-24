@@ -73,28 +73,74 @@ on the page behind it. The user can't tell which inputs are active.
 Add elevation cues — a drop shadow or solid border — to the modal
 container. The background page should feel recessed and inert.
 
-### Focal Point
+### Closure
 
-The element with the most visual weight (size, contrast, color
-saturation, isolation) attracts attention first. The most important
-element on the screen should be the focal point.
+The visual system perceives incomplete shapes as complete, filling in
+missing information to see a whole. The brain closes gaps in contours,
+borders, and patterns automatically.
 
-**How to evaluate:** Squint at the screen or blur your vision. Whatever
-stands out most should be the primary content or action, not a logo,
-sidebar ad, or decorative element. Check that the visual hierarchy
-matches the task hierarchy — the thing the user came to do should be
-the thing they see first.
+**How to evaluate:** Check that incomplete visual elements are
+intentionally incomplete and that users correctly perceive the intended
+whole. Look at icon designs that rely on implied shapes, progress
+indicators that show partial completion, carousels that hint at
+off-screen content by showing partial items, and loading states that
+use skeleton shapes. Verify that the implied completion matches what
+the user should expect.
 
-**Violation:** A checkout page where a promotional banner ("Free
-shipping on orders over $50!") is a bright orange bar at the top,
-while the "Place Order" button is a muted gray at the bottom. The
-user's eye goes to the banner, not the action they're trying to
-complete.
+**Violation:** A horizontal carousel shows exactly three cards with
+no visual hint that more exist — no partial fourth card peeking in
+from the edge, no fade, no indicator dots. Users perceive the set as
+complete and never scroll.
 
-**Fix:** Reduce the banner to a subdued inline note near the order
-total. Make "Place Order" the highest-contrast element on the page
-— large, saturated, with whitespace around it. The call to action
-should win the visual weight contest.
+**Fix:** Show a sliver of the fourth card at the viewport edge so
+the row looks intentionally incomplete. The partial element triggers
+closure — users perceive a longer row and understand they can scroll
+to see the rest.
+
+### Continuity
+
+The eye follows lines, curves, and directional flow, preferring smooth
+continuous paths over abrupt changes. Elements arranged along a line or
+curve are perceived as related.
+
+**How to evaluate:** Trace the visual flow of navigation sequences,
+step indicators, timelines, and reading order. Check that alignment
+guides the eye along the intended path. Look for places where the
+flow breaks unexpectedly — elements that interrupt a visual line, step
+indicators that change direction, or content sections that break the
+reading axis without reason.
+
+**Violation:** A five-step progress indicator wraps to a second line
+after step 3, with no visual connector between step 3 and step 4.
+Users perceive two separate processes instead of one continuous flow.
+
+**Fix:** Either keep all steps on one line (adjust sizing or use a
+compact representation) or add a visible connector — a line or arrow —
+that bridges the wrap point so the eye follows the flow across the
+line break.
+
+### Common Fate
+
+Elements that move together — or change together — are perceived as
+a group. Shared motion is a powerful grouping cue that overrides
+static properties like color or proximity.
+
+**How to evaluate:** Watch animations, transitions, and dynamic state
+changes. Check that elements which belong together animate in unison
+(same direction, same timing). Look at loading skeletons to verify
+that related placeholder regions pulse or shimmer together. In
+multi-select interfaces, check that selected items respond
+identically to group actions. Watch for unrelated elements that
+accidentally share an animation and get perceived as grouped.
+
+**Violation:** A loading skeleton for a card grid has each card's
+shimmer animation on a slightly different phase. Some cards appear
+to pulse together while others are out of sync, creating a false
+perception that certain cards are related and others aren't.
+
+**Fix:** Synchronize the shimmer animation across all skeleton cards
+so they pulse in unison, reinforcing that they're equivalent
+placeholders for equivalent content.
 
 ### Common Region
 
@@ -224,9 +270,14 @@ the error. The user should never wonder whether their action registered.
 
 Constraints limit the actions available to the user, preventing errors
 by making incorrect actions impossible rather than merely discouraged.
-Physical constraints (a USB plug only fits one way) are stronger than
-logical constraints (a grayed-out button) which are stronger than
-cultural constraints (red means danger).
+Norman identifies four types: physical constraints (a USB plug only
+fits one way), cultural constraints (red means danger, a handshake
+means greeting), semantic constraints (the meaning of the situation
+restricts what makes sense — a rearview mirror only makes sense facing
+backward), and logical constraints (what's left must be right — if
+all other options are filled, the remaining one goes in the remaining
+slot). Physical constraints are the strongest; logical constraints
+work by elimination.
 
 **How to evaluate:** For each invalid state, check what happens when
 the user tries to reach it. Can they submit an empty required field?
@@ -244,3 +295,28 @@ complete. Show completed steps as clickable (for review) and the
 current step as active, but render future steps as visually inert
 with no hover or click behavior. The interface should make the
 correct sequence the only available path.
+
+### Conceptual Models
+
+A conceptual model is the user's understanding of how a system works.
+When the model the interface suggests matches the actual system
+behavior, the interface feels intuitive. When they diverge, users
+make confident predictions that turn out wrong — and blame themselves.
+
+**How to evaluate:** For each major feature, ask: what does a user
+think is happening when they perform this action? Compare that mental
+model to the actual system behavior. Check for metaphors that break
+down (a "folder" that can't contain other folders, a "trash" that
+auto-empties without warning). Look for features where users
+consistently mispredict outcomes — that's a conceptual model mismatch.
+
+**Violation:** A cloud document editor shows a "Save" button, implying
+that changes aren't saved until clicked. But the system auto-saves
+continuously, and the "Save" button actually triggers "save a named
+version." Users click it frantically during edits, thinking their
+work is at risk, and end up with dozens of meaningless named versions.
+
+**Fix:** Remove the "Save" button and replace it with a persistent
+"All changes saved" indicator. Offer "Save as version" (or similar)
+as a separate, clearly labeled action. The interface should communicate
+the auto-save model rather than borrowing the manual-save metaphor.
