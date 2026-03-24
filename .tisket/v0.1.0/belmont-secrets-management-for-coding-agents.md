@@ -158,7 +158,8 @@ belmont/
 ```
 
 Follows the same conventions as tisket and missouri: standalone binary + library
-consumed by clc. Uses camino, clap derive, thiserror, serde_yml.
+consumed by clc. Uses camino, clap derive, thiserror, serde_yml, portable-pty,
+tokio.
 
 ### CLI commands
 
@@ -185,14 +186,25 @@ backend configs from leaf backends, then resolve all secrets. Exposes:
 - `missing()` — names of unresolvable secrets
 - `resolved()` — name/value pairs (for scrubber and env injection)
 
-**scrub.rs** — `Scrubber::new(entries)` takes name/value pairs, sorts values
-longest-first (so a value that's a substring of another gets replaced correctly),
-filters empty values. `scrub(text)` replaces each value with its
-`belmont://NAME` reference.
+**scrub.rs** — Stateful streaming scrubber. `Scrubber::new(entries)` takes
+name/value pairs, sorts values longest-first (so a value that's a substring
+of another gets replaced correctly), filters empty values. The scrubber
+maintains a trailing boundary buffer of `max_secret_length` bytes between
+reads to handle secret values that span chunk boundaries:
+- `feed(chunk) -> String` — accepts a chunk of output, returns the
+  safely-scrubbed prefix. Retains up to `max_secret_length` bytes as a
+  boundary buffer that will be resolved on the next feed or flush.
+- `flush() -> String` — emits any remaining buffered bytes at EOF, scrubbing
+  as needed.
 
-**runner.rs** — `belmont run` spawns `sh -c <command>` with secrets injected
-via `.envs()`. Captures stdout/stderr (buffered, not streaming for v1). Scrubs
-both through `Scrubber`. Prints scrubbed output. Exits with subprocess exit code.
+**runner.rs** — `belmont run` spawns the command inside a PTY via
+`portable-pty`. The PTY ensures the subprocess behaves as if connected to a
+real terminal (colors, interactive output, buffering behavior). An async read
+loop reads from the PTY, feeds chunks through the streaming `Scrubber`, and
+writes scrubbed output to real stdout incrementally. Exits with subprocess
+exit code. Note: PTY merges stdout and stderr into a single stream — this
+matches how the Bash tool captures output and is acceptable for the agent
+use case.
 
 ### clc integration
 
@@ -236,11 +248,14 @@ both through `Scrubber`. Prints scrubbed output. Exits with subprocess exit code
 13. clc/src/hook.rs — integrate into prime, reinforcement, PostToolUse
 14. clc/src/cli.rs + clc/src/main.rs — add Belmont subcommand
 
+### Dependencies
+
+- `portable-pty` — cross-platform PTY. Part of wezterm, mature, well-maintained.
+  Used by runner.rs to spawn the subprocess inside a pseudoterminal.
+- `tokio` — async runtime for the PTY read loop.
+
 ### Known limitations for v1
 
-- **Buffered output only**: Long-running commands produce no output until exit.
-  Streaming with line-by-line scrubbing is a follow-up (needs careful handling
-  of values split across chunk boundaries).
 - **No file content scrubbing**: If a command writes a secret to a file and the
   agent reads that file with the Read tool, the secret enters context unscrubbed.
   The PostToolUse check_leak partially addresses this for Bash responses but not
@@ -249,4 +264,5 @@ both through `Scrubber`. Prints scrubbed output. Exits with subprocess exit code
 - **Three backends only**: env, keyring, age. Future: 1Password, Vault, AWS
   Secrets Manager, sops, file.
 - **No signal handling**: Ctrl+C during `belmont run` relies on default
-  propagation. Robust signal handling (like missouri's signal.rs) is a follow-up.
+  propagation via PTY. Robust signal handling (like missouri's signal.rs) is a
+  follow-up.
