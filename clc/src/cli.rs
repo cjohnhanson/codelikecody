@@ -81,7 +81,7 @@ pub enum Command {
         #[arg(long, default_value = "3")]
         max_workers: usize,
         /// Model to use for workers.
-        #[arg(long, default_value = "sonnet")]
+        #[arg(long, default_value = "opus")]
         model: String,
         /// Only tiskets in this project.
         #[arg(long)]
@@ -152,7 +152,7 @@ pub enum Command {
         /// The tisket issue ID to dispatch.
         id: String,
         /// Model to use for the worker.
-        #[arg(long, default_value = "sonnet")]
+        #[arg(long, default_value = "opus")]
         model: String,
         /// Coordinator ID claiming this tisket.
         #[arg(long)]
