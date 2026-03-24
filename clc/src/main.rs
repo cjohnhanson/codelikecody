@@ -53,6 +53,8 @@ fn is_untracked(project_dir: &Path) -> bool {
 
 fn main() {
     sigpipe::reset();
+    // Install rustls crypto provider for mTLS support.
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let cli = <cli::Cli as clap::Parser>::parse();
 
     if matches!(cli.command, cli::Command::Hook) {
