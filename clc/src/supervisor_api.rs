@@ -15,11 +15,12 @@ use axum::routing::{get, patch, post};
 use axum::Router;
 use serde::{Deserialize, Serialize};
 
-use crate::coordination::Coordination;
+use clc_sdk::coordination::CoordinationBackend;
+use clc_sdk::coordination_db::DbBackend;
 
 /// Shared state for the API server.
 pub struct ApiState {
-    pub coord: Coordination,
+    pub db: Arc<DbBackend>,
     pub project_dir: PathBuf,
 }
 
@@ -127,8 +128,9 @@ async fn list_agents(
     Query(query): Query<ListAgentsQuery>,
 ) -> Result<Json<Vec<AgentResponse>>, StatusCode> {
     let agents = state
-        .coord
+        .db
         .list_agents(query.parent_id.as_deref())
+        .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let response: Vec<AgentResponse> = agents
@@ -148,8 +150,9 @@ async fn register_agent(
     Json(req): Json<RegisterAgentRequest>,
 ) -> Result<StatusCode, StatusCode> {
     state
-        .coord
+        .db
         .register_agent(&req.id, req.parent_id.as_deref())
+        .await
         .map_err(|_| StatusCode::CONFLICT)?;
 
     Ok(StatusCode::CREATED)
@@ -160,11 +163,12 @@ async fn get_agent(
     Path(id): Path<String>,
 ) -> Result<Json<AgentResponse>, StatusCode> {
     let status = state
-        .coord
+        .db
         .get_status(&id)
+        .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
 
-    let pid = state.coord.get_pid(&id).ok().flatten();
+    let pid = state.db.get_pid(&id).await.ok().flatten();
 
     Ok(Json(AgentResponse {
         id,
@@ -181,15 +185,17 @@ async fn update_agent(
     if let Some(ref status_str) = req.status {
         let status = parse_status(status_str).ok_or(StatusCode::BAD_REQUEST)?;
         state
-            .coord
+            .db
             .set_status(&id, status)
+            .await
             .map_err(|_| StatusCode::NOT_FOUND)?;
     }
 
     if let Some(pid) = req.pid {
         state
-            .coord
+            .db
             .set_pid(&id, Some(pid))
+            .await
             .map_err(|_| StatusCode::NOT_FOUND)?;
     }
 
@@ -218,8 +224,9 @@ async fn send_message(
     };
 
     let msg_id = state
-        .coord
+        .db
         .send(msg)
+        .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(serde_json::json!({ "id": msg_id })))
@@ -233,8 +240,9 @@ async fn recv_messages(
     let cursor = clc_sdk::coordination::Cursor(query.after.unwrap_or(0));
 
     let (messages, new_cursor) = state
-        .coord
+        .db
         .recv(&id, &cursor)
+        .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let data: Vec<MessageResponse> = messages
@@ -259,8 +267,9 @@ async fn pending_permissions(
     Path(id): Path<String>,
 ) -> Result<Json<Vec<MessageResponse>>, StatusCode> {
     let messages = state
-        .coord
+        .db
         .pending_permissions(&id)
+        .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let data: Vec<MessageResponse> = messages
@@ -285,8 +294,9 @@ async fn get_phase(
     // For SSH workspaces, the supervisor would need to SSH in to read it.
     // For now, check coordination DB for the latest StatusUpdate message.
     let (messages, _) = state
-        .coord
+        .db
         .recv(&id, &clc_sdk::coordination::Cursor(0))
+        .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // Find the latest StatusUpdate.
@@ -327,8 +337,9 @@ async fn set_phase(
     };
 
     state
-        .coord
+        .db
         .send(msg)
+        .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(StatusCode::OK)
@@ -338,8 +349,9 @@ async fn list_escalations(
     State(state): State<Arc<ApiState>>,
 ) -> Result<Json<Vec<MessageResponse>>, StatusCode> {
     let messages = state
-        .coord
+        .db
         .pending_permissions("admin")
+        .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let data: Vec<MessageResponse> = messages

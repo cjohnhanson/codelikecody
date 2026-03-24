@@ -81,24 +81,51 @@ impl Supervisor {
             .map_err(|e| Error::NonBlocking(format!("CA generation: {e}")))?;
         eprintln!("supervisor: ephemeral CA generated");
 
-        // Start the supervisor API server.
-        let api_state = Arc::new(crate::supervisor_api::ApiState {
-            coord: Coordination::open(&self.project_dir)
-                .map_err(|e| Error::NonBlocking(format!("coordination DB for API: {e}")))?,
-            project_dir: self.project_dir.clone(),
+        // Start the supervisor API server on a dedicated thread.
+        let api_project_dir = self.project_dir.clone();
+        let api_port = 19100; // TODO: configurable from SupervisorConfig
+        let (api_tx, api_rx) = std::sync::mpsc::channel();
+
+        thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .enable_all()
+                .build()
+                .expect("API tokio runtime");
+
+            rt.block_on(async {
+                let db_path = api_project_dir.join(".clc").join("coordination.db");
+                let db_url = format!("sqlite://{}?mode=rwc", db_path.display());
+                let db = clc_sdk::coordination_db::DbBackend::connect(&db_url)
+                    .await
+                    .expect("coordination DB for API");
+                db.create_tables().await.expect("create tables");
+                let api_state = Arc::new(crate::supervisor_api::ApiState {
+                    db: Arc::new(db),
+                    project_dir: api_project_dir,
+                });
+
+                match crate::supervisor_api::start(api_state, api_port).await {
+                    Ok(addr) => {
+                        let _ = api_tx.send(Ok(addr));
+                        // Keep the runtime alive so the server runs.
+                        loop {
+                            tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+                        }
+                    }
+                    Err(e) => {
+                        let _ = api_tx.send(Err(format!("{e}")));
+                    }
+                }
+            });
         });
 
-        let api_rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|e| Error::NonBlocking(format!("tokio runtime: {e}")))?;
-
-        let api_port = 19100; // TODO: configurable from SupervisorConfig
-        let api_addr = api_rt
-            .block_on(crate::supervisor_api::start(api_state, api_port))
+        let api_addr = api_rx
+            .recv()
+            .map_err(|e| Error::NonBlocking(format!("API server channel: {e}")))?
             .map_err(|e| Error::NonBlocking(format!("API server: {e}")))?;
 
-        eprintln!("supervisor API listening on {api_addr} (mTLS)");
+        eprintln!("supervisor API listening on {api_addr}");
 
         let shutdown = Arc::clone(&self.shutdown);
         let _ = ctrlc::set_handler(move || {
