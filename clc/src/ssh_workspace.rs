@@ -157,7 +157,7 @@ impl Workspace for SSHWorkspace {
 
         // Build env var exports.
         let mut env_parts = vec![
-            format!("CLC_API_URL=https://localhost:{tunnel_port}"),
+            format!("CLC_API_URL=http://localhost:{tunnel_port}"),
             format!("CLC_API_CERT=/tmp/workspace-cert.pem"),
             format!("CLC_API_KEY=/tmp/workspace-key.pem"),
             format!("CLC_API_CA=/tmp/ca-cert.pem"),
@@ -295,10 +295,22 @@ impl Environment for DockerEnvironment {
             .map_err(|e| WorkspaceError::Process(format!("docker: {e}")))?;
 
         let container_id = self.rt.block_on(async {
-            // Mount worktree and project .git for worktree refs.
+            // Mount worktree, project .git, and SSH public key.
             let worktree_mount = format!("{}:/project", self.worktree_dir.display());
             let git_mount = format!("{}/.git:/project-git:ro", self.project_dir.display());
-            let binds = vec![worktree_mount, git_mount];
+            let mut binds = vec![worktree_mount, git_mount];
+
+            // Mount user's SSH public key for authentication.
+            let pub_key_path = dirs::home_dir()
+                .unwrap_or_default()
+                .join(".ssh")
+                .join("id_ed25519.pub");
+            if pub_key_path.exists() {
+                binds.push(format!(
+                    "{}:/root/.ssh/authorized_keys:ro",
+                    pub_key_path.display()
+                ));
+            }
 
             let host_config = HostConfig {
                 binds: Some(binds),
