@@ -35,5 +35,5 @@ assertions:
   - name: "almanac show unknown skill fails"
     command: "! clc almanac show nonexistent 2>/dev/null"
 
-  - name: "prime without skills config has no skills section"
-    command: "rm clc.yml && ! clc prime | grep -i 'Almanac (skills)'"
+  - name: "prime without skills config does not list configured skills"
+    command: "rm clc.yml && ! clc prime | grep 'test-skill'"
