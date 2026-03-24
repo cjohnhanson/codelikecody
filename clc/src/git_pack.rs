@@ -354,6 +354,32 @@ fn unpack_to_loose(pack_data: &[u8], git_dir: &Path) -> Result<(), Error> {
     Ok(())
 }
 
+/// Import a pack from a workspace into the host repo.
+/// Unpacks objects and updates refs. Used for landing — pulling
+/// worker commits back to the host for merging.
+pub fn import_pack(
+    pack_data: &[u8],
+    refs: &[(String, String)],
+    project_dir: &Path,
+) -> Result<(), Error> {
+    let git_dir = project_dir.join(".git");
+
+    // Unpack objects into the existing repo's object store.
+    unpack_to_loose(pack_data, &git_dir)?;
+
+    // Update refs.
+    for (oid, refname) in refs {
+        let ref_path = git_dir.join(refname);
+        if let Some(parent) = ref_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        std::fs::write(&ref_path, format!("{oid}\n"))
+            .map_err(|e| Error::NonBlocking(format!("write ref {refname}: {e}")))?;
+    }
+
+    Ok(())
+}
+
 /// Recursively checkout a tree to the working directory.
 fn checkout_tree(
     repo: &gix::Repository,

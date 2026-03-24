@@ -50,6 +50,8 @@ pub async fn start(
         .route("/git/pack/{branch}", get(get_git_pack))
         // Worker stdin (write a message to the worker's stdin pipe)
         .route("/agents/{id}/stdin", post(write_stdin))
+        // Fetch workspace pack for landing
+        .route("/agents/{id}/pack", get(fetch_workspace_pack))
         // Escalations
         .route("/escalations", get(list_escalations))
         // Health
@@ -455,6 +457,43 @@ async fn get_git_pack(
         "pack": b64,
         "refs": refs,
         "branch": branch,
+    })))
+}
+
+/// Fetch a git pack from a workspace for landing.
+/// The supervisor SSH's into the workspace and runs
+/// `clc workspace export --branch <name>` which creates a pack
+/// of the worker's commits.
+async fn fetch_workspace_pack(
+    State(state): State<Arc<ApiState>>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    // For now, create pack from local worktree (same machine Docker).
+    // For remote workspaces, this would SSH in and run clc workspace export.
+    let worktree = state
+        .project_dir
+        .join(".worktrees")
+        .join(&id);
+
+    let pack_data = tokio::task::spawn_blocking({
+        let worktree = worktree.clone();
+        let branch = id.clone();
+        move || crate::git_pack::create_pack(&worktree, &branch)
+    })
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .map_err(|_| StatusCode::NOT_FOUND)?;
+
+    let b64 = crate::ssh_workspace::base64_encode(&pack_data.pack);
+    let refs: Vec<serde_json::Value> = pack_data
+        .refs
+        .iter()
+        .map(|(oid, name)| serde_json::json!([oid, name]))
+        .collect();
+
+    Ok(Json(serde_json::json!({
+        "pack": b64,
+        "refs": refs,
     })))
 }
 

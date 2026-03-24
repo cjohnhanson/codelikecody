@@ -392,6 +392,12 @@ pub enum WorkspaceAction {
         /// Path to write to.
         path: String,
     },
+    /// Export the current branch as a pack (JSON envelope to stdout).
+    Export {
+        /// Branch to export.
+        #[arg(long)]
+        branch: String,
+    },
     /// Start the agent process with stdio wired to pipes/files.
     Start {
         /// Agent model.
