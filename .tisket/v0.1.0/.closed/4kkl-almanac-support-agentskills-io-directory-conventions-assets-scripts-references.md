@@ -1,12 +1,12 @@
 ---
 title: "almanac: support agentskills.io directory conventions (assets/, scripts/, references/)"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: [almanac]
 depends_on: []
 created: 2026-03-23T00:17:34Z
-updated: "2026-03-24T02:50:40Z"
+updated: "2026-03-24T03:07:47Z"
 ---
 
 ## Problem
@@ -39,5 +39,3 @@ in a single SKILL.md have to cram everything into one file. The design-review
 and qa-web skills were flagged as too thin — reference files would let them
 keep a concise SKILL.md while having deep framework explanations available
 on demand.
-
-## Scratch Notes
