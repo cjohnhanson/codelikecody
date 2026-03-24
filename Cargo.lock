@@ -474,6 +474,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "belmont"
+version = "0.1.0"
+dependencies = [
+ "camino",
+ "clap",
+ "serde",
+ "serde_yml",
+ "sigpipe",
+ "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "bigdecimal"
 version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"

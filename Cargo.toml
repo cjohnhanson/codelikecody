@@ -1,4 +1,4 @@
 [workspace]
-members = ["clc-api", "clc-web", "claude-code", "clc", "clc-sdk", "mdstore", "missouri", "tisket", "zettel", "almanac"]
+members = ["clc-api", "clc-web", "claude-code", "clc", "clc-sdk", "mdstore", "missouri", "tisket", "zettel", "almanac", "belmont"]
 exclude = ["docs-web"]
 resolver = "3"
