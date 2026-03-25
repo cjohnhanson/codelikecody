@@ -312,11 +312,19 @@ fn unpack_to_loose(pack_data: &[u8], git_dir: &Path) -> Result<(), Error> {
         };
 
         // Decompress the object data.
+        // Use DecompressError tracking to get exact bytes consumed.
         let mut decoder = ZlibDecoder::new(&pack_data[offset..]);
-        let mut data = vec![0u8; size];
+        let mut data = Vec::with_capacity(size);
         decoder
-            .read_exact(&mut data)
-            .map_err(|e| Error::NonBlocking(format!("decompress: {e}")))?;
+            .read_to_end(&mut data)
+            .map_err(|e| Error::NonBlocking(format!("decompress object at offset {offset}: {e}")))?;
+
+        if data.len() != size {
+            return Err(Error::NonBlocking(format!(
+                "size mismatch: header says {size}, got {}",
+                data.len()
+            )));
+        }
 
         // Advance offset past the compressed data.
         offset += decoder.total_in() as usize;
