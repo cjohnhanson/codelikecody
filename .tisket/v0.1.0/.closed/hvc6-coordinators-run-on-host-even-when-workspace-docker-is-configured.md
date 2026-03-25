@@ -1,12 +1,12 @@
 ---
 title: "Coordinators run on host even when workspace: docker is configured"
-status: in_progress
+status: done
 priority: 2
 assignee:
 labels: [clc, architecture]
 depends_on: []
 created: 2026-03-25T03:27:39Z
-updated: "2026-03-25T03:28:32Z"
+updated: "2026-03-25T17:13:54Z"
 ---
 
 ## Problem
