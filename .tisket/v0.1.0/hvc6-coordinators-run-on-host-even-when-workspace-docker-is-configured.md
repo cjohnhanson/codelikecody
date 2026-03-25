@@ -47,3 +47,29 @@ local process.
 - Coordinator in docker has no host filesystem access (no mounts)
 
 ## Scratch Notes
+
+### Design
+
+**Coordinator in Docker runs `clc coordinator-run` instead of `clc workspace start`.**
+
+SSHWorkspace currently hardcodes `clc workspace start` as the agent command.
+The start command needs to be parameterized — coordinators run `clc coordinator-run --id <id> ...`
+while workers run `clc workspace start --branch <id> ...`.
+
+**Coordinator dispatches via API, not local process spawning.**
+
+When `CLC_API_URL` is set (coordinator in Docker), `dispatch_with_workspace()` calls
+`POST /dispatch` on the supervisor API. The supervisor creates the workspace and spawns the worker.
+Coordinator in Docker has no Docker socket — it delegates workspace creation to the supervisor.
+
+**New supervisor API endpoint: `POST /dispatch`**
+
+Accepts: `{ tisket_id, model, coordinator_id }`. Supervisor creates the workspace
+(Docker or worktree) and starts the worker. Returns the worker ID.
+
+**Changes needed:**
+1. `SSHWorkspaceConfig` gets a `start_command: Vec<String>` field (replaces hardcoded `clc workspace start`)
+2. `supervisor.rs::start_coordinator()` — when workspace=docker, use SSHWorkspace instead of local spawn
+3. `supervisor_api.rs` — add `POST /dispatch` endpoint
+4. `coordinator_loop.rs` — when `CLC_API_URL` is set, dispatch via API instead of local
+5. `dispatch.rs` — add `dispatch_via_api()` function
