@@ -37,11 +37,19 @@ pub fn run() -> Result<i32, Error> {
         .map_or_else(|| Path::new("."), Path::new);
     let cfg = config::load(cwd).unwrap_or_default();
     let git_state = git::detect(cwd, &cfg.main_branch, &cfg.admin_branch);
-    let current_phase = phase::load(cwd).unwrap_or(None);
+    let current_phase = if std::env::var("CLC_API_URL").is_ok() {
+        // Read phase from supervisor API.
+        load_phase_from_api(git_state.as_ref())
+    } else {
+        phase::load(cwd).unwrap_or(None)
+    };
 
     // Phase bootstrap: auto-set tests-unwritten on unphased feature branches
     // with a matching tisket. This catches worktrees created outside `clc pickup`.
-    let current_phase = if matches!(event, Event::SessionStart { .. }) {
+    // Skip bootstrap when using API — the supervisor manages phase.
+    let current_phase = if matches!(event, Event::SessionStart { .. })
+        && std::env::var("CLC_API_URL").is_err()
+    {
         maybe_bootstrap_phase(cwd, git_state.as_ref(), current_phase)
     } else {
         current_phase
@@ -462,6 +470,36 @@ fn maybe_bootstrap_phase(
         Some(phase::Phase::TestsUnwritten)
     } else {
         None
+    }
+}
+
+/// Load phase from the supervisor API.
+fn load_phase_from_api(git: Option<&git::GitState>) -> Option<phase::Phase> {
+    let api_url = std::env::var("CLC_API_URL").ok()?;
+    let agent_id = git.map(|s| s.branch.as_str()).unwrap_or("unknown");
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .ok()?;
+
+    let result: Result<serde_json::Value, String> = rt.block_on(async {
+        let client = crate::coordination_client::build_api_client()
+            .map_err(|e| format!("{e}"))?;
+        let resp = client
+            .get(format!("{api_url}/agents/{agent_id}/phase"))
+            .send()
+            .await
+            .map_err(|e| format!("{e}"))?;
+        resp.json().await.map_err(|e| format!("{e}"))
+    });
+
+    match result {
+        Ok(resp) => {
+            let phase_str = resp["phase"].as_str()?;
+            phase_str.parse().ok()
+        }
+        Err(_) => None,
     }
 }
 

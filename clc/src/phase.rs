@@ -81,10 +81,43 @@ impl FromStr for Phase {
     }
 }
 
-/// Load the current phase from `.clc/state`, if it exists.
+/// Load the current phase. Uses supervisor API when CLC_API_URL is set,
+/// falls back to `.clc/state` file for local worktree mode.
 pub fn load(project_dir: &Path) -> Result<Option<Phase>, Error> {
+    if let Ok(api_url) = std::env::var("CLC_API_URL") {
+        let agent_id = crate::git::current_branch(project_dir).unwrap_or_default();
+        return load_phase_from_api(&api_url, &agent_id);
+    }
     let state = load_state(project_dir)?;
     Ok(state.map(|s| s.phase))
+}
+
+fn load_phase_from_api(api_url: &str, agent_id: &str) -> Result<Option<Phase>, Error> {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| Error::NonBlocking(format!("tokio: {e}")))?;
+
+    let result: Result<serde_json::Value, Error> = rt.block_on(async {
+        let client = crate::coordination_client::build_api_client()
+            .map_err(|e| Error::NonBlocking(format!("{e}")))?;
+        client
+            .get(format!("{api_url}/agents/{agent_id}/phase"))
+            .send()
+            .await
+            .map_err(|e| Error::NonBlocking(format!("{e}")))?
+            .json()
+            .await
+            .map_err(|e| Error::NonBlocking(format!("{e}")))
+    });
+
+    match result {
+        Ok(resp) => {
+            let phase_str = resp["phase"].as_str().unwrap_or("tests-unwritten");
+            Ok(phase_str.parse().ok())
+        }
+        Err(_) => Ok(None),
+    }
 }
 
 /// Load the current attempts count from `.clc/state`.
