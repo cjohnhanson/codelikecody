@@ -168,8 +168,15 @@ fn load_state(project_dir: &Path) -> Result<Option<State>, Error> {
 /// Initialize the phase state for a freshly created worktree.
 /// Unlike `set`, this bypasses sequential-transition validation — it is
 /// only for use during `clc pickup` when the worktree has no prior state.
+/// Routes through the supervisor API when CLC_API_URL is set.
 pub fn init_phase(project_dir: &Path, target: &str) -> Result<(), Error> {
     let target_phase: Phase = target.parse()?;
+
+    if let Ok(api_url) = std::env::var("CLC_API_URL") {
+        let agent_id = crate::git::current_branch(project_dir).unwrap_or_default();
+        return init_phase_via_api(&api_url, &agent_id, target);
+    }
+
     write_state(project_dir, target_phase, 0)
 }
 
@@ -302,6 +309,32 @@ fn write_state(project_dir: &Path, phase: Phase, attempts: u32) -> Result<(), Er
             "failed to write state {}: {e}",
             state_path.display()
         ))
+    })
+}
+
+/// Initialize phase via the supervisor API. No transition validation.
+fn init_phase_via_api(api_url: &str, agent_id: &str, target: &str) -> Result<(), Error> {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| Error::NonBlocking(format!("tokio: {e}")))?;
+
+    rt.block_on(async {
+        let client = crate::coordination_client::build_api_client()
+            .map_err(|e| Error::NonBlocking(format!("{e}")))?;
+        let status = client
+            .put(format!("{api_url}/agents/{agent_id}/phase"))
+            .json(&serde_json::json!({ "phase": target }))
+            .send()
+            .await
+            .map_err(|e| Error::NonBlocking(format!("{e}")))?
+            .status();
+        if !status.is_success() {
+            return Err(Error::NonBlocking(format!(
+                "API init_phase failed: {status}"
+            )));
+        }
+        Ok::<_, Error>(())
     })
 }
 
@@ -529,6 +562,17 @@ mod tests {
         // Don't set any phase — API returns default "tests-unwritten".
         let phase = load_phase_from_api(&base_url, agent).unwrap();
         assert_eq!(phase, Some(Phase::TestsUnwritten));
+    }
+
+    #[test]
+    fn init_phase_via_api_sets_without_validation() {
+        let agent = "test-init-phase";
+        let (base_url, _handle) = start_test_api(agent);
+
+        // init_phase_via_api should set any phase without transition validation.
+        init_phase_via_api(&base_url, agent, "implementing").unwrap();
+        let resp = api_get_phase(&base_url, agent);
+        assert_eq!(resp["phase"].as_str(), Some("implementing"));
     }
 
     // --- Parsing new review phases ---
