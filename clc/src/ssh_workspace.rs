@@ -36,6 +36,9 @@ pub struct SSHWorkspaceConfig {
     pub ca: Arc<EphemeralCA>,
     pub api_port: u16,
     pub oauth_token: Option<String>,
+    /// Custom start command. When set, overrides the default `clc workspace start`.
+    /// Used for coordinators in Docker which run `clc coordinator-run` instead.
+    pub start_command: Option<Vec<String>>,
 }
 
 /// Workspace that communicates over SSH with a reverse tunnel to the supervisor API.

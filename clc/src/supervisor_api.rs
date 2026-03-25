@@ -703,3 +703,124 @@ fn kind_to_payload(kind: &clc_sdk::coordination::MessageKind) -> serde_json::Val
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clc_sdk::coordination::CoordinationBackend;
+
+    /// Start a plain-HTTP test API server backed by in-memory SQLite.
+    fn start_test_api() -> (String, std::thread::JoinHandle<()>) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let handle = std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async {
+                let db = clc_sdk::coordination_db::DbBackend::connect("sqlite::memory:")
+                    .await
+                    .unwrap();
+                db.create_tables().await.unwrap();
+                let state = Arc::new(ApiState {
+                    db: Arc::new(db),
+                    project_dir: std::path::PathBuf::from("/tmp"),
+                });
+                let addr = start(state, 0, None).await.unwrap();
+                tx.send(addr.port()).unwrap();
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+                }
+            });
+        });
+        let port = rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("API server did not start");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        (format!("http://127.0.0.1:{port}"), handle)
+    }
+
+    fn blocking_post(base_url: &str, path: &str, body: &serde_json::Value) -> (u16, serde_json::Value) {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let resp = reqwest::Client::new()
+                .post(format!("{base_url}{path}"))
+                .json(body)
+                .send()
+                .await
+                .unwrap();
+            let status = resp.status().as_u16();
+            let body = resp.json().await.unwrap_or(serde_json::json!({}));
+            (status, body)
+        })
+    }
+
+    #[test]
+    fn dispatch_endpoint_creates_agent_and_returns_id() {
+        let (base_url, _handle) = start_test_api();
+
+        // Register a coordinator first.
+        blocking_post(
+            &base_url,
+            "/agents",
+            &serde_json::json!({ "id": "coord-test" }),
+        );
+
+        let (status, body) = blocking_post(
+            &base_url,
+            "/dispatch",
+            &serde_json::json!({
+                "tisket_id": "feat-123",
+                "model": "haiku",
+                "coordinator_id": "coord-test"
+            }),
+        );
+
+        assert_eq!(status, 201, "dispatch should return 201 Created");
+        assert_eq!(body["worker_id"].as_str(), Some("feat-123"));
+    }
+
+    #[test]
+    fn dispatch_endpoint_registers_worker_as_pending() {
+        let (base_url, _handle) = start_test_api();
+
+        blocking_post(
+            &base_url,
+            "/agents",
+            &serde_json::json!({ "id": "coord-test" }),
+        );
+
+        blocking_post(
+            &base_url,
+            "/dispatch",
+            &serde_json::json!({
+                "tisket_id": "feat-456",
+                "model": "opus",
+                "coordinator_id": "coord-test"
+            }),
+        );
+
+        // Worker should be registered in the DB as pending.
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let body: serde_json::Value = rt.block_on(async {
+            reqwest::Client::new()
+                .get(format!("{base_url}/agents/feat-456"))
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap()
+        });
+
+        assert_eq!(body["id"].as_str(), Some("feat-456"));
+        assert_eq!(body["status"].as_str(), Some("pending"));
+        assert_eq!(body["parent_id"].as_str(), Some("coord-test"));
+    }
+}

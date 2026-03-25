@@ -180,6 +180,7 @@ pub fn dispatch_with_workspace(
                 }),
                 api_port: *api_port,
                 oauth_token,
+                start_command: None, // Workers use default `clc workspace start`.
             };
 
             let mut workspace = SSHWorkspace::new(ssh_config, Box::new(env), *tunnel_port)
