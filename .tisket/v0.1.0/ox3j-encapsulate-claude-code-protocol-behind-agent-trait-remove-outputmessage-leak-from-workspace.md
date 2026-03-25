@@ -1,12 +1,12 @@
 ---
 title: "Encapsulate claude-code protocol behind Agent trait — remove OutputMessage leak from Workspace"
-status: todo
+status: in_progress
 priority: 2
 assignee: coord-encapsulate
 labels: [agent, architecture, clc-up-target]
 depends_on: []
 created: 2026-03-24T13:07:08Z
-updated: "2026-03-25T02:19:55Z"
+updated: "2026-03-25T02:20:00Z"
 ---
 
 The Workspace trait returns `Vec<claude_code::protocol::OutputMessage>` from
@@ -49,3 +49,5 @@ output, how to detect completion, how to extract permission denials.
 - `clc/src/ssh_workspace.rs` — same
 - `clc/src/coordinate.rs` — update to use AgentEvent
 - `clc/src/worker.rs` — output display code
+
+## Scratch Notes
