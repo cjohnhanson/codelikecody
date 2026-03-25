@@ -153,6 +153,39 @@ impl Coordination {
         }
     }
 
+    pub fn grant_permission(
+        &self,
+        agent_id: &str,
+        tool_pattern: &str,
+        granted_by: &str,
+        reason: &str,
+    ) -> Result<(), CoordinationError> {
+        // Use agent_id as session_id — one session per agent for now.
+        match &self.inner {
+            Backend::Db { backend, rt } => rt.block_on(
+                backend.grant_permission(agent_id, agent_id, tool_pattern, granted_by, reason),
+            ),
+            Backend::Api(_) => {
+                // API clients don't grant directly — coordinator uses DB.
+                Ok(())
+            }
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn check_permission(
+        &self,
+        agent_id: &str,
+        tool_name: &str,
+    ) -> Result<bool, CoordinationError> {
+        match &self.inner {
+            Backend::Db { backend, rt } => {
+                rt.block_on(backend.check_permission(agent_id, tool_name))
+            }
+            Backend::Api(_) => Ok(false),
+        }
+    }
+
     pub fn set_pid(
         &self,
         agent_id: &str,

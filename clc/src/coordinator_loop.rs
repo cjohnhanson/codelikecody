@@ -305,7 +305,12 @@ fn tick(
             // Mechanical: auto-grant if pattern matches.
             if scope.auto_grant.iter().any(|p| tool_name.contains(p)) {
                 eprintln!("coordinator '{}': auto-granting '{tool_name}' for '{worker_id}'", scope.id);
-                let _ = crate::permissions::grant(project_dir, worker_id, tool_name);
+                let _ = coord.grant_permission(
+                    worker_id,
+                    tool_name,
+                    &scope.id,
+                    "auto-grant: pattern match",
+                );
                 continue;
             }
 
