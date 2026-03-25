@@ -3,7 +3,6 @@ mod admin;
 mod belmont;
 mod cli;
 mod config;
-mod coordinate;
 mod coordination;
 mod coordination_client;
 mod docs;
@@ -37,7 +36,6 @@ mod tls;
 mod topology;
 mod zettel;
 mod worker;
-mod workspace;
 
 use std::path::Path;
 
@@ -100,35 +98,6 @@ fn main() {
             workspace,
             docker_image.as_deref(),
         ),
-        cli::Command::Coordinate {
-            ref model,
-            ref tisket,
-            ref label,
-            ref exclude_label,
-            ref project,
-            ref depends_on,
-            ref filter,
-            dry_run,
-            ref id,
-            ref auto_grant,
-            escalate_all,
-            ref grant_config,
-        } => {
-            let filters = coordinate::CoordinateFilters {
-                tisket: tisket.as_deref(),
-                label: label.as_deref(),
-                exclude_label: exclude_label.as_deref(),
-                project: project.as_deref(),
-                depends_on: depends_on.as_deref(),
-                filter: filter.as_deref(),
-                dry_run,
-                coordinator_id: id.as_deref(),
-                auto_grant,
-                escalate_all,
-                grant_config: grant_config.as_deref(),
-            };
-            cmd_coordinate(model, &filters)
-        }
         cli::Command::Home => cmd_home(),
         cli::Command::Merge { ref id } => cmd_merge(id),
         cli::Command::Pickup { ref id } => cmd_pickup(id),
@@ -347,21 +316,6 @@ fn cmd_coordinator_run(
         &cfg.worker.permissions.default,
         &cfg.worker.permissions.deny,
         std::time::Duration::from_secs(poll_interval),
-    )
-}
-
-fn cmd_coordinate(model: &str, filters: &coordinate::CoordinateFilters<'_>) -> Result<(), Error> {
-    let project_dir = std::env::current_dir()?;
-    let cfg = config::load(&project_dir).unwrap_or_default();
-    coordinate::coordinate(
-        &project_dir,
-        &cfg.main_branch,
-        &cfg.admin_branch,
-        model,
-        filters,
-        &cfg.worker.permissions.default,
-        &cfg.worker.permissions.deny,
-        &cfg.coordinator,
     )
 }
 

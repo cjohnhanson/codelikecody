@@ -108,45 +108,6 @@ pub enum Command {
         #[arg(long)]
         docker_image: Option<String>,
     },
-    /// Run the coordinator: dispatch pickable tiskets to worker agents.
-    Coordinate {
-        /// Model to use for workers.
-        #[arg(long, default_value = "opus")]
-        model: String,
-        /// Only process this specific tisket (instead of all pickable ones).
-        #[arg(long)]
-        tisket: Option<String>,
-        /// Only tiskets with this label.
-        #[arg(long)]
-        label: Option<String>,
-        /// Skip tiskets with this label.
-        #[arg(long)]
-        exclude_label: Option<String>,
-        /// Only tiskets in this project.
-        #[arg(long)]
-        project: Option<String>,
-        /// Only tiskets in the dependency chain rooted at this id.
-        #[arg(long)]
-        depends_on: Option<String>,
-        /// Filter by comma-separated selectors (e.g. "label:feature,project:v0.1.0").
-        #[arg(long)]
-        filter: Option<String>,
-        /// List pickable tiskets and exit without spawning a coordinator.
-        #[arg(long)]
-        dry_run: bool,
-        /// Unique identity for this coordinator (e.g., coord-infra, coord-ui).
-        #[arg(long)]
-        id: Option<String>,
-        /// Permission pattern the coordinator can auto-grant to workers (repeatable).
-        #[arg(long)]
-        auto_grant: Vec<String>,
-        /// Escalate all permission requests to the user (conservative mode).
-        #[arg(long)]
-        escalate_all: bool,
-        /// Path to an external permission policy YAML file.
-        #[arg(long)]
-        grant_config: Option<String>,
-    },
     /// Dispatch a worker: pickup tisket + spawn detached claude process.
     Dispatch {
         /// The tisket issue ID to dispatch.

@@ -33,8 +33,6 @@ pub trait Environment: Send {
 /// SSH workspace configuration.
 pub struct SSHWorkspaceConfig {
     pub workspace_config: WorkspaceConfig,
-    #[allow(dead_code)] // Used by workspace start via Agent trait
-    pub agent: Box<dyn clc_sdk::agent::Agent>,
     pub ca: Arc<EphemeralCA>,
     pub api_port: u16,
     pub oauth_token: Option<String>,

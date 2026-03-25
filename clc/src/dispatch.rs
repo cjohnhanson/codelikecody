@@ -173,7 +173,6 @@ pub fn dispatch_with_workspace(
 
             let ssh_config = SSHWorkspaceConfig {
                 workspace_config: ws_config,
-                agent: Box::new(agent),
                 ca: ca.clone().unwrap_or_else(|| {
                     std::sync::Arc::new(
                         crate::tls::EphemeralCA::new().expect("ephemeral CA"),
