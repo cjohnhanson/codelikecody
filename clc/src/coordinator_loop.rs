@@ -125,6 +125,7 @@ pub fn dry_run(
     admin_branch: &str,
     scope: &CoordinatorScope,
     depends_on: Option<&str>,
+    tisket: Option<&str>,
 ) -> Result<(), Error> {
     let git_state = git::detect(project_dir, main_branch, admin_branch)
         .ok_or_else(|| Error::NonBlocking("not inside a git repository".into()))?;
@@ -148,6 +149,15 @@ pub fn dry_run(
     let issues = repo
         .list_issues(scope.project.as_deref(), None, None, false, &[])
         .map_err(|e| Error::NonBlocking(format!("tisket: {e}")))?;
+
+    // Validate --depends-on references a real tisket.
+    if let Some(dep) = depends_on {
+        if repo.find_issue(dep).is_err() {
+            return Err(Error::NonBlocking(format!(
+                "depends-on '{dep}': no such tisket"
+            )));
+        }
+    }
 
     let pickable: Vec<_> = issues
         .into_iter()
@@ -177,6 +187,16 @@ pub fn dry_run(
             })
         })
         .collect();
+
+    // If --tisket is specified, check if that specific tisket is in the pickable set.
+    if let Some(tid) = tisket {
+        if pickable.iter().any(|i| i.id == tid) {
+            println!("{tid}");
+        } else {
+            eprintln!("{tid} not pickable");
+        }
+        return Ok(());
+    }
 
     if pickable.is_empty() {
         eprintln!("no pickable tiskets");

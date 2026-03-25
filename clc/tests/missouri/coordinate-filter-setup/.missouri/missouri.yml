@@ -143,8 +143,8 @@ assertions:
   - name: "coordinate --help shows --auto-grant flag"
     command: "clc coordinator-run --id test --help | grep -q '\\-\\-auto-grant'"
 
-  - name: "coordinate --help shows --escalate-all flag"
-    command: "clc coordinator-run --id test --help | grep -q '\\-\\-escalate-all'"
+  - name: "coordinator-run --help shows --always-escalate flag"
+    command: "clc coordinator-run --id test --help | grep -q '\\-\\-always-escalate'"
 
   - name: "coordinate --help shows --grant-config flag"
     command: "clc coordinator-run --id test --help | grep -q '\\-\\-grant-config'"
@@ -155,11 +155,11 @@ assertions:
   - name: "dry-run with multiple --auto-grant flags succeeds"
     command: "clc coordinator-run --id test --dry-run --auto-grant 'Bash(npm *)' --auto-grant 'Bash(make *)'"
 
-  - name: "dry-run with --escalate-all flag succeeds"
-    command: "clc coordinator-run --id test --dry-run --escalate-all"
+  - name: "dry-run with --always-escalate '*' flag succeeds"
+    command: "clc coordinator-run --id test --dry-run --always-escalate '*'"
 
-  - name: "dry-run with --escalate-all and --auto-grant succeeds"
-    command: "clc coordinator-run --id test --dry-run --escalate-all --auto-grant 'Bash(npm *)'"
+  - name: "dry-run with --always-escalate '*' and --auto-grant succeeds"
+    command: "clc coordinator-run --id test --dry-run --always-escalate '*' --auto-grant 'Bash(npm *)'"
 
   - name: "dry-run with --grant-config flag accepts path"
     command: "printf 'auto_grant:\\n  - \"Bash(npm *)\"\\n' > /tmp/test-policy.yml && clc coordinator-run --id test --dry-run --grant-config /tmp/test-policy.yml"
@@ -167,8 +167,8 @@ assertions:
   - name: "dry-run output unchanged by --auto-grant flag"
     command: "test $(clc coordinator-run --id test --dry-run --auto-grant 'Bash(npm *)' | wc -l | tr -d ' ') -eq 5"
 
-  - name: "dry-run output unchanged by --escalate-all flag"
-    command: "test $(clc coordinator-run --id test --dry-run --escalate-all | wc -l | tr -d ' ') -eq 5"
+  - name: "dry-run output unchanged by --always-escalate '*' flag"
+    command: "test $(clc coordinator-run --id test --dry-run --always-escalate '*' | wc -l | tr -d ' ') -eq 5"
 
   - name: "grant-config with nonexistent file errors"
     command: "! clc coordinator-run --id test --dry-run --grant-config /tmp/no-such-policy.yml 2>&1"

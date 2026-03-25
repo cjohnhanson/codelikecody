@@ -116,9 +116,12 @@ pub enum Command {
         /// Depends-on filter: only tiskets that depend on this ID.
         #[arg(long)]
         depends_on: Option<String>,
-        /// Grant config file path (for future use).
+        /// Grant config file path.
         #[arg(long)]
         grant_config: Option<String>,
+        /// Filter dry-run to a specific tisket ID.
+        #[arg(long)]
+        tisket: Option<String>,
     },
     /// Dispatch a worker: pickup tisket + spawn detached claude process.
     Dispatch {

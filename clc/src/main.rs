@@ -88,7 +88,8 @@ fn main() {
             dry_run,
             ref filter,
             ref depends_on,
-            grant_config: _,
+            ref grant_config,
+            ref tisket,
         } => cmd_coordinator_run(
             id,
             max_workers,
@@ -104,6 +105,8 @@ fn main() {
             dry_run,
             filter.as_deref(),
             depends_on.as_deref(),
+            grant_config.as_deref(),
+            tisket.as_deref(),
         ),
         cli::Command::Home => cmd_home(),
         cli::Command::Merge { ref id } => cmd_merge(id),
@@ -296,6 +299,8 @@ fn cmd_coordinator_run(
     dry_run: bool,
     filter: Option<&str>,
     depends_on: Option<&str>,
+    grant_config: Option<&str>,
+    tisket: Option<&str>,
 ) -> Result<(), Error> {
     let project_dir = std::env::current_dir()?;
     let cfg = config::load(&project_dir).unwrap_or_default();
@@ -324,6 +329,16 @@ fn cmd_coordinator_run(
         always_escalate: always_escalate.to_vec(),
     };
 
+    // Validate grant-config file if provided.
+    if let Some(path) = grant_config {
+        let content = std::fs::read_to_string(path).map_err(|e| {
+            Error::NonBlocking(format!("grant-config '{path}': {e}"))
+        })?;
+        serde_yml::from_str::<serde_json::Value>(&content).map_err(|e| {
+            Error::NonBlocking(format!("grant-config '{path}': invalid YAML: {e}"))
+        })?;
+    }
+
     if dry_run {
         return coordinator_loop::dry_run(
             &project_dir,
@@ -331,6 +346,7 @@ fn cmd_coordinator_run(
             &cfg.admin_branch,
             &scope,
             depends_on,
+            tisket,
         );
     }
 
