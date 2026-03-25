@@ -90,12 +90,6 @@ pub struct WorkerConfig {
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
-pub struct PermissionsConfig {
-    #[serde(default)]
-    pub allow: Vec<String>,
-}
-
-#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct CoordinatorConfig {
     #[serde(default)]
     pub auto_grant: Vec<String>,
@@ -178,9 +172,6 @@ pub struct Config {
     pub required_attempts: u32,
 
     #[serde(default)]
-    pub permissions: PermissionsConfig,
-
-    #[serde(default)]
     pub worker: WorkerConfig,
 
     #[serde(default)]
@@ -237,7 +228,6 @@ impl Default for Config {
             main_branch: default_main_branch(),
             admin_branch: default_admin_branch(),
             required_attempts: default_required_attempts(),
-            permissions: PermissionsConfig::default(),
             worker: WorkerConfig::default(),
             coordinator: CoordinatorConfig::default(),
             supervisor: SupervisorConfig::default(),
@@ -254,7 +244,6 @@ impl From<TomlFile> for Config {
             main_branch: toml.project.main_branch,
             admin_branch: toml.project.admin_branch,
             required_attempts: toml.project.required_attempts,
-            permissions: PermissionsConfig::default(),
             worker: toml.worker,
             coordinator: toml.coordinator,
             supervisor: toml.supervisor,
