@@ -66,6 +66,12 @@ pub fn run() -> Result<i32, Error> {
                 context: Some(text),
             })
         }
+        Event::PreToolUse { ref tool_name, ref tool_input }
+            if std::env::var("CLC_API_URL").is_ok() =>
+        {
+            // Route through supervisor API for permission check.
+            check_tool_via_api(tool_name, tool_input, git_state.as_ref())
+        }
         _ => guard::evaluate(&event, git_state.as_ref(), current_phase, cwd),
     };
 
@@ -456,6 +462,78 @@ fn maybe_bootstrap_phase(
         Some(phase::Phase::TestsUnwritten)
     } else {
         None
+    }
+}
+
+/// Check a tool use via the supervisor API.
+/// Returns Allow if granted, Block if denied (with escalation message).
+fn check_tool_via_api(
+    tool_name: &str,
+    tool_input: &serde_json::Value,
+    git: Option<&git::GitState>,
+) -> Response {
+    let api_url = match std::env::var("CLC_API_URL") {
+        Ok(url) => url,
+        Err(_) => return Response::Passthrough,
+    };
+
+    let agent_id = git
+        .map(|s| s.branch.clone())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    // Build a tool description for the check.
+    let tool_desc = if tool_name == "Bash" {
+        let cmd = tool_input
+            .get("command")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
+        format!("Bash({})", cmd.split_whitespace().next().unwrap_or(cmd))
+    } else {
+        tool_name.to_string()
+    };
+
+    let body = serde_json::json!({
+        "tool_name": tool_desc,
+        "reason": format!("{tool_name} tool call"),
+    });
+
+    let rt = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(_) => return Response::Passthrough,
+    };
+
+    let result: Result<serde_json::Value, String> = rt.block_on(async {
+        let client = crate::coordination_client::build_api_client()
+            .map_err(|e| format!("{e}"))?;
+        let resp = client
+            .post(format!("{api_url}/agents/{agent_id}/tool-check"))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("{e}"))?;
+        resp.json().await.map_err(|e| format!("{e}"))
+    });
+
+    match result {
+        Ok(resp) => {
+            let allowed = resp["allowed"].as_bool().unwrap_or(false);
+            if allowed {
+                Response::Passthrough
+            } else {
+                let message = resp["message"]
+                    .as_str()
+                    .unwrap_or("Permission denied by supervisor")
+                    .to_string();
+                Response::Block { message }
+            }
+        }
+        Err(_) => {
+            // API unreachable — fall through to local guard.
+            Response::Passthrough
+        }
     }
 }
 
