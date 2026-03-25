@@ -11,7 +11,7 @@ updated: "2026-03-25T03:16:29Z"
 
 ## Scratch Notes
 
-### Status: tests written, phase advancing
+### Status: complete — all coordination state routes through API
 
 **Done:**
 - `set_via_api()` in phase.rs — reads current phase from API, validates transition, writes to API, no filesystem
@@ -23,12 +23,21 @@ updated: "2026-03-25T03:16:29Z"
 - Removed broken missouri-phase-api test (mTLS incompatible with shell test)
 - All 162 clc tests passing, zero warnings
 
-**Remaining:**
-- Remove `.clc/state` file creation from `clc workspace init`
-- Permission grant storage in DB when coordinator grants (POST /agents/:id/grants)
-- Remove all filesystem-based coordination state (permission files, escalation files, cursor files, PID files)
-- Worker discovery via DB query instead of .worktrees/ scan
+**Also done:**
+- mTLS wired end-to-end: supervisor CA shared with coordinators, cert env vars set on workers
+- permissions request/grant/escalate/deny/inbox all route through API when CLC_API_URL set
+- Removed all db_path.exists() guards — Coordination::open() handles routing
+- done.rs, worker.rs, dispatch.rs all use Coordination::open() directly
 
 **Files modified:**
-- `clc/src/phase.rs` — set_via_api, load_phase_from_api, 5 API tests
+- `clc/src/phase.rs` — set_via_api, load_phase_from_api, init_phase_via_api, API tests
 - `clc/src/config.rs` — fixed broken test
+- `clc/src/tls.rs` — EphemeralCA::from_pem(), ca_key_pem field
+- `clc/src/supervisor.rs` — writes CA to disk, passes CLC_CA_CERT/KEY to coordinators
+- `clc/src/coordinator_loop.rs` — loads supervisor CA, uses DB for grants
+- `clc/src/main.rs` — workspace start sets CLC_API_CERT/KEY/CA env vars
+- `clc/src/coordination.rs` — grant_permission, check_permission methods
+- `clc/src/permissions.rs` — all functions route through API when set
+- `clc/src/done.rs` — removed db_path guard
+- `clc/src/worker.rs` — removed db_path guards
+- `clc/src/dispatch.rs` — removed db_path guards, simplified is_worker_alive
