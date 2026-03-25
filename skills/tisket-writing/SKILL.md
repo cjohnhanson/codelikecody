@@ -51,11 +51,16 @@ thread. The bar is low: a clear problem statement and enough context
 to remember why it matters.
 
 Discovery issues use the **problem statement format** (see below).
-They do NOT need acceptance criteria, detailed reproduction steps, or
-implementation guidance. The point is to capture, not to scope.
+They don't *require* acceptance criteria, detailed reproduction steps,
+or implementation guidance — but if you have that information, include
+it. The point is to capture everything known, not to artificially
+limit detail. A discovery issue with a proposed design and acceptance
+criteria is better than one without, as long as the status reflects
+that it hasn't been formally scoped.
 
 A discovery issue should answer: "If someone reads this in two weeks,
 will they understand why it was filed and whether it's still relevant?"
+The more context captured at filing time, the better that answer.
 
 ### todo — scoped, ready to work
 
