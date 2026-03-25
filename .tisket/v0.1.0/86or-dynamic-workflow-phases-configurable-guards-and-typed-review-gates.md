@@ -1,12 +1,12 @@
 ---
 title: "Dynamic workflow phases, configurable guards, and typed review gates"
-status: in_progress
+status: todo
 priority: 2
 assignee:
 labels: [clc, architecture]
 depends_on: []
 created: 2026-03-23T04:27:05Z
-updated: "2026-03-25T02:55:48Z"
+updated: "2026-03-25T02:58:51Z"
 ---
 
 ## Problem
@@ -181,5 +181,3 @@ reviewer agents what to look for is already built. The review gate
 mechanism is what connects "here's a skill that knows how to review"
 to "a fresh agent loads that skill, gets appropriate permissions, and
 renders a verdict that gates workflow progression."
-
-## Scratch Notes
