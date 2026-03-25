@@ -1,12 +1,12 @@
 ---
 title: "Dynamic workflow phases, configurable guards, and typed review gates"
-status: discovery
+status: todo
 priority: 2
 assignee:
 labels: [clc, architecture]
 depends_on: []
-created: "2026-03-23T04:27:05Z"
-updated: "2026-03-23T04:27:05Z"
+created: 2026-03-23T04:27:05Z
+updated: "2026-03-25T02:55:19Z"
 ---
 
 ## Problem
