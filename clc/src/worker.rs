@@ -35,8 +35,10 @@ pub fn list_workers(project_dir: &Path, all: bool) -> Result<(), Error> {
     let mut workers = collect_workers(project_dir)?;
 
     // Enrich with coordination DB status if available.
-    if let Ok(coord) = Coordination::open(project_dir) {
-        {
+    let has_api = std::env::var("CLC_API_URL").is_ok();
+    let has_db = project_dir.join(".clc").join("coordination.db").exists();
+    if has_api || has_db {
+        if let Ok(coord) = Coordination::open(project_dir) {
             for w in &mut workers {
                 if let Ok(status) = coord.get_status(&w.id) {
                     w.alive = status == clc_sdk::coordination::AgentStatus::Running;
@@ -153,21 +155,24 @@ fn collect_workers(project_dir: &Path) -> Result<Vec<WorkerInfo>, Error> {
 
 /// Show activity since last check (cursor-based).
 pub fn check(project_dir: &Path, id: &str) -> Result<(), Error> {
-    // Check coordination DB for messages if it exists.
-    if let Ok(coord) = Coordination::open(project_dir) {
-        if let Ok((msgs, _)) = coord.recv(id, &clc_sdk::coordination::Cursor::default()) {
-            for msg in &msgs {
-                match &msg.kind {
-                    clc_sdk::coordination::MessageKind::StatusUpdate { phase, detail } => {
-                        eprintln!("[status] {phase}: {detail}");
+    let has_api = std::env::var("CLC_API_URL").is_ok();
+    let has_db = project_dir.join(".clc").join("coordination.db").exists();
+    if has_api || has_db {
+        if let Ok(coord) = Coordination::open(project_dir) {
+            if let Ok((msgs, _)) = coord.recv(id, &clc_sdk::coordination::Cursor::default()) {
+                for msg in &msgs {
+                    match &msg.kind {
+                        clc_sdk::coordination::MessageKind::StatusUpdate { phase, detail } => {
+                            eprintln!("[status] {phase}: {detail}");
+                        }
+                        clc_sdk::coordination::MessageKind::Output(text) => {
+                            println!("{text}");
+                        }
+                        clc_sdk::coordination::MessageKind::PermissionRequest { tool_name, reason } => {
+                            eprintln!("[permission-request] {tool_name}: {reason}");
+                        }
+                        _ => {}
                     }
-                    clc_sdk::coordination::MessageKind::Output(text) => {
-                        println!("{text}");
-                    }
-                    clc_sdk::coordination::MessageKind::PermissionRequest { tool_name, reason } => {
-                        eprintln!("[permission-request] {tool_name}: {reason}");
-                    }
-                    _ => {}
                 }
             }
         }
@@ -360,9 +365,10 @@ pub fn stop(project_dir: &Path, id: &str) -> Result<(), Error> {
         eprintln!("worker '{id}' already dead (pid {pid})");
     }
 
-    // Update coordination database if it exists.
-    if let Ok(coord) = Coordination::open(project_dir) {
-        {
+    let has_api = std::env::var("CLC_API_URL").is_ok();
+    let has_db = project_dir.join(".clc").join("coordination.db").exists();
+    if has_api || has_db {
+        if let Ok(coord) = Coordination::open(project_dir) {
             let _ = coord.set_status(id, clc_sdk::coordination::AgentStatus::Stopped);
         }
     }
@@ -447,9 +453,10 @@ pub fn resume(project_dir: &Path, id: &str) -> Result<(), Error> {
     writeln!(pipe, "{json}")?;
     pipe.flush()?;
 
-    // Update coordination database.
-    if let Ok(coord) = Coordination::open(project_dir) {
-        {
+    let has_api = std::env::var("CLC_API_URL").is_ok();
+    let has_db = project_dir.join(".clc").join("coordination.db").exists();
+    if has_api || has_db {
+        if let Ok(coord) = Coordination::open(project_dir) {
             let _ = coord.set_status(id, clc_sdk::coordination::AgentStatus::Running);
             let _ = coord.set_pid(id, Some(pid.cast_signed()));
         }
@@ -461,12 +468,15 @@ pub fn resume(project_dir: &Path, id: &str) -> Result<(), Error> {
 
 /// Supervise a worker: poll until it reaches done, auto-resuming if it stops early.
 pub fn supervise(project_dir: &Path, id: &str, max_resumes: u32) -> Result<(), Error> {
-    // Check coordination DB status first, if it exists.
-    if let Ok(coord) = Coordination::open(project_dir) {
-        if let Ok(status) = coord.get_status(id) {
-            if status == clc_sdk::coordination::AgentStatus::Completed {
-                eprintln!("worker '{id}' already completed (coordination DB)");
-                return Ok(());
+    let has_api = std::env::var("CLC_API_URL").is_ok();
+    let has_db = project_dir.join(".clc").join("coordination.db").exists();
+    if has_api || has_db {
+        if let Ok(coord) = Coordination::open(project_dir) {
+            if let Ok(status) = coord.get_status(id) {
+                if status == clc_sdk::coordination::AgentStatus::Completed {
+                    eprintln!("worker '{id}' already completed (coordination DB)");
+                    return Ok(());
+                }
             }
         }
     }

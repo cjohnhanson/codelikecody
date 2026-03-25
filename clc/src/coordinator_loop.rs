@@ -118,6 +118,77 @@ fn coordinator_system_prompt() -> String {
         .to_string()
 }
 
+/// Dry-run: list pickable tiskets matching the scope and exit.
+pub fn dry_run(
+    project_dir: &Path,
+    main_branch: &str,
+    admin_branch: &str,
+    scope: &CoordinatorScope,
+    depends_on: Option<&str>,
+) -> Result<(), Error> {
+    let git_state = git::detect(project_dir, main_branch, admin_branch)
+        .ok_or_else(|| Error::NonBlocking("not inside a git repository".into()))?;
+
+    if !git_state.is_main {
+        return Err(Error::NonBlocking(format!(
+            "coordinator must run from the main branch (currently on '{}')",
+            git_state.branch
+        )));
+    }
+
+    let utf8_dir = Utf8Path::new(
+        project_dir
+            .to_str()
+            .ok_or_else(|| Error::NonBlocking("non-UTF8 project directory".into()))?,
+    );
+
+    let repo =
+        tisket::Repo::open(utf8_dir).map_err(|e| Error::NonBlocking(format!("tisket: {e}")))?;
+
+    let issues = repo
+        .list_issues(scope.project.as_deref(), None, None, false, &[])
+        .map_err(|e| Error::NonBlocking(format!("tisket: {e}")))?;
+
+    let pickable: Vec<_> = issues
+        .into_iter()
+        .filter(|i| i.frontmatter.status.is_pickable())
+        .filter(|i| {
+            i.frontmatter.depends_on.iter().all(|dep_id| {
+                repo.find_issue(dep_id)
+                    .map(|dep| dep.closed)
+                    .unwrap_or(false)
+            })
+        })
+        .filter(|i| {
+            scope
+                .label
+                .as_deref()
+                .is_none_or(|l| i.frontmatter.labels.iter().any(|il| il == l))
+        })
+        .filter(|i| {
+            scope
+                .exclude_label
+                .as_deref()
+                .is_none_or(|l| !i.frontmatter.labels.iter().any(|il| il == l))
+        })
+        .filter(|i| {
+            depends_on.is_none_or(|dep| {
+                i.id == dep || i.frontmatter.depends_on.iter().any(|d| d == dep)
+            })
+        })
+        .collect();
+
+    if pickable.is_empty() {
+        eprintln!("no pickable tiskets");
+    } else {
+        for issue in &pickable {
+            println!("{}", issue.id);
+        }
+    }
+
+    Ok(())
+}
+
 /// Run the coordinator loop. Blocks until all work is done or the process is killed.
 pub fn run(
     project_dir: &Path,

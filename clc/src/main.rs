@@ -85,6 +85,10 @@ fn main() {
             poll_interval,
             ref workspace,
             ref docker_image,
+            dry_run,
+            ref filter,
+            ref depends_on,
+            grant_config: _,
         } => cmd_coordinator_run(
             id,
             max_workers,
@@ -97,6 +101,9 @@ fn main() {
             poll_interval,
             workspace,
             docker_image.as_deref(),
+            dry_run,
+            filter.as_deref(),
+            depends_on.as_deref(),
         ),
         cli::Command::Home => cmd_home(),
         cli::Command::Merge { ref id } => cmd_merge(id),
@@ -286,9 +293,18 @@ fn cmd_coordinator_run(
     poll_interval: u64,
     workspace: &str,
     docker_image: Option<&str>,
+    dry_run: bool,
+    filter: Option<&str>,
+    depends_on: Option<&str>,
 ) -> Result<(), Error> {
     let project_dir = std::env::current_dir()?;
     let cfg = config::load(&project_dir).unwrap_or_default();
+
+    // Parse --filter into label/project/exclude-label overrides.
+    let (filter_label, filter_project, filter_exclude) = parse_filter(filter);
+    let effective_label = label.map(str::to_string).or(filter_label);
+    let effective_project = project.map(str::to_string).or(filter_project);
+    let effective_exclude = exclude_label.map(str::to_string).or(filter_exclude);
 
     let ws_type = match workspace {
         "docker" => config::WorkspaceType::Docker,
@@ -297,9 +313,9 @@ fn cmd_coordinator_run(
 
     let scope = config::CoordinatorScope {
         id: id.to_string(),
-        project: project.map(str::to_string),
-        label: label.map(str::to_string),
-        exclude_label: exclude_label.map(str::to_string),
+        project: effective_project,
+        label: effective_label,
+        exclude_label: effective_exclude,
         max_workers,
         model: model.to_string(),
         workspace: ws_type,
@@ -307,6 +323,16 @@ fn cmd_coordinator_run(
         auto_grant: auto_grant.to_vec(),
         always_escalate: always_escalate.to_vec(),
     };
+
+    if dry_run {
+        return coordinator_loop::dry_run(
+            &project_dir,
+            &cfg.main_branch,
+            &cfg.admin_branch,
+            &scope,
+            depends_on,
+        );
+    }
 
     coordinator_loop::run(
         &project_dir,
@@ -317,6 +343,30 @@ fn cmd_coordinator_run(
         &cfg.worker.permissions.deny,
         std::time::Duration::from_secs(poll_interval),
     )
+}
+
+/// Parse a combined filter string like "label:feature,project:v0.1.0".
+fn parse_filter(filter: Option<&str>) -> (Option<String>, Option<String>, Option<String>) {
+    let Some(f) = filter else {
+        return (None, None, None);
+    };
+    let mut label = None;
+    let mut project = None;
+    let mut exclude = None;
+    for part in f.split(',') {
+        let part = part.trim();
+        if let Some(v) = part.strip_prefix("label:") {
+            label = Some(v.to_string());
+        } else if let Some(v) = part.strip_prefix("project:") {
+            project = Some(v.to_string());
+        } else if let Some(v) = part.strip_prefix("exclude-label:") {
+            exclude = Some(v.to_string());
+        } else if let Some(v) = part.strip_prefix("status:") {
+            // status:todo is implicit — all pickable tiskets are todo.
+            let _ = v;
+        }
+    }
+    (label, project, exclude)
 }
 
 fn cmd_config(action: &cli::ConfigAction) -> Result<(), Error> {

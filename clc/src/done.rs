@@ -65,12 +65,16 @@ pub fn done(project_dir: &Path, main_branch: &str, admin_branch: &str) -> Result
         }
     }
 
-    // Mark agent as completed in coordination database (API or local).
-    if let Ok(coord) = Coordination::open(project_dir) {
-        let _ = coord.set_status(
-            &git_state.branch,
-            clc_sdk::coordination::AgentStatus::Completed,
-        );
+    // Mark agent as completed in coordination database if available.
+    let has_api = std::env::var("CLC_API_URL").is_ok();
+    let has_db = project_dir.join(".clc").join("coordination.db").exists();
+    if has_api || has_db {
+        if let Ok(coord) = Coordination::open(project_dir) {
+            let _ = coord.set_status(
+                &git_state.branch,
+                clc_sdk::coordination::AgentStatus::Completed,
+            );
+        }
     }
 
     Ok(())

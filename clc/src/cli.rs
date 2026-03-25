@@ -107,6 +107,18 @@ pub enum Command {
         /// Docker image to use (when workspace=docker).
         #[arg(long)]
         docker_image: Option<String>,
+        /// Dry-run: list pickable tiskets and exit without starting the loop.
+        #[arg(long)]
+        dry_run: bool,
+        /// Combined filter (e.g. "label:feature,project:v0.1.0").
+        #[arg(long)]
+        filter: Option<String>,
+        /// Depends-on filter: only tiskets that depend on this ID.
+        #[arg(long)]
+        depends_on: Option<String>,
+        /// Grant config file path (for future use).
+        #[arg(long)]
+        grant_config: Option<String>,
     },
     /// Dispatch a worker: pickup tisket + spawn detached claude process.
     Dispatch {

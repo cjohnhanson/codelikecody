@@ -20,8 +20,8 @@ assertions:
   - name: "dispatch --help shows --coordinator-id flag"
     command: "clc dispatch --help 2>&1 | grep -q 'coordinator-id'"
 
-  - name: "coordinate --help shows --id flag"
-    command: "clc coordinate --help 2>&1 | grep -q '\\-\\-id'"
+  - name: "coordinator-run --help shows --id flag"
+    command: "clc coordinator-run --help 2>&1 | grep -q '\\-\\-id'"
 
 transitions:
   - name: "dispatch with coordinator id"

@@ -15,6 +15,16 @@ use crate::worker;
 
 const REQUEST_FILE: &str = "permission-request.json";
 
+/// Check if coordination is available without creating a DB as a side effect.
+/// Returns true if CLC_API_URL is set OR if coordination.db already exists.
+fn coordination_available(project_dir: &Path) -> bool {
+    std::env::var("CLC_API_URL").is_ok()
+        || project_dir
+            .join(".clc")
+            .join("coordination.db")
+            .exists()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum RequestStatus {
@@ -36,29 +46,29 @@ struct PermissionRequest {
 /// Routes through the supervisor API when `CLC_API_URL` is set.
 /// Otherwise creates `permission-request.json` in the worker's state directory.
 pub fn request(cwd: &Path, description: &str) -> Result<(), Error> {
-    // Send via coordination (API or DB depending on CLC_API_URL).
-    if let Ok(coord) = Coordination::open(cwd) {
-        let agent_id = crate::git::current_branch(cwd).unwrap_or_default();
-        let msg = clc_sdk::coordination::Message {
-            id: format!(
-                "perm-req-{}",
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis()
-            ),
-            from: agent_id,
-            to: "coordinator".into(),
-            kind: clc_sdk::coordination::MessageKind::PermissionRequest {
-                tool_name: description.to_string(),
-                reason: description.to_string(),
-            },
-            timestamp: std::time::SystemTime::now(),
-        };
-        let _ = coord.send(msg);
+    if coordination_available(cwd) {
+        if let Ok(coord) = Coordination::open(cwd) {
+            let agent_id = crate::git::current_branch(cwd).unwrap_or_default();
+            let msg = clc_sdk::coordination::Message {
+                id: format!(
+                    "perm-req-{}",
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis()
+                ),
+                from: agent_id,
+                to: "coordinator".into(),
+                kind: clc_sdk::coordination::MessageKind::PermissionRequest {
+                    tool_name: description.to_string(),
+                    reason: description.to_string(),
+                },
+                timestamp: std::time::SystemTime::now(),
+            };
+            let _ = coord.send(msg);
+        }
     }
 
-    // Also write filesystem state for local worktree mode.
     if std::env::var("CLC_API_URL").is_err() {
         let wdir = cwd.join(".clc").join("worker");
         if !wdir.is_dir() {
@@ -90,27 +100,28 @@ pub fn request(cwd: &Path, description: &str) -> Result<(), Error> {
 /// (worker's tool-check reads from the same DB). Otherwise writes to
 /// the worker's `.claude/settings.local.json` on the filesystem.
 pub fn grant(project_dir: &Path, worker_id: &str, permission: &str) -> Result<(), Error> {
-    // Record grant in coordination DB (works for both API and local modes).
-    if let Ok(coord) = Coordination::open(project_dir) {
-        let _ = coord.grant_permission(worker_id, permission, "coordinator", "manual grant");
+    if coordination_available(project_dir) {
+        if let Ok(coord) = Coordination::open(project_dir) {
+            let _ = coord.grant_permission(worker_id, permission, "coordinator", "manual grant");
 
-        let msg = clc_sdk::coordination::Message {
-            id: format!(
-                "perm-grant-{}",
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis()
-            ),
-            from: "coordinator".into(),
-            to: worker_id.into(),
-            kind: clc_sdk::coordination::MessageKind::PermissionGrant {
-                request_id: format!("perm-req:{worker_id}"),
-                scope: permission.to_string(),
-            },
-            timestamp: std::time::SystemTime::now(),
-        };
-        let _ = coord.send(msg);
+            let msg = clc_sdk::coordination::Message {
+                id: format!(
+                    "perm-grant-{}",
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis()
+                ),
+                from: "coordinator".into(),
+                to: worker_id.into(),
+                kind: clc_sdk::coordination::MessageKind::PermissionGrant {
+                    request_id: format!("perm-req:{worker_id}"),
+                    scope: permission.to_string(),
+                },
+                timestamp: std::time::SystemTime::now(),
+            };
+            let _ = coord.send(msg);
+        }
     }
 
     // Filesystem operations only in local worktree mode.
@@ -366,20 +377,21 @@ fn add_permission_rule(settings_path: &Path, permission: &str) -> Result<(), Err
 ///
 /// Checks coordination database first, falls back to filesystem scan.
 pub fn list(project_dir: &Path) -> Result<(), Error> {
-    // Try coordination database first (API or local SQLite).
-    if let Ok(coord) = Coordination::open(project_dir) {
-        if let Ok(pending) = coord.pending_permissions("coordinator") {
-            if !pending.is_empty() {
-                for msg in &pending {
-                    if let clc_sdk::coordination::MessageKind::PermissionRequest {
-                        ref tool_name,
-                        ref reason,
-                    } = msg.kind
-                    {
-                        println!("{}\t{tool_name}: {reason}", msg.from);
+    if coordination_available(project_dir) {
+        if let Ok(coord) = Coordination::open(project_dir) {
+            if let Ok(pending) = coord.pending_permissions("coordinator") {
+                if !pending.is_empty() {
+                    for msg in &pending {
+                        if let clc_sdk::coordination::MessageKind::PermissionRequest {
+                            ref tool_name,
+                            ref reason,
+                        } = msg.kind
+                        {
+                            println!("{}\t{tool_name}: {reason}", msg.from);
+                        }
                     }
+                    return Ok(());
                 }
-                return Ok(());
             }
         }
     }
@@ -415,7 +427,26 @@ fn print_pending(project_dir: &Path, worker_id: &str) -> bool {
 }
 
 /// Return the pending permission request for a worker, if any.
+/// Checks coordination DB first (API or local), falls back to filesystem.
 pub fn pending_request(project_dir: &Path, worker_id: &str) -> Option<String> {
+    if coordination_available(project_dir) {
+        if let Ok(coord) = Coordination::open(project_dir) {
+            if let Ok(pending) = coord.pending_permissions("coordinator") {
+                for msg in &pending {
+                    if msg.from == worker_id {
+                        if let clc_sdk::coordination::MessageKind::PermissionRequest {
+                            ref reason, ..
+                        } = msg.kind
+                        {
+                            return Some(reason.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Filesystem fallback.
     let worker_dir = worker::worker_dir_for(project_dir, worker_id);
     let request_path = worker_dir.join(REQUEST_FILE);
 
@@ -451,25 +482,26 @@ struct Escalation {
 /// Routes through coordination DB. In local mode, also writes
 /// `.clc/escalations/{worker_id}.json` for filesystem-based inbox.
 pub fn escalate(project_dir: &Path, worker_id: &str, description: &str) -> Result<(), Error> {
-    // Record escalation in coordination DB (API or local).
-    if let Ok(coord) = Coordination::open(project_dir) {
-        let msg = clc_sdk::coordination::Message {
-            id: format!(
-                "escalation-{}",
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis()
-            ),
-            from: "coordinator".into(),
-            to: "admin".into(),
-            kind: clc_sdk::coordination::MessageKind::PermissionRequest {
-                tool_name: format!("escalation:{worker_id}"),
-                reason: description.to_string(),
-            },
-            timestamp: std::time::SystemTime::now(),
-        };
-        let _ = coord.send(msg);
+    if coordination_available(project_dir) {
+        if let Ok(coord) = Coordination::open(project_dir) {
+            let msg = clc_sdk::coordination::Message {
+                id: format!(
+                    "escalation-{}",
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis()
+                ),
+                from: "coordinator".into(),
+                to: "admin".into(),
+                kind: clc_sdk::coordination::MessageKind::PermissionRequest {
+                    tool_name: format!("escalation:{worker_id}"),
+                    reason: description.to_string(),
+                },
+                timestamp: std::time::SystemTime::now(),
+            };
+            let _ = coord.send(msg);
+        }
     }
 
     // Filesystem fallback for local worktree mode.
@@ -500,25 +532,26 @@ pub fn escalate(project_dir: &Path, worker_id: &str, description: &str) -> Resul
 /// Records denial in coordination DB. In local mode, also removes
 /// the escalation file and updates the request file.
 pub fn deny(project_dir: &Path, worker_id: &str, reason: &str) -> Result<(), Error> {
-    // Record denial in coordination DB (API or local).
-    if let Ok(coord) = Coordination::open(project_dir) {
-        let msg = clc_sdk::coordination::Message {
-            id: format!(
-                "perm-deny-{}",
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis()
-            ),
-            from: "admin".into(),
-            to: worker_id.into(),
-            kind: clc_sdk::coordination::MessageKind::PermissionDenied {
-                request_id: format!("escalation:{worker_id}"),
-                reason: reason.to_string(),
-            },
-            timestamp: std::time::SystemTime::now(),
-        };
-        let _ = coord.send(msg);
+    if coordination_available(project_dir) {
+        if let Ok(coord) = Coordination::open(project_dir) {
+            let msg = clc_sdk::coordination::Message {
+                id: format!(
+                    "perm-deny-{}",
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis()
+                ),
+                from: "admin".into(),
+                to: worker_id.into(),
+                kind: clc_sdk::coordination::MessageKind::PermissionDenied {
+                    request_id: format!("escalation:{worker_id}"),
+                    reason: reason.to_string(),
+                },
+                timestamp: std::time::SystemTime::now(),
+            };
+            let _ = coord.send(msg);
+        }
     }
 
     // Filesystem cleanup only in local worktree mode.
@@ -556,36 +589,40 @@ pub fn deny(project_dir: &Path, worker_id: &str, reason: &str) -> Result<(), Err
 /// Reads from coordination DB first (covers both API and local mode).
 /// Falls back to scanning `.clc/escalations/` for filesystem-only setups.
 pub fn inbox(project_dir: &Path) -> Result<(), Error> {
-    // Try coordination DB first.
-    if let Ok(coord) = Coordination::open(project_dir) {
-        if let Ok(pending) = coord.pending_permissions("admin") {
-            let escalations: Vec<_> = pending
-                .iter()
-                .filter(|m| {
-                    matches!(
-                        &m.kind,
-                        clc_sdk::coordination::MessageKind::PermissionRequest { tool_name, .. }
-                        if tool_name.starts_with("escalation:")
-                    )
-                })
-                .collect();
-            if !escalations.is_empty() {
-                for msg in &escalations {
-                    if let clc_sdk::coordination::MessageKind::PermissionRequest {
-                        ref tool_name,
-                        ref reason,
-                    } = msg.kind
-                    {
-                        let worker_id = tool_name.strip_prefix("escalation:").unwrap_or(tool_name);
-                        println!("{worker_id}\t{reason}");
+    // Only use DB-based inbox in API mode. In local mode, escalation messages
+    // in the DB are never deleted (append-only), so the filesystem is the
+    // source of truth for which escalations are still pending.
+    if std::env::var("CLC_API_URL").is_ok() {
+        if let Ok(coord) = Coordination::open(project_dir) {
+            if let Ok(pending) = coord.pending_permissions("admin") {
+                let escalations: Vec<_> = pending
+                    .iter()
+                    .filter(|m| {
+                        matches!(
+                            &m.kind,
+                            clc_sdk::coordination::MessageKind::PermissionRequest { tool_name, .. }
+                            if tool_name.starts_with("escalation:")
+                        )
+                    })
+                    .collect();
+                if !escalations.is_empty() {
+                    for msg in &escalations {
+                        if let clc_sdk::coordination::MessageKind::PermissionRequest {
+                            ref tool_name,
+                            ref reason,
+                        } = msg.kind
+                        {
+                            let worker_id =
+                                tool_name.strip_prefix("escalation:").unwrap_or(tool_name);
+                            println!("{worker_id}\t{reason}");
+                        }
                     }
+                    return Ok(());
                 }
-                return Ok(());
             }
         }
     }
 
-    // Filesystem fallback.
     let escalations_dir = project_dir.join(".clc").join(ESCALATIONS_DIR);
     if !escalations_dir.is_dir() {
         eprintln!("no pending escalations");

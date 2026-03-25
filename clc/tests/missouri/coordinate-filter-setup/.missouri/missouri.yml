@@ -1,229 +1,229 @@
 assertions:
   # --- CLI flag existence ---
   - name: "coordinate --help shows --label flag"
-    command: "clc coordinate --help | grep -q '\\-\\-label'"
+    command: "clc coordinator-run --id test --help | grep -q '\\-\\-label'"
 
   - name: "coordinate --help shows --exclude-label flag"
-    command: "clc coordinate --help | grep -q '\\-\\-exclude-label'"
+    command: "clc coordinator-run --id test --help | grep -q '\\-\\-exclude-label'"
 
   - name: "coordinate --help shows --project flag"
-    command: "clc coordinate --help | grep -q '\\-\\-project'"
+    command: "clc coordinator-run --id test --help | grep -q '\\-\\-project'"
 
   - name: "coordinate --help shows --depends-on flag"
-    command: "clc coordinate --help | grep -q '\\-\\-depends-on'"
+    command: "clc coordinator-run --id test --help | grep -q '\\-\\-depends-on'"
 
   - name: "coordinate --help shows --dry-run flag"
-    command: "clc coordinate --help | grep -q '\\-\\-dry-run'"
+    command: "clc coordinator-run --id test --help | grep -q '\\-\\-dry-run'"
 
   # --- Dry-run baseline (no filters) ---
   - name: "dry-run without filters lists 5 pickable tiskets"
-    command: "test $(clc coordinate --dry-run | wc -l | tr -d ' ') -eq 5"
+    command: "test $(clc coordinator-run --id test --dry-run | wc -l | tr -d ' ') -eq 5"
 
   - name: "dry-run without filters includes alpha-task"
-    command: "clc coordinate --dry-run | grep -q alpha-task"
+    command: "clc coordinator-run --id test --dry-run | grep -q alpha-task"
 
   - name: "dry-run without filters includes beta-task"
-    command: "clc coordinate --dry-run | grep -q beta-task"
+    command: "clc coordinator-run --id test --dry-run | grep -q beta-task"
 
   - name: "dry-run without filters includes dep-child"
-    command: "clc coordinate --dry-run | grep -q dep-child"
+    command: "clc coordinator-run --id test --dry-run | grep -q dep-child"
 
   - name: "dry-run without filters excludes dep-root (done)"
-    command: "! clc coordinate --dry-run | grep -q dep-root"
+    command: "! clc coordinator-run --id test --dry-run | grep -q dep-root"
 
   - name: "dry-run without filters excludes dep-grandchild (unresolved dep)"
-    command: "! clc coordinate --dry-run | grep -q dep-grandchild"
+    command: "! clc coordinator-run --id test --dry-run | grep -q dep-grandchild"
 
   # --- Label filter ---
   - name: "label infrastructure includes alpha-task"
-    command: "clc coordinate --label infrastructure --dry-run | grep -q alpha-task"
+    command: "clc coordinator-run --id test --label infrastructure --dry-run | grep -q alpha-task"
 
   - name: "label infrastructure lists exactly 1 tisket"
-    command: "test $(clc coordinate --label infrastructure --dry-run | wc -l | tr -d ' ') -eq 1"
+    command: "test $(clc coordinator-run --id test --label infrastructure --dry-run | wc -l | tr -d ' ') -eq 1"
 
   - name: "label infrastructure excludes beta-task"
-    command: "! clc coordinate --label infrastructure --dry-run | grep -q beta-task"
+    command: "! clc coordinator-run --id test --label infrastructure --dry-run | grep -q beta-task"
 
   - name: "label infrastructure excludes gamma-task"
-    command: "! clc coordinate --label infrastructure --dry-run | grep -q gamma-task"
+    command: "! clc coordinator-run --id test --label infrastructure --dry-run | grep -q gamma-task"
 
   - name: "label infrastructure excludes delta-task"
-    command: "! clc coordinate --label infrastructure --dry-run | grep -q delta-task"
+    command: "! clc coordinator-run --id test --label infrastructure --dry-run | grep -q delta-task"
 
   - name: "label nonexistent gives no pickable"
-    command: "clc coordinate --label nonexistent --dry-run 2>&1 | grep -q 'no pickable'"
+    command: "clc coordinator-run --id test --label nonexistent --dry-run 2>&1 | grep -q 'no pickable'"
 
   # --- Exclude-label filter ---
   - name: "exclude-label needs-human removes gamma-task"
-    command: "! clc coordinate --exclude-label needs-human --dry-run | grep -q gamma-task"
+    command: "! clc coordinator-run --id test --exclude-label needs-human --dry-run | grep -q gamma-task"
 
   - name: "exclude-label needs-human keeps alpha-task"
-    command: "clc coordinate --exclude-label needs-human --dry-run | grep -q alpha-task"
+    command: "clc coordinator-run --id test --exclude-label needs-human --dry-run | grep -q alpha-task"
 
   - name: "exclude-label needs-human keeps beta-task"
-    command: "clc coordinate --exclude-label needs-human --dry-run | grep -q beta-task"
+    command: "clc coordinator-run --id test --exclude-label needs-human --dry-run | grep -q beta-task"
 
   - name: "exclude-label needs-human lists 4 tiskets"
-    command: "test $(clc coordinate --exclude-label needs-human --dry-run | wc -l | tr -d ' ') -eq 4"
+    command: "test $(clc coordinator-run --id test --exclude-label needs-human --dry-run | wc -l | tr -d ' ') -eq 4"
 
   # --- Project filter ---
   - name: "project v0.2.0 shows delta-task"
-    command: "clc coordinate --project v0.2.0 --dry-run | grep -q delta-task"
+    command: "clc coordinator-run --id test --project v0.2.0 --dry-run | grep -q delta-task"
 
   - name: "project v0.2.0 excludes alpha-task"
-    command: "! clc coordinate --project v0.2.0 --dry-run | grep -q alpha-task"
+    command: "! clc coordinator-run --id test --project v0.2.0 --dry-run | grep -q alpha-task"
 
   - name: "project v0.2.0 lists exactly 1 tisket"
-    command: "test $(clc coordinate --project v0.2.0 --dry-run | wc -l | tr -d ' ') -eq 1"
+    command: "test $(clc coordinator-run --id test --project v0.2.0 --dry-run | wc -l | tr -d ' ') -eq 1"
 
   - name: "project nonexistent errors"
-    command: "! clc coordinate --project nonexistent --dry-run"
+    command: "! clc coordinator-run --id test --project nonexistent --dry-run"
 
   # --- Depends-on filter ---
   - name: "depends-on dep-root includes dep-child"
-    command: "clc coordinate --depends-on dep-root --dry-run | grep -q dep-child"
+    command: "clc coordinator-run --id test --depends-on dep-root --dry-run | grep -q dep-child"
 
   - name: "depends-on dep-root excludes alpha-task"
-    command: "! clc coordinate --depends-on dep-root --dry-run | grep -q alpha-task"
+    command: "! clc coordinator-run --id test --depends-on dep-root --dry-run | grep -q alpha-task"
 
   - name: "depends-on dep-root excludes dep-grandchild (unresolved dep)"
-    command: "! clc coordinate --depends-on dep-root --dry-run | grep -q dep-grandchild"
+    command: "! clc coordinator-run --id test --depends-on dep-root --dry-run | grep -q dep-grandchild"
 
   - name: "depends-on dep-root excludes dep-root itself (done status)"
-    command: "! clc coordinate --depends-on dep-root --dry-run | grep -q dep-root"
+    command: "! clc coordinator-run --id test --depends-on dep-root --dry-run | grep -q dep-root"
 
   - name: "depends-on dep-root lists exactly 1 tisket"
-    command: "test $(clc coordinate --depends-on dep-root --dry-run | wc -l | tr -d ' ') -eq 1"
+    command: "test $(clc coordinator-run --id test --depends-on dep-root --dry-run | wc -l | tr -d ' ') -eq 1"
 
   - name: "depends-on alpha-task includes alpha-task itself"
-    command: "clc coordinate --depends-on alpha-task --dry-run | grep -q alpha-task"
+    command: "clc coordinator-run --id test --depends-on alpha-task --dry-run | grep -q alpha-task"
 
   - name: "depends-on alpha-task lists exactly 1 (no dependents)"
-    command: "test $(clc coordinate --depends-on alpha-task --dry-run | wc -l | tr -d ' ') -eq 1"
+    command: "test $(clc coordinator-run --id test --depends-on alpha-task --dry-run | wc -l | tr -d ' ') -eq 1"
 
   - name: "depends-on nonexistent tisket errors"
-    command: "! clc coordinate --depends-on nonexistent --dry-run"
+    command: "! clc coordinator-run --id test --depends-on nonexistent --dry-run"
 
   # --- Composition ---
   - name: "label + project with no intersection gives no pickable"
-    command: "clc coordinate --label infrastructure --project v0.2.0 --dry-run 2>&1 | grep -q 'no pickable'"
+    command: "clc coordinator-run --id test --label infrastructure --project v0.2.0 --dry-run 2>&1 | grep -q 'no pickable'"
 
   - name: "label feature + exclude needs-human includes beta-task"
-    command: "clc coordinate --label feature --exclude-label needs-human --dry-run | grep -q beta-task"
+    command: "clc coordinator-run --id test --label feature --exclude-label needs-human --dry-run | grep -q beta-task"
 
   - name: "label feature + exclude needs-human includes delta-task"
-    command: "clc coordinate --label feature --exclude-label needs-human --dry-run | grep -q delta-task"
+    command: "clc coordinator-run --id test --label feature --exclude-label needs-human --dry-run | grep -q delta-task"
 
   - name: "label feature + project v0.1.0 includes beta-task"
-    command: "clc coordinate --label feature --project v0.1.0 --dry-run | grep -q beta-task"
+    command: "clc coordinator-run --id test --label feature --project v0.1.0 --dry-run | grep -q beta-task"
 
   - name: "label feature + project v0.1.0 excludes delta-task (wrong project)"
-    command: "! clc coordinate --label feature --project v0.1.0 --dry-run | grep -q delta-task"
+    command: "! clc coordinator-run --id test --label feature --project v0.1.0 --dry-run | grep -q delta-task"
 
   - name: "label feature + project v0.1.0 lists exactly 1 tisket"
-    command: "test $(clc coordinate --label feature --project v0.1.0 --dry-run | wc -l | tr -d ' ') -eq 1"
+    command: "test $(clc coordinator-run --id test --label feature --project v0.1.0 --dry-run | wc -l | tr -d ' ') -eq 1"
 
   # --- Tisket + filter composition ---
   - name: "tisket + label rejects non-matching tisket"
-    command: "clc coordinate --label infrastructure --tisket beta-task --dry-run 2>&1 | grep -q 'not pickable'"
+    command: "clc coordinator-run --id test --label infrastructure --tisket beta-task --dry-run 2>&1 | grep -q 'not pickable'"
 
   - name: "tisket + label accepts matching tisket"
-    command: "clc coordinate --label infrastructure --tisket alpha-task --dry-run | grep -q alpha-task"
+    command: "clc coordinator-run --id test --label infrastructure --tisket alpha-task --dry-run | grep -q alpha-task"
 
   - name: "tisket + exclude-label rejects excluded tisket"
-    command: "clc coordinate --exclude-label needs-human --tisket gamma-task --dry-run 2>&1 | grep -q 'not pickable'"
+    command: "clc coordinator-run --id test --exclude-label needs-human --tisket gamma-task --dry-run 2>&1 | grep -q 'not pickable'"
 
   - name: "tisket + project rejects wrong project"
-    command: "clc coordinate --project v0.2.0 --tisket alpha-task --dry-run 2>&1 | grep -q 'not pickable'"
+    command: "clc coordinator-run --id test --project v0.2.0 --tisket alpha-task --dry-run 2>&1 | grep -q 'not pickable'"
 
   - name: "tisket + depends-on rejects tisket outside chain"
-    command: "clc coordinate --depends-on dep-root --tisket alpha-task --dry-run 2>&1 | grep -q 'not pickable'"
+    command: "clc coordinator-run --id test --depends-on dep-root --tisket alpha-task --dry-run 2>&1 | grep -q 'not pickable'"
 
   # --- Coordinator permission policy CLI flags ---
   - name: "coordinate --help shows --auto-grant flag"
-    command: "clc coordinate --help | grep -q '\\-\\-auto-grant'"
+    command: "clc coordinator-run --id test --help | grep -q '\\-\\-auto-grant'"
 
   - name: "coordinate --help shows --escalate-all flag"
-    command: "clc coordinate --help | grep -q '\\-\\-escalate-all'"
+    command: "clc coordinator-run --id test --help | grep -q '\\-\\-escalate-all'"
 
   - name: "coordinate --help shows --grant-config flag"
-    command: "clc coordinate --help | grep -q '\\-\\-grant-config'"
+    command: "clc coordinator-run --id test --help | grep -q '\\-\\-grant-config'"
 
   - name: "dry-run with --auto-grant flag succeeds"
-    command: "clc coordinate --dry-run --auto-grant 'Bash(npm *)'"
+    command: "clc coordinator-run --id test --dry-run --auto-grant 'Bash(npm *)'"
 
   - name: "dry-run with multiple --auto-grant flags succeeds"
-    command: "clc coordinate --dry-run --auto-grant 'Bash(npm *)' --auto-grant 'Bash(make *)'"
+    command: "clc coordinator-run --id test --dry-run --auto-grant 'Bash(npm *)' --auto-grant 'Bash(make *)'"
 
   - name: "dry-run with --escalate-all flag succeeds"
-    command: "clc coordinate --dry-run --escalate-all"
+    command: "clc coordinator-run --id test --dry-run --escalate-all"
 
   - name: "dry-run with --escalate-all and --auto-grant succeeds"
-    command: "clc coordinate --dry-run --escalate-all --auto-grant 'Bash(npm *)'"
+    command: "clc coordinator-run --id test --dry-run --escalate-all --auto-grant 'Bash(npm *)'"
 
   - name: "dry-run with --grant-config flag accepts path"
-    command: "printf 'auto_grant:\\n  - \"Bash(npm *)\"\\n' > /tmp/test-policy.yml && clc coordinate --dry-run --grant-config /tmp/test-policy.yml"
+    command: "printf 'auto_grant:\\n  - \"Bash(npm *)\"\\n' > /tmp/test-policy.yml && clc coordinator-run --id test --dry-run --grant-config /tmp/test-policy.yml"
 
   - name: "dry-run output unchanged by --auto-grant flag"
-    command: "test $(clc coordinate --dry-run --auto-grant 'Bash(npm *)' | wc -l | tr -d ' ') -eq 5"
+    command: "test $(clc coordinator-run --id test --dry-run --auto-grant 'Bash(npm *)' | wc -l | tr -d ' ') -eq 5"
 
   - name: "dry-run output unchanged by --escalate-all flag"
-    command: "test $(clc coordinate --dry-run --escalate-all | wc -l | tr -d ' ') -eq 5"
+    command: "test $(clc coordinator-run --id test --dry-run --escalate-all | wc -l | tr -d ' ') -eq 5"
 
   - name: "grant-config with nonexistent file errors"
-    command: "! clc coordinate --dry-run --grant-config /tmp/no-such-policy.yml 2>&1"
+    command: "! clc coordinator-run --id test --dry-run --grant-config /tmp/no-such-policy.yml 2>&1"
 
   - name: "grant-config with invalid YAML errors"
-    command: "printf '][not valid yaml{{{\\n' > /tmp/bad-policy.yml && ! clc coordinate --dry-run --grant-config /tmp/bad-policy.yml 2>&1"
+    command: "printf '][not valid yaml{{{\\n' > /tmp/bad-policy.yml && ! clc coordinator-run --id test --dry-run --grant-config /tmp/bad-policy.yml 2>&1"
 
   # --- Selector grammar: --filter flag ---
   - name: "coordinate --help shows --filter flag"
-    command: "clc coordinate --help | grep -q '\\-\\-filter'"
+    command: "clc coordinator-run --id test --help | grep -q '\\-\\-filter'"
 
   - name: "--filter label:infrastructure includes alpha-task"
-    command: "clc coordinate --filter 'label:infrastructure' --dry-run | grep -q alpha-task"
+    command: "clc coordinator-run --id test --filter 'label:infrastructure' --dry-run | grep -q alpha-task"
 
   - name: "--filter label:infrastructure lists exactly 1 tisket"
-    command: "test $(clc coordinate --filter 'label:infrastructure' --dry-run | wc -l | tr -d ' ') -eq 1"
+    command: "test $(clc coordinator-run --id test --filter 'label:infrastructure' --dry-run | wc -l | tr -d ' ') -eq 1"
 
   - name: "--filter label:infrastructure excludes beta-task"
-    command: "! clc coordinate --filter 'label:infrastructure' --dry-run | grep -q beta-task"
+    command: "! clc coordinator-run --id test --filter 'label:infrastructure' --dry-run | grep -q beta-task"
 
   - name: "--filter label:feature includes beta-task"
-    command: "clc coordinate --filter 'label:feature' --dry-run | grep -q beta-task"
+    command: "clc coordinator-run --id test --filter 'label:feature' --dry-run | grep -q beta-task"
 
   - name: "--filter label:feature includes delta-task"
-    command: "clc coordinate --filter 'label:feature' --dry-run | grep -q delta-task"
+    command: "clc coordinator-run --id test --filter 'label:feature' --dry-run | grep -q delta-task"
 
   - name: "--filter label:feature lists exactly 2 tiskets"
-    command: "test $(clc coordinate --filter 'label:feature' --dry-run | wc -l | tr -d ' ') -eq 2"
+    command: "test $(clc coordinator-run --id test --filter 'label:feature' --dry-run | wc -l | tr -d ' ') -eq 2"
 
   - name: "--filter label:feature,project:v0.1.0 includes only beta-task"
-    command: "clc coordinate --filter 'label:feature,project:v0.1.0' --dry-run | grep -q beta-task"
+    command: "clc coordinator-run --id test --filter 'label:feature,project:v0.1.0' --dry-run | grep -q beta-task"
 
   - name: "--filter label:feature,project:v0.1.0 excludes delta-task (wrong project)"
-    command: "! clc coordinate --filter 'label:feature,project:v0.1.0' --dry-run | grep -q delta-task"
+    command: "! clc coordinator-run --id test --filter 'label:feature,project:v0.1.0' --dry-run | grep -q delta-task"
 
   - name: "--filter label:feature,project:v0.1.0 lists exactly 1 tisket"
-    command: "test $(clc coordinate --filter 'label:feature,project:v0.1.0' --dry-run | wc -l | tr -d ' ') -eq 1"
+    command: "test $(clc coordinator-run --id test --filter 'label:feature,project:v0.1.0' --dry-run | wc -l | tr -d ' ') -eq 1"
 
   - name: "--filter with nonexistent label gives no pickable"
-    command: "clc coordinate --filter 'label:nonexistent' --dry-run 2>&1 | grep -q 'no pickable'"
+    command: "clc coordinator-run --id test --filter 'label:nonexistent' --dry-run 2>&1 | grep -q 'no pickable'"
 
   - name: "--filter status:todo lists all 5 pickable tiskets"
-    command: "test $(clc coordinate --filter 'status:todo' --dry-run | wc -l | tr -d ' ') -eq 5"
+    command: "test $(clc coordinator-run --id test --filter 'status:todo' --dry-run | wc -l | tr -d ' ') -eq 5"
 
   - name: "--filter project:v0.2.0 shows delta-task"
-    command: "clc coordinate --filter 'project:v0.2.0' --dry-run | grep -q delta-task"
+    command: "clc coordinator-run --id test --filter 'project:v0.2.0' --dry-run | grep -q delta-task"
 
   - name: "--filter project:v0.2.0 excludes alpha-task"
-    command: "! clc coordinate --filter 'project:v0.2.0' --dry-run | grep -q alpha-task"
+    command: "! clc coordinator-run --id test --filter 'project:v0.2.0' --dry-run | grep -q alpha-task"
 
   - name: "--filter project:v0.2.0 lists exactly 1 tisket"
-    command: "test $(clc coordinate --filter 'project:v0.2.0' --dry-run | wc -l | tr -d ' ') -eq 1"
+    command: "test $(clc coordinator-run --id test --filter 'project:v0.2.0' --dry-run | wc -l | tr -d ' ') -eq 1"
 
   - name: "--filter label:feature,project:v0.1.0 lists exactly 1 tisket (AND composition)"
-    command: "test $(clc coordinate --filter 'label:feature,project:v0.1.0' --dry-run | wc -l | tr -d ' ') -eq 1"
+    command: "test $(clc coordinator-run --id test --filter 'label:feature,project:v0.1.0' --dry-run | wc -l | tr -d ' ') -eq 1"
 
   - name: "--filter label:infrastructure,project:v0.2.0 gives no pickable (no intersection)"
-    command: "clc coordinate --filter 'label:infrastructure,project:v0.2.0' --dry-run 2>&1 | grep -q 'no pickable'"
+    command: "clc coordinator-run --id test --filter 'label:infrastructure,project:v0.2.0' --dry-run 2>&1 | grep -q 'no pickable'"
