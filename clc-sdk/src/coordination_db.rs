@@ -64,6 +64,71 @@ mod message_entity {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
+/// SeaORM entity for agent sessions.
+mod session_entity {
+    use sea_orm::entity::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
+    #[sea_orm(table_name = "agent_sessions")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: String,
+        pub agent_id: String,
+        pub claude_session_id: Option<String>,
+        pub phase: String,
+        pub created_at: DateTimeUtc,
+        pub updated_at: DateTimeUtc,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+/// SeaORM entity for permission grants.
+mod grant_entity {
+    use sea_orm::entity::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
+    #[sea_orm(table_name = "permission_grants")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: String,
+        pub session_id: String,
+        pub agent_id: String,
+        pub tool_pattern: String,
+        pub granted_by: String,
+        pub reason: String,
+        pub created_at: DateTimeUtc,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+/// SeaORM entity for phase state.
+mod phase_entity {
+    use sea_orm::entity::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
+    #[sea_orm(table_name = "phase_state")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub agent_id: String,
+        pub phase: String,
+        pub attempts: i32,
+        pub updated_at: DateTimeUtc,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
 /// Database-backed coordination backend via SeaORM.
 ///
 /// Works with any SeaORM-supported database (SQLite, Postgres).
@@ -141,6 +206,31 @@ const POSTGRES_DDL: &[&str] = &[
         ON coordination_messages (to_agent, seq)",
     "CREATE INDEX IF NOT EXISTS idx_messages_kind_to
         ON coordination_messages (kind, to_agent)",
+    "CREATE TABLE IF NOT EXISTS agent_sessions (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL,
+        claude_session_id TEXT,
+        phase TEXT NOT NULL DEFAULT 'tests-unwritten',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )",
+    "CREATE TABLE IF NOT EXISTS permission_grants (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        tool_pattern TEXT NOT NULL,
+        granted_by TEXT NOT NULL,
+        reason TEXT NOT NULL DEFAULT '',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )",
+    "CREATE INDEX IF NOT EXISTS idx_grants_session
+        ON permission_grants (session_id, agent_id)",
+    "CREATE TABLE IF NOT EXISTS phase_state (
+        agent_id TEXT PRIMARY KEY,
+        phase TEXT NOT NULL DEFAULT 'tests-unwritten',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )",
 ];
 
 const SQLITE_DDL: &[&str] = &[
@@ -165,6 +255,31 @@ const SQLITE_DDL: &[&str] = &[
         ON coordination_messages (to_agent, seq)",
     "CREATE INDEX IF NOT EXISTS idx_messages_kind_to
         ON coordination_messages (kind, to_agent)",
+    "CREATE TABLE IF NOT EXISTS agent_sessions (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL,
+        claude_session_id TEXT,
+        phase TEXT NOT NULL DEFAULT 'tests-unwritten',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )",
+    "CREATE TABLE IF NOT EXISTS permission_grants (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        tool_pattern TEXT NOT NULL,
+        granted_by TEXT NOT NULL,
+        reason TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )",
+    "CREATE INDEX IF NOT EXISTS idx_grants_session
+        ON permission_grants (session_id, agent_id)",
+    "CREATE TABLE IF NOT EXISTS phase_state (
+        agent_id TEXT PRIMARY KEY,
+        phase TEXT NOT NULL DEFAULT 'tests-unwritten',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )",
 ];
 
 fn status_to_str(status: &AgentStatus) -> &'static str {
@@ -552,6 +667,147 @@ impl DbBackend {
 
         Ok(model.pid)
     }
+
+    /// Create an agent session.
+    pub async fn create_session(
+        &self,
+        session_id: &str,
+        agent_id: &str,
+        initial_phase: &str,
+    ) -> Result<(), CoordinationError> {
+        let now = chrono::Utc::now();
+        let model = session_entity::ActiveModel {
+            id: Set(session_id.to_string()),
+            agent_id: Set(agent_id.to_string()),
+            claude_session_id: Set(None),
+            phase: Set(initial_phase.to_string()),
+            created_at: Set(now),
+            updated_at: Set(now),
+        };
+        model
+            .insert(&self.db)
+            .await
+            .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Get the phase for an agent.
+    pub async fn get_phase(
+        &self,
+        agent_id: &str,
+    ) -> Result<(String, i32), CoordinationError> {
+        let model = phase_entity::Entity::find_by_id(agent_id.to_string())
+            .one(&self.db)
+            .await
+            .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+
+        match model {
+            Some(m) => Ok((m.phase, m.attempts)),
+            None => Ok(("tests-unwritten".to_string(), 0)),
+        }
+    }
+
+    /// Set the phase for an agent.
+    pub async fn set_phase(
+        &self,
+        agent_id: &str,
+        phase: &str,
+        attempts: i32,
+    ) -> Result<(), CoordinationError> {
+        let now = chrono::Utc::now();
+
+        // Upsert: try update, then insert if not found.
+        let existing = phase_entity::Entity::find_by_id(agent_id.to_string())
+            .one(&self.db)
+            .await
+            .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+
+        if let Some(model) = existing {
+            let mut active: phase_entity::ActiveModel = model.into();
+            active.phase = Set(phase.to_string());
+            active.attempts = Set(attempts);
+            active.updated_at = Set(now);
+            active
+                .update(&self.db)
+                .await
+                .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+        } else {
+            let model = phase_entity::ActiveModel {
+                agent_id: Set(agent_id.to_string()),
+                phase: Set(phase.to_string()),
+                attempts: Set(attempts),
+                updated_at: Set(now),
+            };
+            model
+                .insert(&self.db)
+                .await
+                .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+        }
+
+        Ok(())
+    }
+
+    /// Store a permission grant for an agent session.
+    pub async fn grant_permission(
+        &self,
+        session_id: &str,
+        agent_id: &str,
+        tool_pattern: &str,
+        granted_by: &str,
+        reason: &str,
+    ) -> Result<(), CoordinationError> {
+        let now = chrono::Utc::now();
+        let id = format!(
+            "grant-{}",
+            now.timestamp_nanos_opt().unwrap_or(0)
+        );
+        let model = grant_entity::ActiveModel {
+            id: Set(id),
+            session_id: Set(session_id.to_string()),
+            agent_id: Set(agent_id.to_string()),
+            tool_pattern: Set(tool_pattern.to_string()),
+            granted_by: Set(granted_by.to_string()),
+            reason: Set(reason.to_string()),
+            created_at: Set(now),
+        };
+        model
+            .insert(&self.db)
+            .await
+            .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Check if an agent has a permission grant matching the tool pattern.
+    pub async fn check_permission(
+        &self,
+        agent_id: &str,
+        tool_name: &str,
+    ) -> Result<bool, CoordinationError> {
+        let grants = grant_entity::Entity::find()
+            .filter(
+                Condition::all()
+                    .add(grant_entity::Column::AgentId.eq(agent_id)),
+            )
+            .all(&self.db)
+            .await
+            .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+
+        // Check if any granted pattern matches the requested tool.
+        Ok(grants.iter().any(|g| tool_matches_pattern(tool_name, &g.tool_pattern)))
+    }
+}
+
+/// Check if a tool name matches a grant pattern.
+/// Patterns support trailing wildcards: "Bash(cargo *)" matches "Bash(cargo test)".
+fn tool_matches_pattern(tool_name: &str, pattern: &str) -> bool {
+    if pattern == tool_name {
+        return true;
+    }
+    if let Some(prefix) = pattern.strip_suffix('*') {
+        return tool_name.starts_with(prefix);
+    }
+    // Simple contains check for patterns like "Read" matching "Read"
+    pattern == tool_name
 }
 
 /// Convenience alias for the Postgres-backed variant.

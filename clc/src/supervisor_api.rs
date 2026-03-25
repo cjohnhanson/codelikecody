@@ -52,6 +52,10 @@ pub async fn start(
         .route("/agents/{id}/stdin", post(write_stdin))
         // Fetch workspace pack for landing
         .route("/agents/{id}/pack", get(fetch_workspace_pack))
+        // Tool check (PreToolUse hook calls this)
+        .route("/agents/{id}/tool-check", post(tool_check))
+        // Permission grants
+        .route("/agents/{id}/grants", post(create_grant).get(list_grants))
         // Escalations
         .route("/escalations", get(list_escalations))
         // Health
@@ -313,65 +317,6 @@ async fn pending_permissions(
     Ok(Json(data))
 }
 
-async fn get_phase(
-    State(state): State<Arc<ApiState>>,
-    Path(id): Path<String>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
-    // Phase is stored in the workspace's .clc/state file.
-    // For SSH workspaces, the supervisor would need to SSH in to read it.
-    // For now, check coordination DB for the latest StatusUpdate message.
-    let (messages, _) = state
-        .db
-        .recv(&id, &clc_sdk::coordination::Cursor(0))
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    // Find the latest StatusUpdate.
-    let phase = messages.iter().rev().find_map(|m| {
-        if let clc_sdk::coordination::MessageKind::StatusUpdate { ref phase, .. } = m.kind {
-            Some(phase.clone())
-        } else {
-            None
-        }
-    });
-
-    Ok(Json(
-        serde_json::json!({ "agent_id": id, "phase": phase }),
-    ))
-}
-
-async fn set_phase(
-    State(state): State<Arc<ApiState>>,
-    Path(id): Path<String>,
-    Json(req): Json<SetPhaseRequest>,
-) -> Result<StatusCode, StatusCode> {
-    // Record as a StatusUpdate message.
-    let msg = clc_sdk::coordination::Message {
-        id: format!(
-            "phase-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos()
-        ),
-        from: id.clone(),
-        to: "supervisor".into(),
-        kind: clc_sdk::coordination::MessageKind::StatusUpdate {
-            phase: req.phase.clone(),
-            detail: format!("set to {}", req.phase),
-        },
-        timestamp: std::time::SystemTime::now(),
-    };
-
-    state
-        .db
-        .send(msg)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    Ok(StatusCode::OK)
-}
-
 async fn list_escalations(
     State(state): State<Arc<ApiState>>,
 ) -> Result<Json<Vec<MessageResponse>>, StatusCode> {
@@ -393,6 +338,140 @@ async fn list_escalations(
         .collect();
 
     Ok(Json(data))
+}
+
+/// Check if a tool use is allowed for an agent.
+/// Returns: { "allowed": true/false, "message": "..." }
+/// If not allowed, auto-escalates to the coordinator.
+async fn tool_check(
+    State(state): State<Arc<ApiState>>,
+    Path(id): Path<String>,
+    Json(req): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let tool_name = req["tool_name"]
+        .as_str()
+        .ok_or(StatusCode::BAD_REQUEST)?;
+
+    // Check if this tool is already granted.
+    let allowed = state
+        .db
+        .check_permission(&id, tool_name)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    if allowed {
+        return Ok(Json(serde_json::json!({
+            "allowed": true,
+        })));
+    }
+
+    // Not granted — escalate to coordinator.
+    let coordinator_id = "coordinator".to_string(); // TODO: look up agent's parent_id
+
+    let reason = req["reason"]
+        .as_str()
+        .unwrap_or("tool check auto-escalation");
+
+    let msg = clc_sdk::coordination::Message {
+        id: format!(
+            "tool-check-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ),
+        from: id.clone(),
+        to: coordinator_id,
+        kind: clc_sdk::coordination::MessageKind::PermissionRequest {
+            tool_name: tool_name.to_string(),
+            reason: reason.to_string(),
+        },
+        timestamp: std::time::SystemTime::now(),
+    };
+
+    let _ = state.db.send(msg).await;
+
+    Ok(Json(serde_json::json!({
+        "allowed": false,
+        "message": format!("Permission for '{tool_name}' escalated to coordinator. Retry after approval."),
+    })))
+}
+
+#[derive(Deserialize)]
+struct CreateGrantRequest {
+    tool_pattern: String,
+    granted_by: String,
+    #[serde(default)]
+    reason: String,
+    #[serde(default)]
+    session_id: String,
+}
+
+/// Store a permission grant for an agent.
+async fn create_grant(
+    State(state): State<Arc<ApiState>>,
+    Path(id): Path<String>,
+    Json(req): Json<CreateGrantRequest>,
+) -> Result<StatusCode, StatusCode> {
+    state
+        .db
+        .grant_permission(
+            &req.session_id,
+            &id,
+            &req.tool_pattern,
+            &req.granted_by,
+            &req.reason,
+        )
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(StatusCode::CREATED)
+}
+
+/// List permission grants for an agent.
+async fn list_grants(
+    State(_state): State<Arc<ApiState>>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    // For now, use the check_permission path to verify grants exist.
+    // A full listing would need a new DB method.
+    Ok(Json(serde_json::json!({
+        "agent_id": id,
+        "note": "use tool-check endpoint to verify specific permissions"
+    })))
+}
+
+/// Get phase from the DB (not filesystem).
+async fn get_phase(
+    State(state): State<Arc<ApiState>>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let (phase, attempts) = state
+        .db
+        .get_phase(&id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(serde_json::json!({
+        "agent_id": id,
+        "phase": phase,
+        "attempts": attempts,
+    })))
+}
+
+/// Set phase in the DB (not filesystem).
+async fn set_phase(
+    State(state): State<Arc<ApiState>>,
+    Path(id): Path<String>,
+    Json(req): Json<SetPhaseRequest>,
+) -> Result<StatusCode, StatusCode> {
+    state
+        .db
+        .set_phase(&id, &req.phase, 0)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(StatusCode::OK)
 }
 
 /// Get raw NDJSON output for a worker. Cursor-based via ?after= (line count).
