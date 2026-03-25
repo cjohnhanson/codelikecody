@@ -391,6 +391,10 @@ fn cmd_workspace(action: &cli::WorkspaceAction) -> Result<(), Error> {
             // Initialize clc hooks.
             init::init(&cwd, false, true)?;
 
+            // Seed baseline permissions so the worker can run clc/tisket/cargo etc.
+            let cfg = config::load(&cwd).unwrap_or_default();
+            permissions::seed_defaults(&cwd, &cfg.worker.permissions.default, &cfg.worker.permissions.deny)?;
+
             eprintln!("workspace initialized at {}", cwd.display());
             Ok(())
         }
