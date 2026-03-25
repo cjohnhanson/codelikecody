@@ -13,6 +13,7 @@ use rcgen::{
 /// An ephemeral certificate authority.
 pub struct EphemeralCA {
     pub ca_cert_pem: String,
+    pub ca_key_pem: String,
     ca_cert: rcgen::Certificate,
     ca_key: KeyPair,
 }
@@ -24,6 +25,42 @@ pub struct WorkspaceCert {
 }
 
 impl EphemeralCA {
+    /// Reconstruct a CA from PEM-encoded cert and key.
+    /// Used by coordinators to load the supervisor's CA.
+    ///
+    /// Re-creates the CA cert parameters and self-signs with the same key.
+    /// The resulting CA can sign workspace certs that validate against the
+    /// original supervisor CA (same key = same signature verification).
+    pub fn from_pem(
+        _ca_cert_pem: &str,
+        ca_key_pem: &str,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let key = KeyPair::from_pem(ca_key_pem)?;
+
+        // Recreate the same CA parameters the supervisor used.
+        let mut params = CertificateParams::new(Vec::<String>::new())?;
+        params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        params
+            .distinguished_name
+            .push(DnType::CommonName, "clc-supervisor-ca");
+        params
+            .distinguished_name
+            .push(DnType::OrganizationName, "clc");
+        params.key_usages.push(KeyUsagePurpose::KeyCertSign);
+        params.key_usages.push(KeyUsagePurpose::CrlSign);
+
+        let ca_cert = params.self_signed(&key)?;
+        let ca_cert_pem = ca_cert.pem();
+        let ca_key_pem_owned = key.serialize_pem();
+
+        Ok(Self {
+            ca_cert_pem,
+            ca_key_pem: ca_key_pem_owned,
+            ca_cert,
+            ca_key: key,
+        })
+    }
+
     /// Generate a new ephemeral CA. Called once at supervisor startup.
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
         let mut params = CertificateParams::new(Vec::<String>::new())?;
@@ -40,9 +77,11 @@ impl EphemeralCA {
         let key = KeyPair::generate()?;
         let ca_cert = params.self_signed(&key)?;
         let ca_cert_pem = ca_cert.pem();
+        let ca_key_pem = key.serialize_pem();
 
         Ok(Self {
             ca_cert_pem,
+            ca_key_pem,
             ca_cert,
             ca_key: key,
         })

@@ -201,9 +201,23 @@ fn tick(
             let ws_type = match scope.workspace {
                 crate::config::WorkspaceType::Worktree => crate::dispatch::DispatchWorkspace::Worktree,
                 crate::config::WorkspaceType::Docker => {
-                    let ca = std::sync::Arc::new(
-                        crate::tls::EphemeralCA::new().expect("ephemeral CA for dispatch"),
-                    );
+                    // Use the supervisor's CA (passed via env) so worker certs
+                    // validate against the supervisor's mTLS server.
+                    let ca = std::sync::Arc::new(match (
+                        std::env::var("CLC_CA_CERT"),
+                        std::env::var("CLC_CA_KEY"),
+                    ) {
+                        (Ok(cert_path), Ok(key_path)) => {
+                            let cert_pem = std::fs::read_to_string(&cert_path)
+                                .expect("read supervisor CA cert");
+                            let key_pem = std::fs::read_to_string(&key_path)
+                                .expect("read supervisor CA key");
+                            crate::tls::EphemeralCA::from_pem(&cert_pem, &key_pem)
+                                .expect("load supervisor CA")
+                        }
+                        _ => crate::tls::EphemeralCA::new()
+                            .expect("ephemeral CA for dispatch (no supervisor CA available)"),
+                    });
                     let api_port = std::env::var("CLC_API_PORT")
                         .ok()
                         .and_then(|p| p.parse().ok())

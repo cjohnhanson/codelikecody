@@ -82,6 +82,15 @@ impl Supervisor {
         let tls_config = ca
             .server_tls_config()
             .map_err(|e| Error::NonBlocking(format!("TLS config: {e}")))?;
+
+        // Write CA to disk so coordinators can sign worker certs with the same CA.
+        let ca_cert_path = self.project_dir.join(".clc").join("ca-cert.pem");
+        let ca_key_path = self.project_dir.join(".clc").join("ca-key.pem");
+        std::fs::write(&ca_cert_path, &ca.ca_cert_pem)
+            .map_err(|e| Error::NonBlocking(format!("write CA cert: {e}")))?;
+        std::fs::write(&ca_key_path, &ca.ca_key_pem)
+            .map_err(|e| Error::NonBlocking(format!("write CA key: {e}")))?;
+
         eprintln!("supervisor: ephemeral CA generated, mTLS configured");
 
         // Start the supervisor API server on a dedicated thread.
@@ -269,6 +278,9 @@ impl Supervisor {
 
         // Pass API port so coordinator can set up reverse tunnels for Docker workers.
         cmd.env("CLC_API_PORT", "19100");
+        // Pass CA paths so coordinator uses the supervisor's CA to sign worker certs.
+        cmd.env("CLC_CA_CERT", self.project_dir.join(".clc").join("ca-cert.pem"));
+        cmd.env("CLC_CA_KEY", self.project_dir.join(".clc").join("ca-key.pem"));
 
         cmd.current_dir(&self.project_dir);
 

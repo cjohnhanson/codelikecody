@@ -453,6 +453,16 @@ fn cmd_workspace(action: &cli::WorkspaceAction) -> Result<(), Error> {
                 cmd.env("CLAUDE_CODE_OAUTH_TOKEN", token);
             }
 
+            // Wire mTLS cert env vars if certs were deployed by the SSH workspace.
+            let cert_path = "/tmp/workspace-cert.pem";
+            let key_path = "/tmp/workspace-key.pem";
+            let ca_path = "/tmp/ca-cert.pem";
+            if std::path::Path::new(cert_path).exists() {
+                cmd.env("CLC_API_CERT", cert_path);
+                cmd.env("CLC_API_KEY", key_path);
+                cmd.env("CLC_API_CA", ca_path);
+            }
+
             // Wire stdio to pipes/files — same as spawn_agent_process.
             let stdin_file = std::fs::OpenOptions::new()
                 .read(true)
