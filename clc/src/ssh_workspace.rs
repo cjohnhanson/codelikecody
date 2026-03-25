@@ -188,24 +188,34 @@ impl Workspace for SSHWorkspace {
                 .map_err(|e| WorkspaceError::Process(format!("workspace init: {e}")))
         })?;
 
-        let mut start_args = vec![
-            "clc".to_string(),
-            "workspace".to_string(),
-            "start".to_string(),
-            "--branch".to_string(),
-            branch_name.clone(),
-            "--model".to_string(),
-            self.config.workspace_config.agent_config.model.clone(),
-        ];
+        let start_args = if let Some(ref custom) = self.config.start_command {
+            // Custom start command (e.g. coordinator-run).
+            // API URL and token are passed as env vars via workspace init,
+            // not as CLI args — the custom command controls its own flags.
+            custom.clone()
+        } else {
+            // Default: start a worker agent via clc workspace start.
+            let mut args = vec![
+                "clc".to_string(),
+                "workspace".to_string(),
+                "start".to_string(),
+                "--branch".to_string(),
+                branch_name.clone(),
+                "--model".to_string(),
+                self.config.workspace_config.agent_config.model.clone(),
+            ];
 
-        let api_url = format!("https://localhost:{tunnel_port}");
-        start_args.push("--api-url".to_string());
-        start_args.push(api_url);
+            let api_url = format!("https://localhost:{tunnel_port}");
+            args.push("--api-url".to_string());
+            args.push(api_url);
 
-        if let Some(ref token) = self.config.oauth_token {
-            start_args.push("--oauth-token".to_string());
-            start_args.push(token.clone());
-        }
+            if let Some(ref token) = self.config.oauth_token {
+                args.push("--oauth-token".to_string());
+                args.push(token.clone());
+            }
+
+            args
+        };
 
         let start_cmd = start_args.join(" ");
         let pid_output = self.rt.block_on(async {

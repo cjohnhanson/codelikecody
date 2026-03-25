@@ -56,6 +56,8 @@ pub async fn start(
         .route("/agents/{id}/tool-check", post(tool_check))
         // Permission grants
         .route("/agents/{id}/grants", post(create_grant).get(list_grants))
+        // Dispatch (coordinator requests supervisor to create a worker)
+        .route("/dispatch", post(dispatch_worker))
         // Escalations
         .route("/escalations", get(list_escalations))
         // Health
@@ -131,6 +133,8 @@ struct AgentResponse {
     id: String,
     status: String,
     pid: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parent_id: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -170,6 +174,7 @@ async fn list_agents(
             id,
             status: format!("{status:?}"),
             pid: None,
+            parent_id: None,
         })
         .collect();
 
@@ -200,11 +205,13 @@ async fn get_agent(
         .map_err(|_| StatusCode::NOT_FOUND)?;
 
     let pid = state.db.get_pid(&id).await.ok().flatten();
+    let parent_id = state.db.get_parent_id(&id).await.ok().flatten();
 
     Ok(Json(AgentResponse {
         id,
         status: format!("{status:?}"),
         pid,
+        parent_id,
     }))
 }
 
@@ -317,6 +324,31 @@ async fn pending_permissions(
     Ok(Json(data))
 }
 
+/// Dispatch a worker on behalf of a coordinator.
+/// The coordinator (possibly in Docker) asks the supervisor to create
+/// and start the workspace. Supervisor registers the worker and will
+/// handle the actual workspace creation asynchronously.
+async fn dispatch_worker(
+    State(state): State<Arc<ApiState>>,
+    Json(req): Json<DispatchRequest>,
+) -> Result<(StatusCode, Json<serde_json::Value>), StatusCode> {
+    state
+        .db
+        .register_agent(&req.tisket_id, Some(&req.coordinator_id))
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(serde_json::json!({
+            "worker_id": req.tisket_id,
+            "model": req.model,
+            "coordinator_id": req.coordinator_id,
+            "status": "pending",
+        })),
+    ))
+}
+
 async fn list_escalations(
     State(state): State<Arc<ApiState>>,
 ) -> Result<Json<Vec<MessageResponse>>, StatusCode> {
@@ -395,6 +427,13 @@ async fn tool_check(
         "allowed": false,
         "message": format!("Permission for '{tool_name}' escalated to coordinator. Retry after approval."),
     })))
+}
+
+#[derive(Deserialize)]
+struct DispatchRequest {
+    tisket_id: String,
+    model: String,
+    coordinator_id: String,
 }
 
 #[derive(Deserialize)]
@@ -820,7 +859,7 @@ mod tests {
         });
 
         assert_eq!(body["id"].as_str(), Some("feat-456"));
-        assert_eq!(body["status"].as_str(), Some("pending"));
+        assert_eq!(body["status"].as_str(), Some("Pending"));
         assert_eq!(body["parent_id"].as_str(), Some("coord-test"));
     }
 }

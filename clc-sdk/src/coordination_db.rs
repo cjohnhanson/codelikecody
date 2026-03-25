@@ -668,6 +668,19 @@ impl DbBackend {
         Ok(model.pid)
     }
 
+    pub async fn get_parent_id(
+        &self,
+        agent_id: &str,
+    ) -> Result<Option<String>, CoordinationError> {
+        let model = agent_entity::Entity::find_by_id(agent_id.to_string())
+            .one(&self.db)
+            .await
+            .map_err(|e| CoordinationError::Storage(e.to_string()))?
+            .ok_or_else(|| CoordinationError::NotFound(agent_id.to_string()))?;
+
+        Ok(model.parent_id)
+    }
+
     /// Create an agent session.
     pub async fn create_session(
         &self,

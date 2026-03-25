@@ -289,11 +289,21 @@ fn tick(
 
         for id in pickable.iter().take(slots) {
             eprintln!("coordinator '{}': dispatching '{id}'", scope.id);
+
+            // If CLC_API_URL is set, this coordinator is in Docker —
+            // delegate dispatch to the supervisor via API.
+            if let Ok(api_url) = std::env::var("CLC_API_URL") {
+                match dispatch_via_api(&api_url, id, &scope.model, &scope.id) {
+                    Ok(()) => {}
+                    Err(e) => eprintln!("coordinator '{}': API dispatch failed for '{id}': {e}", scope.id),
+                }
+                continue;
+            }
+
+            // Local coordinator: dispatch directly.
             let ws_type = match scope.workspace {
                 crate::config::WorkspaceType::Worktree => crate::dispatch::DispatchWorkspace::Worktree,
                 crate::config::WorkspaceType::Docker => {
-                    // Use the supervisor's CA (passed via env) so worker certs
-                    // validate against the supervisor's mTLS server.
                     let ca = std::sync::Arc::new(match (
                         std::env::var("CLC_CA_CERT"),
                         std::env::var("CLC_CA_KEY"),
@@ -313,7 +323,6 @@ fn tick(
                         .ok()
                         .and_then(|p| p.parse().ok())
                         .unwrap_or(19100);
-                    // Each worker gets a unique tunnel port.
                     let tunnel_port = 19200 + (running + pickable.iter().position(|x| x == id).unwrap_or(0)) as u16;
                     crate::dispatch::DispatchWorkspace::Docker {
                         image: scope.docker_image.clone(),
@@ -519,6 +528,43 @@ fn import_workspace_pack(
     crate::git_pack::import_pack(&pack_data, &refs, project_dir)?;
 
     Ok(())
+}
+
+/// Dispatch a worker via the supervisor API. Used when the coordinator
+/// is running in Docker and can't create workspaces directly.
+fn dispatch_via_api(
+    api_url: &str,
+    tisket_id: &str,
+    model: &str,
+    coordinator_id: &str,
+) -> Result<(), Error> {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| Error::NonBlocking(format!("tokio: {e}")))?;
+
+    rt.block_on(async {
+        let client = crate::coordination_client::build_api_client()
+            .map_err(|e| Error::NonBlocking(format!("{e}")))?;
+        let resp = client
+            .post(format!("{api_url}/dispatch"))
+            .json(&serde_json::json!({
+                "tisket_id": tisket_id,
+                "model": model,
+                "coordinator_id": coordinator_id,
+            }))
+            .send()
+            .await
+            .map_err(|e| Error::NonBlocking(format!("dispatch API: {e}")))?;
+
+        if !resp.status().is_success() {
+            return Err(Error::NonBlocking(format!(
+                "dispatch API returned {}",
+                resp.status()
+            )));
+        }
+        Ok(())
+    })
 }
 
 fn find_undispatched(

@@ -242,10 +242,166 @@ impl Supervisor {
         let scope = self.coordinators[idx].scope.clone();
         eprintln!("supervisor: starting coordinator '{}'", scope.id);
 
+        match scope.workspace {
+            crate::config::WorkspaceType::Docker => {
+                self.start_coordinator_docker(idx, &scope);
+            }
+            crate::config::WorkspaceType::Worktree => {
+                self.start_coordinator_local(idx, &scope);
+            }
+        }
+    }
+
+    /// Start a coordinator as a local process on the host.
+    fn start_coordinator_local(&mut self, idx: usize, scope: &crate::config::CoordinatorScope) {
         let mut cmd = std::process::Command::new(
             std::env::current_exe().unwrap_or_else(|_| "clc".into()),
         );
         cmd.arg("coordinator-run");
+        self.append_coordinator_args(&mut cmd, scope);
+
+        cmd.env("CLC_API_PORT", "19100");
+        cmd.env("CLC_CA_CERT", self.project_dir.join(".clc").join("ca-cert.pem"));
+        cmd.env("CLC_CA_KEY", self.project_dir.join(".clc").join("ca-key.pem"));
+        cmd.current_dir(&self.project_dir);
+
+        match cmd.spawn() {
+            Ok(child) => {
+                let pid = child.id();
+                self.coordinators[idx].pid = Some(pid);
+                eprintln!("supervisor: coordinator '{}' started locally (pid {pid})", scope.id);
+            }
+            Err(e) => {
+                eprintln!("supervisor: failed to start coordinator '{}': {e}", scope.id);
+            }
+        }
+    }
+
+    /// Start a coordinator inside a Docker container via SSHWorkspace.
+    fn start_coordinator_docker(&mut self, idx: usize, scope: &crate::config::CoordinatorScope) {
+        use crate::ssh_workspace::{DockerEnvironment, SSHWorkspace, SSHWorkspaceConfig};
+        use clc_sdk::workspace::{WorkspaceConfig, Workspace};
+        use clc_sdk::agent::AgentConfig;
+
+        let image = scope.docker_image.as_deref().unwrap_or("clc-worker:latest");
+        let tunnel_port = 19200 + idx as u16;
+
+        // Build the coordinator-run command that will execute inside the container.
+        let mut start_cmd = vec![
+            "clc".to_string(),
+            "coordinator-run".to_string(),
+            "--id".to_string(),
+            scope.id.clone(),
+            "--max-workers".to_string(),
+            scope.max_workers.to_string(),
+            "--model".to_string(),
+            scope.model.clone(),
+        ];
+        if let Some(ref project) = scope.project {
+            start_cmd.push("--project".to_string());
+            start_cmd.push(project.clone());
+        }
+        if let Some(ref label) = scope.label {
+            start_cmd.push("--label".to_string());
+            start_cmd.push(label.clone());
+        }
+        if let Some(ref exclude_label) = scope.exclude_label {
+            start_cmd.push("--exclude-label".to_string());
+            start_cmd.push(exclude_label.clone());
+        }
+        for pattern in &scope.auto_grant {
+            start_cmd.push("--auto-grant".to_string());
+            start_cmd.push(pattern.clone());
+        }
+        for pattern in &scope.always_escalate {
+            start_cmd.push("--always-escalate".to_string());
+            start_cmd.push(pattern.clone());
+        }
+        // Coordinator in Docker dispatches workers via API, not local process.
+        start_cmd.push("--workspace".to_string());
+        start_cmd.push("docker".to_string());
+        if let Some(ref img) = scope.docker_image {
+            start_cmd.push("--docker-image".to_string());
+            start_cmd.push(img.clone());
+        }
+
+        let ca_cert_path = self.project_dir.join(".clc").join("ca-cert.pem");
+        let ca_key_path = self.project_dir.join(".clc").join("ca-key.pem");
+        let ca = match (
+            std::fs::read_to_string(&ca_cert_path),
+            std::fs::read_to_string(&ca_key_path),
+        ) {
+            (Ok(cert_pem), Ok(key_pem)) => {
+                match crate::tls::EphemeralCA::from_pem(&cert_pem, &key_pem) {
+                    Ok(ca) => std::sync::Arc::new(ca),
+                    Err(e) => {
+                        eprintln!("supervisor: failed to load CA for coordinator '{}': {e}", scope.id);
+                        return;
+                    }
+                }
+            }
+            _ => {
+                eprintln!("supervisor: CA files not found for coordinator '{}'", scope.id);
+                return;
+            }
+        };
+
+        let env = match DockerEnvironment::new(image, &self.project_dir, &scope.id) {
+            Ok(env) => env,
+            Err(e) => {
+                eprintln!("supervisor: docker env failed for coordinator '{}': {e}", scope.id);
+                return;
+            }
+        };
+
+        let ws_config = WorkspaceConfig {
+            agent_config: AgentConfig {
+                model: scope.model.clone(),
+                system_prompt: String::new(),
+                initial_prompt: String::new(),
+                extra_args: vec![],
+            },
+            tisket_id: scope.id.clone(),
+            project_dir: self.project_dir.clone(),
+            main_branch: self.main_branch.clone(),
+        };
+
+        let ssh_config = SSHWorkspaceConfig {
+            workspace_config: ws_config,
+            ca,
+            api_port: 19100,
+            oauth_token: None,
+            start_command: Some(start_cmd),
+        };
+
+        let mut workspace = match SSHWorkspace::new(
+            ssh_config,
+            Box::new(env),
+            tunnel_port,
+        ) {
+            Ok(ws) => ws,
+            Err(e) => {
+                eprintln!("supervisor: SSH workspace failed for coordinator '{}': {e}", scope.id);
+                return;
+            }
+        };
+
+        match workspace.start() {
+            Ok(()) => {
+                eprintln!("supervisor: coordinator '{}' started in Docker", scope.id);
+                // No PID tracking for Docker coordinators — monitored via DB status.
+            }
+            Err(e) => {
+                eprintln!("supervisor: docker start failed for coordinator '{}': {e}", scope.id);
+            }
+        }
+    }
+
+    fn append_coordinator_args(
+        &self,
+        cmd: &mut std::process::Command,
+        scope: &crate::config::CoordinatorScope,
+    ) {
         cmd.arg("--id").arg(&scope.id);
         cmd.arg("--max-workers").arg(scope.max_workers.to_string());
         cmd.arg("--model").arg(&scope.model);
@@ -264,35 +420,6 @@ impl Supervisor {
         }
         for pattern in &scope.always_escalate {
             cmd.arg("--always-escalate").arg(pattern);
-        }
-
-        match scope.workspace {
-            crate::config::WorkspaceType::Docker => {
-                cmd.arg("--workspace").arg("docker");
-                if let Some(ref image) = scope.docker_image {
-                    cmd.arg("--docker-image").arg(image);
-                }
-            }
-            crate::config::WorkspaceType::Worktree => {}
-        }
-
-        // Pass API port so coordinator can set up reverse tunnels for Docker workers.
-        cmd.env("CLC_API_PORT", "19100");
-        // Pass CA paths so coordinator uses the supervisor's CA to sign worker certs.
-        cmd.env("CLC_CA_CERT", self.project_dir.join(".clc").join("ca-cert.pem"));
-        cmd.env("CLC_CA_KEY", self.project_dir.join(".clc").join("ca-key.pem"));
-
-        cmd.current_dir(&self.project_dir);
-
-        match cmd.spawn() {
-            Ok(child) => {
-                let pid = child.id();
-                self.coordinators[idx].pid = Some(pid);
-                eprintln!("supervisor: coordinator '{}' started (pid {pid})", scope.id);
-            }
-            Err(e) => {
-                eprintln!("supervisor: failed to start coordinator '{}': {e}", scope.id);
-            }
         }
     }
 
