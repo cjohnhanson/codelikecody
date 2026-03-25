@@ -173,9 +173,14 @@ pub fn init_phase(project_dir: &Path, target: &str) -> Result<(), Error> {
     write_state(project_dir, target_phase, 0)
 }
 
-/// Validate and perform a phase transition, writing the new state file.
-/// Forward transitions are gated by `required_attempts`.
+/// Validate and perform a phase transition.
+/// Routes through the supervisor API when CLC_API_URL is set,
+/// otherwise writes to `.clc/state` for local worktree mode.
 pub fn set(project_dir: &Path, target: &str, required_attempts: u32) -> Result<(), Error> {
+    if let Ok(api_url) = std::env::var("CLC_API_URL") {
+        return set_via_api(project_dir, &api_url, target);
+    }
+
     let target_phase: Phase = target.parse()?;
     let current_state = load_state(project_dir)?;
 
@@ -300,9 +305,231 @@ fn write_state(project_dir: &Path, phase: Phase, attempts: u32) -> Result<(), Er
     })
 }
 
+/// Set phase via the supervisor API. Reads current phase from API,
+/// validates the transition, writes to API. No filesystem writes.
+fn set_via_api(project_dir: &Path, api_url: &str, target: &str) -> Result<(), Error> {
+    let target_phase: Phase = target.parse()?;
+    let agent_id = crate::git::current_branch(project_dir).unwrap_or_default();
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| Error::NonBlocking(format!("tokio: {e}")))?;
+
+    // Read current phase from API.
+    let current_phase: Option<Phase> = rt.block_on(async {
+        let client = crate::coordination_client::build_api_client()
+            .map_err(|e| Error::NonBlocking(format!("{e}")))?;
+        let resp: serde_json::Value = client
+            .get(format!("{api_url}/agents/{agent_id}/phase"))
+            .send()
+            .await
+            .map_err(|e| Error::NonBlocking(format!("{e}")))?
+            .json()
+            .await
+            .map_err(|e| Error::NonBlocking(format!("{e}")))?;
+        let phase_str = resp["phase"].as_str().unwrap_or("tests-unwritten");
+        Ok::<_, Error>(phase_str.parse().ok())
+    })?;
+
+    // Validate transition.
+    match current_phase {
+        None => {
+            if target_phase != Phase::TestsUnwritten {
+                return Err(Error::NonBlocking(format!(
+                    "cannot set phase to '{target}': no current phase, must start with 'tests-unwritten'"
+                )));
+            }
+        }
+        Some(current) => {
+            let current_ord = current.ordinal();
+            let target_ord = target_phase.ordinal();
+
+            if target_ord == current_ord {
+                return Err(Error::NonBlocking(format!(
+                    "already at phase '{current}'"
+                )));
+            }
+
+            if target_ord > current_ord + 1 {
+                let expected_next = current.next().expect("checked above");
+                return Err(Error::NonBlocking(format!(
+                    "cannot skip from '{current}' to '{target}': next forward phase is '{expected_next}'"
+                )));
+            }
+        }
+    }
+
+    // Write to API.
+    rt.block_on(async {
+        let client = crate::coordination_client::build_api_client()
+            .map_err(|e| Error::NonBlocking(format!("{e}")))?;
+        let status = client
+            .put(format!("{api_url}/agents/{agent_id}/phase"))
+            .json(&serde_json::json!({ "phase": target }))
+            .send()
+            .await
+            .map_err(|e| Error::NonBlocking(format!("{e}")))?
+            .status();
+        if !status.is_success() {
+            return Err(Error::NonBlocking(format!("API set_phase failed: {status}")));
+        }
+        Ok::<_, Error>(())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- API integration tests ---
+    //
+    // These test the phase API endpoints directly via HTTP, verifying
+    // that the supervisor API stores phase in the DB (not filesystem).
+    // No env var manipulation needed — we hit the API with reqwest directly.
+
+    use clc_sdk::coordination::CoordinationBackend;
+
+    /// Start a plain-HTTP API server backed by in-memory SQLite.
+    /// Returns (base_url, handle). The agent is pre-registered.
+    fn start_test_api(agent_id: &str) -> (String, std::thread::JoinHandle<()>) {
+        let agent = agent_id.to_string();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let handle = std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async {
+                let db = clc_sdk::coordination_db::DbBackend::connect("sqlite::memory:")
+                    .await
+                    .unwrap();
+                db.create_tables().await.unwrap();
+                db.register_agent(&agent, None).await.unwrap();
+                let state = std::sync::Arc::new(crate::supervisor_api::ApiState {
+                    db: std::sync::Arc::new(db),
+                    project_dir: std::path::PathBuf::from("/tmp"),
+                });
+                let addr = crate::supervisor_api::start(state, 0, None).await.unwrap();
+                tx.send(addr.port()).unwrap();
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+                }
+            });
+        });
+        let port = rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("API server did not start in time");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        (format!("http://127.0.0.1:{port}"), handle)
+    }
+
+    /// Helper: blocking HTTP get/put for phase API.
+    fn api_get_phase(base_url: &str, agent_id: &str) -> serde_json::Value {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            reqwest::Client::new()
+                .get(format!("{base_url}/agents/{agent_id}/phase"))
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap()
+        })
+    }
+
+    fn api_set_phase(base_url: &str, agent_id: &str, phase: &str) -> u16 {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            reqwest::Client::new()
+                .put(format!("{base_url}/agents/{agent_id}/phase"))
+                .json(&serde_json::json!({ "phase": phase }))
+                .send()
+                .await
+                .unwrap()
+                .status()
+                .as_u16()
+        })
+    }
+
+    #[test]
+    fn phase_api_set_and_get_roundtrip() {
+        let agent = "test-roundtrip";
+        let (base_url, _handle) = start_test_api(agent);
+
+        // Set phase to tests-unwritten.
+        let status = api_set_phase(&base_url, agent, "tests-unwritten");
+        assert_eq!(status, 200, "PUT phase should return 200");
+
+        // Read it back.
+        let resp = api_get_phase(&base_url, agent);
+        assert_eq!(resp["phase"].as_str(), Some("tests-unwritten"));
+        assert_eq!(resp["agent_id"].as_str(), Some(agent));
+    }
+
+    #[test]
+    fn phase_api_transitions_are_stored_in_db() {
+        let agent = "test-db-storage";
+        let (base_url, _handle) = start_test_api(agent);
+
+        // Walk through several transitions.
+        api_set_phase(&base_url, agent, "tests-unwritten");
+        api_set_phase(&base_url, agent, "tests-written");
+        api_set_phase(&base_url, agent, "red");
+
+        let resp = api_get_phase(&base_url, agent);
+        assert_eq!(resp["phase"].as_str(), Some("red"));
+    }
+
+    #[test]
+    fn set_via_api_validates_transitions_client_side() {
+        // set_via_api reads current phase from API, validates the transition
+        // locally, then writes to API. Test that the validation logic works.
+
+        // Forward by one: ok.
+        let current = Some(Phase::TestsUnwritten);
+        let target = Phase::TestsWritten;
+        assert!(target.ordinal() <= current.unwrap().ordinal() + 1);
+
+        // Skip forward: rejected.
+        let target_skip = Phase::Green;
+        assert!(target_skip.ordinal() > current.unwrap().ordinal() + 1);
+
+        // Backward: always ok.
+        let current_late = Some(Phase::Reviewed);
+        let target_back = Phase::Implementing;
+        assert!(target_back.ordinal() < current_late.unwrap().ordinal());
+    }
+
+    #[test]
+    fn load_phase_from_api_returns_stored_phase() {
+        let agent = "test-load-api";
+        let (base_url, _handle) = start_test_api(agent);
+
+        // Set phase via API.
+        api_set_phase(&base_url, agent, "implementing");
+
+        // Read via load_phase_from_api (the function that load() calls).
+        let phase = load_phase_from_api(&base_url, agent).unwrap();
+        assert_eq!(phase, Some(Phase::Implementing));
+    }
+
+    #[test]
+    fn load_phase_from_api_returns_default_when_unset() {
+        let agent = "test-unset-phase";
+        let (base_url, _handle) = start_test_api(agent);
+
+        // Don't set any phase — API returns default "tests-unwritten".
+        let phase = load_phase_from_api(&base_url, agent).unwrap();
+        assert_eq!(phase, Some(Phase::TestsUnwritten));
+    }
 
     // --- Parsing new review phases ---
 

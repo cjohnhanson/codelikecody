@@ -375,16 +375,17 @@ mod tests {
     }
 
     #[test]
-    fn parse_config_coordinator_coexists_with_permissions() {
+    fn parse_config_coordinator_coexists_with_worker_permissions() {
         let yaml = "\
-            permissions:\n\
-            \x20 allow:\n\
-            \x20   - \"Bash(just *)\"\n\
+            worker:\n\
+            \x20 permissions:\n\
+            \x20   default:\n\
+            \x20     - \"Bash(just *)\"\n\
             coordinator:\n\
             \x20 auto_grant:\n\
             \x20   - \"Bash(cargo *)\"\n";
         let config: Config = serde_yml::from_str(yaml).unwrap();
-        assert_eq!(config.permissions.allow, vec!["Bash(just *)"]);
+        assert_eq!(config.worker.permissions.default, vec!["Bash(just *)"]);
         assert_eq!(config.coordinator.auto_grant, vec!["Bash(cargo *)"]);
     }
 
