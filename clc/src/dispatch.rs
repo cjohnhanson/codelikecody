@@ -247,22 +247,16 @@ pub fn spawn_agent_process(
 }
 
 pub fn is_worker_alive(worktree_dir: &Path) -> bool {
-    // Try coordination DB first — check stored status and PID.
-    let db_path = worktree_dir.join(".clc").join("coordination.db");
-    if !db_path.exists() {
-        // Check project root DB (worktree_dir is inside .worktrees/<id>/).
-        if let Some(project_dir) = worktree_dir.parent().and_then(|p| p.parent()) {
-            let project_db = project_dir.join(".clc").join("coordination.db");
-            if project_db.exists() {
-                if let Ok(coord) = Coordination::open(project_dir) {
-                    let id = worktree_dir
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy();
-                    if let Ok(status) = coord.get_status(&id) {
-                        return status == clc_sdk::coordination::AgentStatus::Running;
-                    }
-                }
+    // Try coordination DB (API or local) — check stored status.
+    // worktree_dir is inside .worktrees/<id>/, so project root is two levels up.
+    if let Some(project_dir) = worktree_dir.parent().and_then(|p| p.parent()) {
+        if let Ok(coord) = Coordination::open(project_dir) {
+            let id = worktree_dir
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy();
+            if let Ok(status) = coord.get_status(&id) {
+                return status == clc_sdk::coordination::AgentStatus::Running;
             }
         }
     }
@@ -350,31 +344,28 @@ pub fn send_prompt(pipe_path: &Path, prompt: &str) -> Result<(), Error> {
             if let Some(worktree_dir) = clc_dir.parent() {
                 // Check project root (parent of .worktrees/<id>)
                 if let Some(project_dir) = worktree_dir.parent().and_then(|p| p.parent()) {
-                    let db_path = project_dir.join(".clc").join("coordination.db");
-                    if db_path.exists() {
-                        if let Ok(coord) = Coordination::open(project_dir) {
-                            let worker_id = worktree_dir
-                                .file_name()
-                                .unwrap_or_default()
-                                .to_string_lossy()
-                                .to_string();
-                            let msg = clc_sdk::coordination::Message {
-                                id: format!(
-                                    "input-{}",
-                                    std::time::SystemTime::now()
-                                        .duration_since(std::time::UNIX_EPOCH)
-                                        .unwrap_or_default()
-                                        .as_millis()
-                                ),
-                                from: "coordinator".into(),
-                                to: worker_id,
-                                kind: clc_sdk::coordination::MessageKind::Text(
-                                    prompt.to_string(),
-                                ),
-                                timestamp: std::time::SystemTime::now(),
-                            };
-                            let _ = coord.send(msg);
-                        }
+                    if let Ok(coord) = Coordination::open(project_dir) {
+                        let worker_id = worktree_dir
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_string();
+                        let msg = clc_sdk::coordination::Message {
+                            id: format!(
+                                "input-{}",
+                                std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_millis()
+                            ),
+                            from: "coordinator".into(),
+                            to: worker_id,
+                            kind: clc_sdk::coordination::MessageKind::Text(
+                                prompt.to_string(),
+                            ),
+                            timestamp: std::time::SystemTime::now(),
+                        };
+                        let _ = coord.send(msg);
                     }
                 }
             }

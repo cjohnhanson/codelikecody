@@ -244,11 +244,12 @@ pub fn set(project_dir: &Path, target: &str, required_attempts: u32) -> Result<(
     // Transition succeeds — write new phase with attempts reset.
     write_state(project_dir, target_phase, 0)?;
 
-    // Record phase transition in coordination database if it already exists.
-    // Don't create the DB here — phase::set runs in contexts (bare tests,
-    // pickup) where creating coordination.db would be a surprise side effect.
-    let db_path = project_dir.join(".clc").join("coordination.db");
-    if db_path.exists() {
+    // Record phase transition in coordination database.
+    // In API mode, always send. In local mode, only if the DB already exists
+    // (don't create it as a side effect in bare tests or pickup).
+    let has_api = std::env::var("CLC_API_URL").is_ok();
+    let has_db = project_dir.join(".clc").join("coordination.db").exists();
+    if has_api || has_db {
         if let Ok(coord) = Coordination::open(project_dir) {
             let branch = crate::git::current_branch(project_dir).unwrap_or_default();
             let msg = clc_sdk::coordination::Message {

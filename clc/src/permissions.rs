@@ -366,9 +366,7 @@ fn add_permission_rule(settings_path: &Path, permission: &str) -> Result<(), Err
 ///
 /// Checks coordination database first, falls back to filesystem scan.
 pub fn list(project_dir: &Path) -> Result<(), Error> {
-    // Try coordination database first, if it exists.
-    let db_path = project_dir.join(".clc").join("coordination.db");
-    if db_path.exists() {
+    // Try coordination database first (API or local SQLite).
     if let Ok(coord) = Coordination::open(project_dir) {
         if let Ok(pending) = coord.pending_permissions("coordinator") {
             if !pending.is_empty() {
@@ -384,7 +382,7 @@ pub fn list(project_dir: &Path) -> Result<(), Error> {
                 return Ok(());
             }
         }
-    }}
+    }
 
     // Fall back to filesystem scan.
     let mut found = false;
