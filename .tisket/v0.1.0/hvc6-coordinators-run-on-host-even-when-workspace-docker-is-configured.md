@@ -1,12 +1,12 @@
 ---
 title: "Coordinators run on host even when workspace: docker is configured"
-status: todo
+status: in_progress
 priority: 2
 assignee:
 labels: [clc, architecture]
 depends_on: []
-created: "2026-03-25T03:27:39Z"
-updated: "2026-03-25T03:27:39Z"
+created: 2026-03-25T03:27:39Z
+updated: "2026-03-25T03:28:32Z"
 ---
 
 ## Problem
@@ -45,3 +45,5 @@ local process.
   spawning
 - `SSHWorkspace` accepts a configurable start command
 - Coordinator in docker has no host filesystem access (no mounts)
+
+## Scratch Notes
