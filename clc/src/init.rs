@@ -70,7 +70,6 @@ pub fn init(project_dir: &Path, untracked: bool, force: bool) -> Result<(), Erro
 
     if untracked {
         write_git_excludes(project_dir)?;
-        write_untracked_state(project_dir)?;
     }
 
     Ok(())
@@ -127,26 +126,6 @@ fn write_git_excludes(project_dir: &Path) -> Result<(), Error> {
     }
 
     std::fs::write(&exclude_path, content)?;
-    Ok(())
-}
-
-fn write_untracked_state(project_dir: &Path) -> Result<(), Error> {
-    let state_path = project_dir.join(".clc").join("state");
-
-    let mut content = if state_path.exists() {
-        std::fs::read_to_string(&state_path)?
-    } else {
-        String::new()
-    };
-
-    if !content.lines().any(|line| line.starts_with("untracked:")) {
-        if !content.is_empty() && !content.ends_with('\n') {
-            content.push('\n');
-        }
-        content.push_str("untracked: true\n");
-    }
-
-    std::fs::write(&state_path, content)?;
     Ok(())
 }
 
