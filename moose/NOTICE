@@ -1,0 +1,17 @@
+moose — browser automation CLI for AI agents
+
+This crate is derived from agent-browser, originally developed by
+Vercel Labs (https://github.com/vercel-labs/agent-browser).
+
+Copyright 2024-2025 Vercel, Inc.
+
+Licensed under the Apache License, Version 2.0. The original source
+code has been adapted and renamed for integration into the codelikecody
+workspace. The CDP protocol JSON files (cdp-protocol/) are from the
+Chromium project and are licensed under BSD.
+
+Changes from the original:
+- Renamed from agent-browser to moose throughout
+- Integrated as a workspace member in the codelikecody Cargo workspace
+- Daemon directory changed from ~/.agent-browser to ~/.moose
+- Adapted to codelikecody project conventions

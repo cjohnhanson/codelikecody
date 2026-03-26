@@ -1,0 +1,34 @@
+[package]
+name = "moose"
+version = "0.2.0"
+edition = "2021"
+description = "Browser automation CLI for AI agents"
+license = "Apache-2.0"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+dirs = "5.0"
+base64 = "0.22"
+getrandom = "0.2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "time", "sync", "signal", "process"] }
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+futures-util = "0.3"
+url = "2"
+uuid = { version = "1", features = ["v4"] }
+image = "0.25"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-webpki-roots"] }
+sha2 = "0.10"
+aes-gcm = "0.10"
+async-trait = "0.1"
+socket2 = "0.6"
+similar = "2"
+time = { version = "0.3", features = ["formatting"] }
+zip = { version = "8.2", default-features = false, features = ["deflate"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[build-dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
