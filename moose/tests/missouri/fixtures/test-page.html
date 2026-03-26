@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Moose Test Page</title>
+</head>
+<body>
+  <h1>Test Page</h1>
+  <p id="greeting">Hello, World!</p>
+
+  <form id="test-form">
+    <label for="name-input">Name</label>
+    <input type="text" id="name-input" name="name" placeholder="Enter your name">
+
+    <label for="email-input">Email</label>
+    <input type="email" id="email-input" name="email" placeholder="Enter your email">
+
+    <label>
+      <input type="checkbox" id="agree-checkbox" name="agree">
+      I agree to the terms
+    </label>
+
+    <button type="submit" id="submit-btn">Submit</button>
+  </form>
+
+  <nav>
+    <a href="#section1" id="link-1">Section 1</a>
+    <a href="#section2" id="link-2">Section 2</a>
+  </nav>
+
+  <div id="output"></div>
+
+  <script>
+    document.getElementById('test-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      var name = document.getElementById('name-input').value;
+      document.getElementById('output').textContent = 'Submitted: ' + name;
+    });
+  </script>
+</body>
+</html>

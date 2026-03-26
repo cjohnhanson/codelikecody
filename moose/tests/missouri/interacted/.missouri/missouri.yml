@@ -1,0 +1,6 @@
+assertions:
+  - name: "screenshot was captured"
+    command: "test -f fixtures/result.png"
+
+  - name: "screenshot is a valid PNG"
+    command: "head -c 4 fixtures/result.png | grep -q PNG"

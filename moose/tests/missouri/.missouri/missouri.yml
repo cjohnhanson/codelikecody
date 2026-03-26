@@ -1,0 +1,5 @@
+setup:
+  - name: "build moose"
+    command: "cargo build --quiet --manifest-path ../../../Cargo.toml -p moose"
+  - name: "link binary into project bin"
+    command: "mkdir -p .missouri/bin && ln -sf $(cd ../../.. && pwd)/target/debug/moose .missouri/bin/moose"

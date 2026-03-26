@@ -1,0 +1,118 @@
+assertions:
+  # --- Browser launch and navigation ---
+  - name: "open local HTML file"
+    command: "moose open file://$(pwd)/fixtures/test-page.html"
+
+  - name: "get page title"
+    command: "moose get title | grep -q 'Moose Test Page'"
+
+  - name: "get page url contains test-page.html"
+    command: "moose get url | grep -q 'test-page.html'"
+
+  # --- Snapshot (accessibility tree) ---
+  - name: "snapshot returns accessibility tree"
+    command: "moose snapshot | grep -q 'Test Page'"
+
+  - name: "snapshot includes interactive elements"
+    command: "moose snapshot -i | grep -q 'textbox'"
+
+  - name: "snapshot has ref IDs"
+    command: "moose snapshot -i | grep -q 'ref='"
+
+  # --- Text extraction ---
+  - name: "get text from element"
+    command: "moose get text '#greeting' | grep -q 'Hello, World!'"
+
+  - name: "get html from element"
+    command: "moose get html '#greeting' | grep -q 'Hello, World!'"
+
+  # --- Element state ---
+  - name: "button is visible"
+    command: "moose is visible '#submit-btn'"
+
+  - name: "button is enabled"
+    command: "moose is enabled '#submit-btn'"
+
+  - name: "checkbox is not checked"
+    command: "moose is checked '#agree-checkbox' | grep -q 'false'"
+
+  # --- Form interaction ---
+  - name: "fill text input"
+    command: "moose fill '#name-input' 'Test User'"
+
+  - name: "verify filled value"
+    command: "moose get value '#name-input' | grep -q 'Test User'"
+
+  - name: "fill email input"
+    command: "moose fill '#email-input' 'test@example.com'"
+
+  - name: "check the checkbox"
+    command: "moose check '#agree-checkbox'"
+
+  - name: "checkbox is now checked"
+    command: "moose is checked '#agree-checkbox'"
+
+  - name: "uncheck the checkbox"
+    command: "moose uncheck '#agree-checkbox'"
+
+  - name: "checkbox is unchecked again"
+    command: "moose is checked '#agree-checkbox' | grep -q 'false'"
+
+  # --- Click and JS execution ---
+  - name: "click submit triggers form handler"
+    command: "moose click '#submit-btn'"
+
+  - name: "form output shows submitted name"
+    command: "moose get text '#output' | grep -q 'Submitted: Test User'"
+
+  # --- JavaScript eval ---
+  - name: "eval returns result"
+    command: "moose eval 'document.title' | grep -q 'Moose Test Page'"
+
+  - name: "eval can modify DOM"
+    command: "moose eval 'document.getElementById(\"greeting\").textContent = \"Modified\"' && moose get text '#greeting' | grep -q 'Modified'"
+
+  # --- Screenshot ---
+  - name: "screenshot creates file"
+    command: "moose screenshot /tmp/moose-test-shot.png && test -f /tmp/moose-test-shot.png && rm /tmp/moose-test-shot.png"
+
+  # --- Element count ---
+  - name: "count links"
+    command: "test $(moose get count 'nav a') -eq 2"
+
+  # --- Navigation ---
+  - name: "click link navigates"
+    command: "moose click '#link-1' && moose get url | grep -q 'section1'"
+
+  - name: "back returns to previous url"
+    command: "moose back && moose get url | grep -q 'test-page.html'"
+
+  # --- Console ---
+  - name: "console command succeeds"
+    command: "moose console --clear"
+
+  # --- Viewport ---
+  - name: "set viewport"
+    command: "moose set viewport 1280 720"
+
+  # --- Network requests ---
+  - name: "network requests command succeeds"
+    command: "moose network requests --clear"
+
+  # --- Cleanup ---
+  - name: "close browser"
+    command: "moose close"
+
+transitions:
+  - name: "navigate and interact for downstream state"
+    command: |
+      moose open file://$(pwd)/fixtures/test-page.html
+      moose fill '#name-input' 'Integration Test'
+      moose click '#submit-btn'
+      moose screenshot fixtures/result.png
+      moose close
+    target: "../interacted"
+    comparators:
+      files:
+        - path: "fixtures/"
+          ignore: true
