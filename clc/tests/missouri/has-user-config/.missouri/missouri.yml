@@ -1,0 +1,70 @@
+env:
+  HOME: ./fake-home
+
+assertions:
+  - name: "user config exists at HOME/.clc/config.yml"
+    command: "test -f fake-home/.clc/config.yml"
+
+  - name: "no repo-level clc.yml exists"
+    command: "! test -f clc.yml"
+
+  - name: "no repo-level .clc directory exists"
+    command: "! test -d .clc"
+
+  # Skills from user config
+  - name: "prime includes skills from user config"
+    command: "clc prime | grep 'personal-skill'"
+
+  - name: "prime includes Almanac section header"
+    command: "clc prime | grep -i 'Almanac'"
+
+  - name: "prime includes user skill description"
+    command: "clc prime | grep 'A personal skill from user config'"
+
+  - name: "SessionStart hook includes user skills in context"
+    command: >
+      echo '{"hook_event_name":"SessionStart","session_id":"test","cwd":".","source":"startup"}'
+      | clc hook
+      | jq -r '.hookSpecificOutput.additionalContext'
+      | grep 'personal-skill'
+
+  - name: "almanac list shows user-level skill"
+    command: "clc almanac list | grep 'personal-skill'"
+
+  - name: "almanac show prints user-level skill content"
+    command: "clc almanac show personal-skill | grep '# Personal Skill'"
+
+  # Tisket from user config
+  - name: "prime includes tisket section from user config"
+    command: "clc prime | grep -i 'Tisket'"
+
+  - name: "prime mentions personal tisket issues"
+    command: "clc prime | grep -i 'personal'"
+
+  # No phase enforcement without repo config
+  - name: "no phase enforcement without repo-level config"
+    command: "! clc status 2>&1 | grep 'phase:'"
+
+  - name: "UserPromptSubmit hook works with user config only"
+    command: >
+      echo '{"hook_event_name":"UserPromptSubmit","session_id":"test","cwd":".","prompt":"hello"}'
+      | clc hook
+      | jq -e '.hookSpecificOutput'
+
+transitions:
+  - name: "add repo-level config alongside user config"
+    command: >-
+      mkdir -p repo-skills/repo-skill &&
+      printf '%s\n' '---' 'name: repo-skill' 'description: A skill from repo-level config' '---' '' '# Repo Skill' '' 'Repo-level skill.' > repo-skills/repo-skill/SKILL.md &&
+      printf 'skills:\n  - path: ./repo-skills/\n' > clc.yml &&
+      printf 'tisket_dir: .tisket\nadditional_instructions: ""\n' > tisket.yml &&
+      mkdir -p .tisket/v0.1.0 &&
+      printf 'name: v0.1.0\n' > .tisket/v0.1.0/project.yml &&
+      printf -- '---\ntitle: "Repo task"\nstatus: todo\npriority: 2\nassignee:\nlabels: [repo]\ndepends_on: []\ncreated: "2026-01-01T00:00:00Z"\nupdated: "2026-01-01T00:00:00Z"\n---\n\nA repo task.\n' > .tisket/v0.1.0/repo-task.md
+    target: "../has-both-configs"
+    comparators:
+      files:
+        - path: "fake-home/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true

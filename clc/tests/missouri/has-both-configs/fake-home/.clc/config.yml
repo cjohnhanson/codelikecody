@@ -1,0 +1,4 @@
+skills:
+  - path: ./skills/
+tisket:
+  root: ./personal-data
