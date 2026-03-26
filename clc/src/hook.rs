@@ -107,6 +107,24 @@ fn assemble_prime(cwd: &Path, git: Option<&git::GitState>, phase: Option<phase::
 
     let mut out = String::new();
 
+    // --- clean output directive for untracked mode ---
+    if crate::is_untracked(cwd) {
+        out.push_str(
+            "## CRITICAL: Clean output mode\n\n\
+             This project uses clc in untracked mode. Workflow tooling should not\n\
+             leak into project artifacts.\n\n\
+             Do not reference clc, tisket, missouri, zettel, almanac, belmont, or\n\
+             any commands specific to these tools in commit messages, PR descriptions,\n\
+             code comments, or documentation. These are workflow implementation\n\
+             details — they belong in your process, not in the project's history.\n\n\
+             Commit messages should describe what changed and why.\n\
+             PR descriptions should describe motivation and impact.\n\
+             Code comments should explain the code, not the workflow that produced it.\n\n\
+             Internal tool use is unaffected — use clc commands, load skills, track\n\
+             issues normally. Just keep the artifacts clean.\n\n",
+        );
+    }
+
     // --- clc header: what the agent is inside of ---
     out.push_str("# clc workflow engine\n\n");
     out.push_str(

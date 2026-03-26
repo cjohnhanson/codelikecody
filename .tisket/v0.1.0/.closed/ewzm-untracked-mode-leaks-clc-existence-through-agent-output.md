@@ -1,12 +1,12 @@
 ---
 title: "Untracked mode leaks clc existence through agent output"
-status: in_progress
+status: done
 priority: 2
 assignee:
 labels: [clc]
 depends_on: []
 created: 2026-03-26T03:06:18Z
-updated: "2026-03-26T03:17:53Z"
+updated: "2026-03-26T03:29:43Z"
 ---
 
 ## Problem
@@ -43,5 +43,3 @@ in any contributor-visible output."
 - Prime text includes stealth directive when untracked
 - `.clc/state` is no longer written or read for untracked detection
 - Agent in untracked mode produces clean commit messages with no clc references
-
-## Scratch Notes

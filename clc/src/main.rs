@@ -42,10 +42,13 @@ use std::path::Path;
 use clc_sdk::ClcTool;
 use error::Error;
 
-fn is_untracked(project_dir: &Path) -> bool {
-    let state_path = project_dir.join(".clc").join("state");
-    std::fs::read_to_string(state_path)
-        .map(|content| content.lines().any(|line| line.trim() == "untracked: true"))
+/// Check whether clc is running in untracked mode by reading the git
+/// exclude file. Encapsulated so the detection logic can change without
+/// affecting callers.
+pub fn is_untracked(project_dir: &Path) -> bool {
+    let exclude_path = project_dir.join(".git").join("info").join("exclude");
+    std::fs::read_to_string(exclude_path)
+        .map(|content| content.lines().any(|line| line.trim() == ".clc/"))
         .unwrap_or(false)
 }
 
