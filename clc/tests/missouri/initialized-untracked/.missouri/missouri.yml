@@ -35,8 +35,8 @@ assertions:
   - name: "git status does not show .claude as untracked"
     command: "! git status --porcelain | grep -q '.claude'"
 
-  - name: ".clc/state records untracked mode"
-    command: "test -f .clc/state && grep -q 'untracked: true' .clc/state"
+  - name: ".clc/state does not record untracked mode"
+    command: "! grep -q 'untracked: true' .clc/state 2>/dev/null"
 
   - name: "status reports untracked true"
     command: "clc status 2>&1 | grep 'untracked: true'"
