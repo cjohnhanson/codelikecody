@@ -263,29 +263,20 @@ impl Workspace for SSHWorkspace {
         // clc workspace start already daemonizes. Both keep the SSH session
         // alive via the reverse tunnel held by the supervisor.
         let exec_cmd = if self.config.start_command.is_some() {
-            // Write a launcher script with inline PEM certs as env vars.
-            // Avoids file I/O issues from SSH write_file.
-            let script = format!(
-                "#!/bin/sh\ncd /project\nexport CLC_API_URL=https://localhost:{tunnel_port}\nexport CLC_API_CERT='{cert_pem}'\nexport CLC_API_KEY='{key_pem}'\nexport CLC_API_CA='{ca_pem}'\nexec {start_cmd} > /tmp/agent.log 2>&1\n",
-                tunnel_port = tunnel_port,
-                cert_pem = cert.cert_pem,
-                key_pem = cert.key_pem,
-                ca_pem = self.config.ca.ca_cert_pem,
-                start_cmd = start_cmd,
-            );
+            // Write cert PEM to files, then run the command directly via SSH exec.
+            // A launcher script approach failed with mysterious reqwest builder errors.
             self.rt.block_on(async {
-                session
-                    .write_file("/tmp/start.sh", &script)
-                    .await
-                    .map_err(|e| WorkspaceError::Process(format!("write launcher: {e}")))
+                session.write_file("/tmp/ws-cert.pem", &cert.cert_pem).await
+                    .map_err(|e| WorkspaceError::Process(format!("write cert: {e}")))?;
+                session.write_file("/tmp/ws-key.pem", &cert.key_pem).await
+                    .map_err(|e| WorkspaceError::Process(format!("write key: {e}")))?;
+                session.write_file("/tmp/ws-ca.pem", &self.config.ca.ca_cert_pem).await
+                    .map_err(|e| WorkspaceError::Process(format!("write CA: {e}")))?;
+                Ok::<_, WorkspaceError>(())
             })?;
-            self.rt.block_on(async {
-                session
-                    .exec("chmod +x /tmp/start.sh")
-                    .await
-                    .map_err(|e| WorkspaceError::Process(format!("chmod: {e}")))
-            })?;
-            "nohup /tmp/start.sh &\nsleep 1\ncat /proc/$(pgrep -f coordinator-run | head -1)/status 2>/dev/null | head -1 || echo 'PID unknown'".to_string()
+            format!(
+                "cd /project && export CLC_API_URL=https://localhost:{tunnel_port} && export CLC_API_CERT=/tmp/ws-cert.pem && export CLC_API_KEY=/tmp/ws-key.pem && export CLC_API_CA=/tmp/ws-ca.pem && {start_cmd} 2>&1 | head -5"
+            )
         } else {
             format!("cd /project && {start_cmd}")
         };
