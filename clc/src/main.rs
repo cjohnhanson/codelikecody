@@ -572,47 +572,64 @@ fn cmd_workspace(action: &cli::WorkspaceAction) -> Result<(), Error> {
             branch,
             stdin,
             dir,
+            pack_file,
+            refs_file,
         } => {
             let target_dir = dir
                 .as_ref()
                 .map(std::path::PathBuf::from)
                 .unwrap_or_else(|| cwd.clone());
 
-            // Read pack data + refs from stdin (JSON envelope).
-            use std::io::Read;
-            let mut data = Vec::new();
-
-            if *stdin {
-                std::io::stdin()
-                    .read_to_end(&mut data)
-                    .map_err(|e| Error::NonBlocking(format!("read stdin: {e}")))?;
+            let (pack_data, refs) = if let (Some(pf), Some(rf)) = (pack_file, refs_file) {
+                // File-based transfer: binary pack + JSON refs.
+                let pack = std::fs::read(pf)
+                    .map_err(|e| Error::NonBlocking(format!("read pack file: {e}")))?;
+                let refs_json = std::fs::read_to_string(rf)
+                    .map_err(|e| Error::NonBlocking(format!("read refs file: {e}")))?;
+                let refs: Vec<(String, String)> = serde_json::from_str::<Vec<Vec<String>>>(&refs_json)
+                    .map_err(|e| Error::NonBlocking(format!("parse refs: {e}")))?
+                    .into_iter()
+                    .filter_map(|r| Some((r.first()?.clone(), r.get(1)?.clone())))
+                    .collect();
+                (pack, refs)
             } else {
-                let path = bundle
-                    .as_ref()
-                    .ok_or_else(|| Error::NonBlocking("path required when not using --stdin".into()))?;
-                data = std::fs::read(path)
-                    .map_err(|e| Error::NonBlocking(format!("read file: {e}")))?;
-            }
+                // Legacy: JSON envelope from stdin or file.
+                use std::io::Read;
+                let mut data = Vec::new();
 
-            // Parse JSON envelope: { "pack": base64, "refs": [["oid", "refname"], ...] }
-            let envelope: serde_json::Value = serde_json::from_slice(&data)
-                .map_err(|e| Error::NonBlocking(format!("parse envelope: {e}")))?;
+                if *stdin {
+                    std::io::stdin()
+                        .read_to_end(&mut data)
+                        .map_err(|e| Error::NonBlocking(format!("read stdin: {e}")))?;
+                } else {
+                    let path = bundle
+                        .as_ref()
+                        .ok_or_else(|| Error::NonBlocking("path required when not using --stdin".into()))?;
+                    data = std::fs::read(path)
+                        .map_err(|e| Error::NonBlocking(format!("read file: {e}")))?;
+                }
 
-            let pack_b64 = envelope["pack"]
-                .as_str()
-                .ok_or_else(|| Error::NonBlocking("missing pack field".into()))?;
-            let pack_data = base64_decode(pack_b64)
-                .map_err(|e| Error::NonBlocking(format!("decode pack: {e}")))?;
+                let envelope: serde_json::Value = serde_json::from_slice(&data)
+                    .map_err(|e| Error::NonBlocking(format!("parse envelope: {e}")))?;
 
-            let refs: Vec<(String, String)> = envelope["refs"]
-                .as_array()
-                .unwrap_or(&Vec::new())
-                .iter()
-                .filter_map(|r| {
-                    let arr = r.as_array()?;
-                    Some((arr.first()?.as_str()?.to_string(), arr.get(1)?.as_str()?.to_string()))
-                })
-                .collect();
+                let pack_b64 = envelope["pack"]
+                    .as_str()
+                    .ok_or_else(|| Error::NonBlocking("missing pack field".into()))?;
+                let pack = base64_decode(pack_b64)
+                    .map_err(|e| Error::NonBlocking(format!("decode pack: {e}")))?;
+
+                let refs: Vec<(String, String)> = envelope["refs"]
+                    .as_array()
+                    .unwrap_or(&Vec::new())
+                    .iter()
+                    .filter_map(|r| {
+                        let arr = r.as_array()?;
+                        Some((arr.first()?.as_str()?.to_string(), arr.get(1)?.as_str()?.to_string()))
+                    })
+                    .collect();
+
+                (pack, refs)
+            };
 
             git_pack::receive_pack(&pack_data, &refs, &target_dir, branch)?;
 

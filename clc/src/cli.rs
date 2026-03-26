@@ -402,5 +402,11 @@ pub enum WorkspaceAction {
         /// Target directory (default: current directory).
         #[arg(long)]
         dir: Option<String>,
+        /// Path to binary pack file (alternative to stdin JSON).
+        #[arg(long)]
+        pack_file: Option<String>,
+        /// Path to JSON refs file (used with --pack-file).
+        #[arg(long)]
+        refs_file: Option<String>,
     },
 }

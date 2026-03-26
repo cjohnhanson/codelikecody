@@ -89,7 +89,9 @@ impl Workspace for SSHWorkspace {
         }
 
         // 1. Create the environment (Docker container, etc).
+        eprintln!("ssh workspace: creating environment...");
         let target = self.env.create()?;
+        eprintln!("ssh workspace: environment created ({}:{})", target.host, target.port);
 
         // 2. Sign a workspace cert.
         let agent_id = self.config.workspace_config.tisket_id.clone();
@@ -105,6 +107,7 @@ impl Workspace for SSHWorkspace {
             .join(".ssh")
             .join("id_ed25519");
 
+        eprintln!("ssh workspace: connecting via SSH...");
         let mut session = self.rt.block_on(async {
             // Wait for sshd to be ready.
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
@@ -113,6 +116,7 @@ impl Workspace for SSHWorkspace {
                 .await
                 .map_err(|e| WorkspaceError::Process(format!("SSH connect: {e}")))
         })?;
+        eprintln!("ssh workspace: SSH connected");
 
         // 4. Deploy workspace cert and CA cert.
         self.rt.block_on(async {
@@ -131,6 +135,8 @@ impl Workspace for SSHWorkspace {
             Ok::<_, WorkspaceError>(())
         })?;
 
+        eprintln!("ssh workspace: certs deployed");
+
         // 5. Set up reverse tunnel: workspace's localhost:tunnel_port → supervisor's API.
         let tunnel_port = self.tunnel_port;
         let api_port = self.config.api_port;
@@ -141,52 +147,87 @@ impl Workspace for SSHWorkspace {
                 .map_err(|e| WorkspaceError::Process(format!("reverse tunnel: {e}")))
         })?;
 
+        eprintln!("ssh workspace: reverse tunnel established");
+
         // 6. Create git pack on the host and pipe it to the workspace
         //    via clc workspace receive. Pack created by gix, served as JSON
         //    with base64-encoded pack data + refs.
-        let branch_name = self.config.workspace_config.tisket_id.clone();
+        // Coordinators (custom start_command) run on main; workers run on their branch.
+        let branch_name = if self.config.start_command.is_some() {
+            self.config.workspace_config.main_branch.clone()
+        } else {
+            self.config.workspace_config.tisket_id.clone()
+        };
         let pack_data = crate::git_pack::create_pack(
             &self.config.workspace_config.project_dir,
             &branch_name,
         )
         .map_err(|e| WorkspaceError::Process(format!("create pack: {e}")))?;
+        eprintln!("ssh workspace: git pack created ({} bytes)", pack_data.pack.len());
 
-        // Serialize as JSON envelope for clc workspace receive.
-        let b64 = base64_encode(&pack_data.pack);
-        let refs: Vec<serde_json::Value> = pack_data
-            .refs
+        // Transfer pack and refs as files via SSH, then unpack.
+        let refs_json = serde_json::to_string(&pack_data.refs
             .iter()
             .map(|(oid, name)| serde_json::json!([oid, name]))
-            .collect();
-        let envelope = serde_json::json!({
-            "pack": b64,
-            "refs": refs,
-            "branch": branch_name,
-        });
-        let envelope_bytes = serde_json::to_vec(&envelope)
-            .map_err(|e| WorkspaceError::Process(format!("serialize: {e}")))?;
+            .collect::<Vec<_>>())
+            .unwrap_or_default();
 
-        // Pipe to clc workspace receive on the container.
+        eprintln!("ssh workspace: transferring pack via SSH...");
         self.rt.block_on(async {
             session
                 .exec_with_stdin(
-                    &format!("clc workspace receive --stdin --branch {branch_name} --dir /project"),
-                    &envelope_bytes,
+                    "clc workspace write-file /tmp/repo.pack",
+                    &pack_data.pack,
                 )
+                .await
+                .map_err(|e| WorkspaceError::Process(format!("write pack: {e}")))?;
+            session
+                .exec_with_stdin(
+                    "clc workspace write-file /tmp/repo.refs",
+                    refs_json.as_bytes(),
+                )
+                .await
+                .map_err(|e| WorkspaceError::Process(format!("write refs: {e}")))?;
+            Ok::<_, WorkspaceError>(())
+        })?;
+        eprintln!("ssh workspace: pack transferred");
+
+        self.rt.block_on(async {
+            session
+                .exec(&format!(
+                    "clc workspace receive --pack-file /tmp/repo.pack --refs-file /tmp/repo.refs --branch {branch_name} --dir /project"
+                ))
                 .await
                 .map_err(|e| WorkspaceError::Process(format!("receive pack: {e}")))
         })?;
+        eprintln!("ssh workspace: pack unpacked");
 
         // 7. Initialize workspace and start agent — all via clc commands.
         //    clc workspace init: creates .clc/worker/ with pipes, files, hooks.
         //    clc workspace start: builds agent command via Agent trait, wires stdio,
         //    spawns process, writes PID, sends initial prompt. No shell involved.
-        self.rt.block_on(async {
+        let init_result = self.rt.block_on(async {
             session
-                .exec("cd /project && clc workspace init")
+                .exec("cd /project && clc workspace init 2>&1")
                 .await
-                .map_err(|e| WorkspaceError::Process(format!("workspace init: {e}")))
-        })?;
+        });
+        match init_result {
+            Ok(output) => {
+                if !output.is_empty() {
+                    eprintln!("ssh workspace: init output: {output}");
+                }
+            }
+            Err(e) => {
+                // Try to get more info.
+                let debug = self.rt.block_on(async {
+                    session.exec("ls -la /project/ 2>&1 && ls -la /project/.git/ 2>&1").await
+                });
+                if let Ok(ls) = debug {
+                    eprintln!("ssh workspace: /project contents: {ls}");
+                }
+                return Err(WorkspaceError::Process(format!("workspace init: {e}")));
+            }
+        }
 
         let start_args = if let Some(ref custom) = self.config.start_command {
             // Custom start command (e.g. coordinator-run).
@@ -218,9 +259,17 @@ impl Workspace for SSHWorkspace {
         };
 
         let start_cmd = start_args.join(" ");
+        // coordinator-run is long-running; background it so exec returns.
+        // clc workspace start already daemonizes. Both keep the SSH session
+        // alive via the reverse tunnel held by the supervisor.
+        let exec_cmd = if self.config.start_command.is_some() {
+            format!("cd /project && nohup {start_cmd} > /tmp/agent.log 2>&1 & echo $!")
+        } else {
+            format!("cd /project && {start_cmd}")
+        };
         let pid_output = self.rt.block_on(async {
             session
-                .exec(&format!("cd /project && {start_cmd}"))
+                .exec(&exec_cmd)
                 .await
                 .map_err(|e| WorkspaceError::Process(format!("workspace start: {e}")))
         })?;
