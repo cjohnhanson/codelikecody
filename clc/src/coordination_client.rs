@@ -359,18 +359,24 @@ pub fn build_api_client() -> Result<reqwest::Client, Box<dyn std::error::Error>>
 
     match (cert_path, key_path, ca_path) {
         (Some(cert), Some(key), Some(ca)) => {
-            let cert_pem = std::fs::read(&cert)?;
-            let key_pem = std::fs::read(&key)?;
-            let ca_pem = std::fs::read(&ca)?;
+            let cert_pem = std::fs::read(&cert)
+                .map_err(|e| format!("read cert {cert}: {e}"))?;
+            let key_pem = std::fs::read(&key)
+                .map_err(|e| format!("read key {key}: {e}"))?;
+            let ca_pem = std::fs::read(&ca)
+                .map_err(|e| format!("read CA {ca}: {e}"))?;
 
-            let identity = reqwest::Identity::from_pem(&[cert_pem, key_pem].concat())?;
-            let ca_cert = reqwest::Certificate::from_pem(&ca_pem)?;
+            let identity = reqwest::Identity::from_pem(&[cert_pem, key_pem].concat())
+                .map_err(|e| format!("parse identity: {e}"))?;
+            let ca_cert = reqwest::Certificate::from_pem(&ca_pem)
+                .map_err(|e| format!("parse CA cert: {e}"))?;
 
-            Ok(reqwest::Client::builder()
+            reqwest::Client::builder()
                 .identity(identity)
                 .add_root_certificate(ca_cert)
                 .danger_accept_invalid_certs(false)
-                .build()?)
+                .build()
+                .map_err(|e| format!("build client: {e}").into())
         }
         _ => Ok(reqwest::Client::new()),
     }

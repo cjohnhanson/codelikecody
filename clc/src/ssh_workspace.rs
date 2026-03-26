@@ -263,14 +263,24 @@ impl Workspace for SSHWorkspace {
         // clc workspace start already daemonizes. Both keep the SSH session
         // alive via the reverse tunnel held by the supervisor.
         let exec_cmd = if self.config.start_command.is_some() {
-            format!(
-                "cd /project && \
-                 export CLC_API_URL=https://localhost:{tunnel_port} && \
-                 export CLC_API_CERT=/tmp/workspace-cert.pem && \
-                 export CLC_API_KEY=/tmp/workspace-key.pem && \
-                 export CLC_API_CA=/tmp/ca-cert.pem && \
-                 nohup {start_cmd} > /tmp/agent.log 2>&1 & echo $!"
-            )
+            // Write a launcher script that sets env vars and runs the command.
+            // SSH exec with backgrounding is unreliable across shells.
+            let script = format!(
+                "#!/bin/sh\ncd /project\nexport CLC_API_URL=https://localhost:{tunnel_port}\nexport CLC_API_CERT=/tmp/workspace-cert.pem\nexport CLC_API_KEY=/tmp/workspace-key.pem\nexport CLC_API_CA=/tmp/ca-cert.pem\nexec {start_cmd} > /tmp/agent.log 2>&1\n"
+            );
+            self.rt.block_on(async {
+                session
+                    .write_file("/tmp/start.sh", &script)
+                    .await
+                    .map_err(|e| WorkspaceError::Process(format!("write launcher: {e}")))
+            })?;
+            self.rt.block_on(async {
+                session
+                    .exec("chmod +x /tmp/start.sh")
+                    .await
+                    .map_err(|e| WorkspaceError::Process(format!("chmod: {e}")))
+            })?;
+            "nohup /tmp/start.sh &\nsleep 1\ncat /proc/$(pgrep -f coordinator-run | head -1)/status 2>/dev/null | head -1 || echo 'PID unknown'".to_string()
         } else {
             format!("cd /project && {start_cmd}")
         };
