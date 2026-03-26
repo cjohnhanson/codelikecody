@@ -357,14 +357,21 @@ pub fn build_api_client() -> Result<reqwest::Client, Box<dyn std::error::Error>>
     let key_path = std::env::var("CLC_API_KEY").ok();
     let ca_path = std::env::var("CLC_API_CA").ok();
 
+    // Support both file paths and inline PEM content.
+    // If the value starts with "-----BEGIN", treat it as inline PEM.
+    let read_pem = |val: &str, label: &str| -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        if val.starts_with("-----BEGIN") {
+            Ok(val.as_bytes().to_vec())
+        } else {
+            std::fs::read(val).map_err(|e| format!("read {label} {val}: {e}").into())
+        }
+    };
+
     match (cert_path, key_path, ca_path) {
         (Some(cert), Some(key), Some(ca)) => {
-            let cert_pem = std::fs::read(&cert)
-                .map_err(|e| format!("read cert {cert}: {e}"))?;
-            let key_pem = std::fs::read(&key)
-                .map_err(|e| format!("read key {key}: {e}"))?;
-            let ca_pem = std::fs::read(&ca)
-                .map_err(|e| format!("read CA {ca}: {e}"))?;
+            let cert_pem = read_pem(&cert, "cert")?;
+            let key_pem = read_pem(&key, "key")?;
+            let ca_pem = read_pem(&ca, "CA")?;
 
             let identity = reqwest::Identity::from_pem(&[cert_pem, key_pem].concat())
                 .map_err(|e| format!("parse identity: {e}"))?;

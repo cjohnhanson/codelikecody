@@ -263,10 +263,15 @@ impl Workspace for SSHWorkspace {
         // clc workspace start already daemonizes. Both keep the SSH session
         // alive via the reverse tunnel held by the supervisor.
         let exec_cmd = if self.config.start_command.is_some() {
-            // Write a launcher script that sets env vars and runs the command.
-            // SSH exec with backgrounding is unreliable across shells.
+            // Write a launcher script with inline PEM certs as env vars.
+            // Avoids file I/O issues from SSH write_file.
             let script = format!(
-                "#!/bin/sh\ncd /project\nexport CLC_API_URL=https://localhost:{tunnel_port}\nexport CLC_API_CERT=/tmp/workspace-cert.pem\nexport CLC_API_KEY=/tmp/workspace-key.pem\nexport CLC_API_CA=/tmp/ca-cert.pem\nexec {start_cmd} > /tmp/agent.log 2>&1\n"
+                "#!/bin/sh\ncd /project\nexport CLC_API_URL=https://localhost:{tunnel_port}\nexport CLC_API_CERT='{cert_pem}'\nexport CLC_API_KEY='{key_pem}'\nexport CLC_API_CA='{ca_pem}'\nexec {start_cmd} > /tmp/agent.log 2>&1\n",
+                tunnel_port = tunnel_port,
+                cert_pem = cert.cert_pem,
+                key_pem = cert.key_pem,
+                ca_pem = self.config.ca.ca_cert_pem,
+                start_cmd = start_cmd,
             );
             self.rt.block_on(async {
                 session
