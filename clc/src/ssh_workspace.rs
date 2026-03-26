@@ -275,7 +275,7 @@ impl Workspace for SSHWorkspace {
                 Ok::<_, WorkspaceError>(())
             })?;
             format!(
-                "cd /project && export CLC_API_URL=https://localhost:{tunnel_port} && export CLC_API_CERT=/tmp/ws-cert.pem && export CLC_API_KEY=/tmp/ws-key.pem && export CLC_API_CA=/tmp/ws-ca.pem && {start_cmd} 2>&1 | head -5"
+                "cd /project && export CLC_API_URL=https://localhost:{tunnel_port} && export CLC_API_CERT=/tmp/ws-cert.pem && export CLC_API_KEY=/tmp/ws-key.pem && export CLC_API_CA=/tmp/ws-ca.pem && nohup {start_cmd} > /tmp/agent.log 2>&1 & echo $!"
             )
         } else {
             format!("cd /project && {start_cmd}")
