@@ -277,12 +277,7 @@ impl Workspace for SSHWorkspace {
                     .map_err(|e| WorkspaceError::Process(format!("write CA: {e}")))?;
                 Ok::<_, WorkspaceError>(())
             })?;
-            // Use host.docker.internal to reach the supervisor API from Docker.
-            // The API binds to 0.0.0.0 and mTLS protects it.
-            let api_port = self.config.api_port;
-            format!(
-                "cd /project && export CLC_API_URL=https://host.docker.internal:{api_port} && export CLC_API_CERT=/tmp/ws-cert.pem && export CLC_API_KEY=/tmp/ws-key.pem && export CLC_API_CA=/tmp/ws-ca.pem && nohup {start_cmd} > /tmp/agent.log 2>&1 & echo $!"
-            )
+            build_coordinator_exec_cmd(tunnel_port, &start_cmd)
         } else {
             format!("cd /project && {start_cmd}")
         };
@@ -434,6 +429,15 @@ impl DockerEnvironment {
     }
 }
 
+/// Build the shell command that starts a coordinator inside a Docker workspace.
+/// Uses the reverse tunnel (localhost:{tunnel_port}) to reach the supervisor API —
+/// host.docker.internal is unreliable across Docker networking configurations.
+fn build_coordinator_exec_cmd(tunnel_port: u16, start_cmd: &str) -> String {
+    format!(
+        "cd /project && export CLC_API_URL=https://localhost:{tunnel_port} && export CLC_API_CERT=/tmp/ws-cert.pem && export CLC_API_KEY=/tmp/ws-key.pem && export CLC_API_CA=/tmp/ws-ca.pem && nohup {start_cmd} > /tmp/agent.log 2>&1 & echo $!"
+    )
+}
+
 impl Environment for DockerEnvironment {
     fn create(&mut self) -> Result<SSHTarget, WorkspaceError> {
         use bollard::container::{Config, CreateContainerOptions};
@@ -542,5 +546,51 @@ impl Environment for DockerEnvironment {
             });
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn coordinator_exec_cmd_uses_reverse_tunnel() {
+        let cmd = build_coordinator_exec_cmd(
+            19200,
+            "clc coordinator-run --id coord-test --max-workers 1 --model opus",
+        );
+
+        assert!(
+            cmd.contains("CLC_API_URL=https://localhost:19200"),
+            "expected reverse tunnel URL, got: {cmd}"
+        );
+        assert!(
+            !cmd.contains("host.docker.internal"),
+            "must not use host.docker.internal: {cmd}"
+        );
+    }
+
+    #[test]
+    fn coordinator_exec_cmd_sets_mtls_env_vars() {
+        let cmd = build_coordinator_exec_cmd(19200, "clc coordinator-run");
+
+        assert!(cmd.contains("CLC_API_CERT=/tmp/ws-cert.pem"));
+        assert!(cmd.contains("CLC_API_KEY=/tmp/ws-key.pem"));
+        assert!(cmd.contains("CLC_API_CA=/tmp/ws-ca.pem"));
+    }
+
+    #[test]
+    fn coordinator_exec_cmd_backgrounds_process() {
+        let cmd = build_coordinator_exec_cmd(19200, "clc coordinator-run");
+
+        assert!(cmd.contains("nohup"));
+        assert!(cmd.contains("> /tmp/agent.log 2>&1 &"));
+        assert!(cmd.contains("echo $!"));
+    }
+
+    #[test]
+    fn coordinator_exec_cmd_cds_to_project() {
+        let cmd = build_coordinator_exec_cmd(19200, "clc coordinator-run");
+        assert!(cmd.starts_with("cd /project &&"));
     }
 }
