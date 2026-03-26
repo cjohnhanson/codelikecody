@@ -263,7 +263,14 @@ impl Workspace for SSHWorkspace {
         // clc workspace start already daemonizes. Both keep the SSH session
         // alive via the reverse tunnel held by the supervisor.
         let exec_cmd = if self.config.start_command.is_some() {
-            format!("cd /project && nohup {start_cmd} > /tmp/agent.log 2>&1 & echo $!")
+            format!(
+                "cd /project && \
+                 export CLC_API_URL=https://localhost:{tunnel_port} && \
+                 export CLC_API_CERT=/tmp/workspace-cert.pem && \
+                 export CLC_API_KEY=/tmp/workspace-key.pem && \
+                 export CLC_API_CA=/tmp/ca-cert.pem && \
+                 nohup {start_cmd} > /tmp/agent.log 2>&1 & echo $!"
+            )
         } else {
             format!("cd /project && {start_cmd}")
         };

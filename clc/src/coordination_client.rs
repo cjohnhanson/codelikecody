@@ -24,7 +24,7 @@ impl ApiClient {
 
         // Build reqwest client with mTLS if cert env vars are set.
         let client = build_api_client()
-            .map_err(|e| CoordinationError::Storage(format!("http client: {e}")))?;
+            .map_err(|e| CoordinationError::Storage(format!("http client: {e:#}")))?;
 
         Ok(Self {
             base_url: base_url.trim_end_matches('/').to_string(),
