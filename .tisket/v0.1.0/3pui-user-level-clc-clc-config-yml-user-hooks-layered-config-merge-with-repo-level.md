@@ -1,12 +1,12 @@
 ---
 title: "user-level clc: ~/.clc/config.yml, user hooks, layered config merge with repo-level"
-status: todo
+status: in_progress
 priority: 2
 assignee:
 labels: [clc, architecture]
 depends_on: []
-created: "2026-03-26T23:14:19Z"
-updated: "2026-03-26T23:14:19Z"
+created: 2026-03-26T23:14:19Z
+updated: "2026-03-26T23:15:29Z"
 ---
 
 ## Problem
@@ -124,3 +124,5 @@ hooks to `~/.claude/settings.json`.
 - `clc hook` in an initialized repo with both configs merges them correctly
 - Missouri tests cover both scenarios
 - `clc init --user` produces working config
+
+## Scratch Notes
