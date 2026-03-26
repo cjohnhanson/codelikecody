@@ -276,16 +276,20 @@ fn tick(
     session: &mut CoordinatorSession,
 ) -> Result<TickResult, Error> {
     // 1. Dispatch pickable tiskets up to max_workers.
-    let running = coord
+    let agents = coord
         .list_agents(Some(&scope.id))
-        .unwrap_or_default()
-        .into_iter()
+        .unwrap_or_default();
+    let running = agents
+        .iter()
         .filter(|(_, s)| *s == clc_sdk::coordination::AgentStatus::Running)
         .count();
+
+    eprintln!("coordinator '{}': tick — {} agents, {} running, max {}", scope.id, agents.len(), running, scope.max_workers);
 
     if running < scope.max_workers {
         let pickable = find_undispatched(project_dir, scope, coord)?;
         let slots = scope.max_workers - running;
+        eprintln!("coordinator '{}': {} pickable, {} slots", scope.id, pickable.len(), slots);
 
         for id in pickable.iter().take(slots) {
             eprintln!("coordinator '{}': dispatching '{id}'", scope.id);
