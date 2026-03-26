@@ -20,6 +20,9 @@ struct CoordinatorState {
     pid: Option<u32>,
     resume_count: u32,
     max_resumes: u32,
+    /// Keeps the SSH workspace alive for Docker coordinators. The reverse tunnel
+    /// runs on the workspace's tokio runtime — dropping this kills the tunnel.
+    _workspace: Option<crate::ssh_workspace::SSHWorkspace>,
 }
 
 pub struct Supervisor {
@@ -46,6 +49,7 @@ impl Supervisor {
                 pid: None,
                 resume_count: 0,
                 max_resumes: 5,
+                _workspace: None,
             })
             .collect();
 
@@ -390,7 +394,7 @@ impl Supervisor {
         match workspace.start() {
             Ok(()) => {
                 eprintln!("supervisor: coordinator '{}' started in Docker", scope.id);
-                // No PID tracking for Docker coordinators — monitored via DB status.
+                self.coordinators[idx]._workspace = Some(workspace);
             }
             Err(e) => {
                 eprintln!("supervisor: docker start failed for coordinator '{}': {e}", scope.id);
