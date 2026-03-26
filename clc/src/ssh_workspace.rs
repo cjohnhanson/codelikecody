@@ -62,7 +62,10 @@ impl SSHWorkspace {
         tunnel_port: u16,
     ) -> Result<Self, WorkspaceError> {
         let project_dir = config.workspace_config.project_dir.clone();
-        let rt = tokio::runtime::Builder::new_current_thread()
+        // Multi-thread runtime: SSH event loop must run in background to
+        // process reverse-tunneled connections while start() blocks.
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
             .enable_all()
             .build()
             .map_err(|e| WorkspaceError::Process(format!("tokio: {e}")))?;
@@ -112,7 +115,7 @@ impl Workspace for SSHWorkspace {
             // Wait for sshd to be ready.
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
-            SSHSession::connect(&target, &ssh_key_path)
+            SSHSession::connect(&target, &ssh_key_path, self.config.api_port)
                 .await
                 .map_err(|e| WorkspaceError::Process(format!("SSH connect: {e}")))
         })?;
@@ -274,8 +277,11 @@ impl Workspace for SSHWorkspace {
                     .map_err(|e| WorkspaceError::Process(format!("write CA: {e}")))?;
                 Ok::<_, WorkspaceError>(())
             })?;
+            // Use host.docker.internal to reach the supervisor API from Docker.
+            // The API binds to 0.0.0.0 and mTLS protects it.
+            let api_port = self.config.api_port;
             format!(
-                "cd /project && export CLC_API_URL=https://localhost:{tunnel_port} && export CLC_API_CERT=/tmp/ws-cert.pem && export CLC_API_KEY=/tmp/ws-key.pem && export CLC_API_CA=/tmp/ws-ca.pem && nohup {start_cmd} > /tmp/agent.log 2>&1 & echo $!"
+                "cd /project && export CLC_API_URL=https://host.docker.internal:{api_port} && export CLC_API_CERT=/tmp/ws-cert.pem && export CLC_API_KEY=/tmp/ws-key.pem && export CLC_API_CA=/tmp/ws-ca.pem && nohup {start_cmd} > /tmp/agent.log 2>&1 & echo $!"
             )
         } else {
             format!("cd /project && {start_cmd}")

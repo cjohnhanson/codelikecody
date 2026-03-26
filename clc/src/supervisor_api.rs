@@ -64,7 +64,9 @@ pub async fn start(
         .route("/health", get(health))
         .with_state(state);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    // Bind to all interfaces so Docker containers can reach the API.
+    // mTLS ensures only clients with valid certs can connect.
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
 
     if let Some(tls) = tls_config {
         // mTLS server via axum-server + rustls.

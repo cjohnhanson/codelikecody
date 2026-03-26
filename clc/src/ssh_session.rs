@@ -18,7 +18,9 @@ pub struct SSHSession {
     target: SSHTarget,
 }
 
-struct SessionHandler;
+struct SessionHandler {
+    local_port: u16,
+}
 
 #[async_trait]
 impl client::Handler for SessionHandler {
@@ -28,19 +30,46 @@ impl client::Handler for SessionHandler {
         &mut self,
         _server_public_key: &key::PublicKey,
     ) -> Result<bool, Self::Error> {
-        // Accept all server keys — these are ephemeral containers we just created.
         Ok(true)
+    }
+
+    async fn server_channel_open_forwarded_tcpip(
+        &mut self,
+        channel: russh::Channel<russh::client::Msg>,
+        _connected_address: &str,
+        _connected_port: u32,
+        _originator_address: &str,
+        _originator_port: u32,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        let local_port = self.local_port;
+        eprintln!("reverse tunnel: incoming connection, forwarding to localhost:{local_port}");
+        tokio::spawn(async move {
+            match tokio::net::TcpStream::connect(format!("127.0.0.1:{local_port}")).await {
+                Ok(mut tcp) => {
+                    let mut stream = channel.into_stream();
+                    let _ = tokio::io::copy_bidirectional(&mut tcp, &mut stream).await;
+                }
+                Err(e) => {
+                    eprintln!("reverse tunnel: failed to connect to local port {local_port}: {e}");
+                }
+            }
+        });
+        Ok(())
     }
 }
 
 impl SSHSession {
     /// Connect to an SSH target using key-based auth.
+    /// Connect to an SSH target. `local_port` is the host port that
+    /// reverse-tunneled connections are forwarded to (0 to disable).
     pub async fn connect(
         target: &SSHTarget,
         private_key_path: &Path,
+        local_port: u16,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let config = Arc::new(client::Config::default());
-        let handler = SessionHandler;
+        let handler = SessionHandler { local_port };
 
         let mut session =
             client::connect(config, (target.host.as_str(), target.port), handler).await?;
@@ -70,9 +99,10 @@ impl SSHSession {
         remote_port: u16,
         _local_port: u16,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        self.session
+        let bound_port = self.session
             .tcpip_forward("127.0.0.1", remote_port.into())
             .await?;
+        eprintln!("ssh: tcpip_forward requested port {remote_port}, server bound port {bound_port}");
         Ok(())
     }
 

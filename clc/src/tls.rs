@@ -124,7 +124,10 @@ impl EphemeralCA {
         let client_verifier = WebPkiClientVerifier::builder(Arc::new(root_store)).build()?;
 
         // Server cert (self-signed, used for the TLS handshake).
-        let mut server_params = CertificateParams::new(vec!["localhost".to_string()])?;
+        let mut server_params = CertificateParams::new(vec![
+            "localhost".to_string(),
+            "host.docker.internal".to_string(),
+        ])?;
         server_params
             .distinguished_name
             .push(DnType::CommonName, "clc-supervisor-api");
