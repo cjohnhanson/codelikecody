@@ -552,6 +552,16 @@ fn cmd_workspace(action: &cli::WorkspaceAction) -> Result<(), Error> {
             let stderr_path = worker_dir.join("stderr.log");
             let stdin_pipe_path = worker_dir.join("stdin.pipe");
 
+            // Create and checkout the tisket branch so the worker starts
+            // on the right branch (not main). Hooks enforce branch-based
+            // phase constraints.
+            if git::current_branch(&cwd).as_deref() != Some(branch) {
+                crate::gix_ops::create_branch(&cwd, branch)?;
+                crate::gix_ops::checkout_branch(&cwd, branch)?;
+                // Set initial phase for the new branch.
+                crate::phase::set(&cwd, "tests-unwritten", 0)?;
+            }
+
             // Build prompts.
             let system_prompt = dispatch::build_system_prompt(branch);
             let initial_prompt = dispatch::build_worker_prompt_from_dir(&cwd, branch)?;

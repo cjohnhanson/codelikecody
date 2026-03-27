@@ -403,6 +403,23 @@ fn is_ephemeral_path(path: &gix::bstr::BStr) -> bool {
 }
 
 /// Switch HEAD to point to the given branch (without updating the worktree).
+/// Create a new branch pointing at HEAD.
+pub fn create_branch(project_dir: &Path, branch_name: &str) -> Result<(), Error> {
+    let repo = open(project_dir)?;
+    let head_id = repo
+        .head_id()
+        .map_err(|e| Error::NonBlocking(format!("failed to get HEAD: {e}")))?;
+    let ref_name = format!("refs/heads/{branch_name}");
+    repo.reference(
+        ref_name,
+        head_id.detach(),
+        gix::refs::transaction::PreviousValue::MustNotExist,
+        format!("branch: create {branch_name}"),
+    )
+    .map_err(|e| Error::NonBlocking(format!("create branch '{branch_name}': {e}")))?;
+    Ok(())
+}
+
 pub fn checkout_branch(project_dir: &Path, branch_name: &str) -> Result<(), Error> {
     let repo = open(project_dir)?;
     let ref_name = format!("refs/heads/{branch_name}");
