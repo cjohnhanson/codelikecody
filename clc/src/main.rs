@@ -568,8 +568,21 @@ fn cmd_workspace(action: &cli::WorkspaceAction) -> Result<(), Error> {
                 crate::gix_ops::create_branch(&cwd, branch)?;
                 crate::gix_ops::checkout_branch(&cwd, branch)?;
                 // Set initial phase — route through API if available.
+                // Retry briefly: the supervisor API may still be starting.
                 if let Some(url) = &api_url {
-                    crate::phase::init_phase_via_api(url, branch, "tests-unwritten")?;
+                    let mut set = false;
+                    for attempt in 0..5 {
+                        if attempt > 0 {
+                            std::thread::sleep(std::time::Duration::from_secs(2));
+                        }
+                        if crate::phase::init_phase_via_api(url, branch, "tests-unwritten").is_ok() {
+                            set = true;
+                            break;
+                        }
+                    }
+                    if !set {
+                        eprintln!("warning: could not set initial phase via API (may already exist)");
+                    }
                 } else {
                     crate::phase::init_phase_with_workflow(&cwd, "tests-unwritten", None)?;
                 }
