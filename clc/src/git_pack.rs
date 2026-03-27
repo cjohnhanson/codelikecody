@@ -452,6 +452,18 @@ fn checkout_tree(
                     .into_tree();
                 checkout_tree(repo, &subtree, &path)?;
             }
+            gix::objs::tree::EntryKind::Link => {
+                let obj = repo
+                    .find_object(entry.oid())
+                    .map_err(|e| Error::NonBlocking(format!("find link: {e}")))?;
+                let target = String::from_utf8_lossy(&obj.data);
+                #[cfg(unix)]
+                {
+                    let _ = std::fs::remove_file(&path);
+                    std::os::unix::fs::symlink(target.as_ref(), &path)
+                        .map_err(|e| Error::NonBlocking(format!("symlink {name}: {e}")))?;
+                }
+            }
             _ => {}
         }
     }
