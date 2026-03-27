@@ -56,20 +56,27 @@ correctly for the new tree entries.
 - `clc/src/main.rs` — workspace start creates+checkouts tisket branch, sets phase
 - `moose/src/native/mod.rs` — removed dangling test module declarations
 
-**Final verified state (2026-03-27 ~23:00):**
-- Full e2e: supervisor → coordinator → dispatch → worker → Claude running
-- Worker: correct branch, dirty: 0, tools working (Read, Bash confirmed)
-- Claude hit rate limit and looped — operational issue, not a code bug
-- Landing flow written but untested (needs completed worker to trigger)
+**Session 2 (2026-03-27 ~08:00):**
+- Merged 86or (workflow engine, bearer tokens, review system)
+- Built proper permission flow: phase guard → API grant check → escalation
+- Coordinator seeds baseline grants (BASELINE_TOOL_GRANTS) at dispatch via API
+- Phase init routes through API (no .clc/state file), retries on startup race
+- Worker exec sets mTLS cert env vars using step-4 deployed certs
+- Stop hook allows stopping when permission escalation pending
+- Verified: 24 grants seeded, phase set via API, Claude starts and uses tools
+- Claude stalled after ~200 tool calls — investigating clc infra instead of
+  doing assigned task. Likely hit a phase guard block, misinterpreted it,
+  went down a rabbit hole. Behavioral, not infrastructure.
+- Landing flow still untested (needs completed worker)
 
-**Next steps:**
-1. Re-run with fresh API quota — Claude should complete the tisket
-2. Verify landing: supervisor fetches tar from worker, imports, ff-merges to trunk
-3. Test restart resilience with the tar approach
+**Current blocker:** Claude doesn't focus on assigned task. Gets confused by
+hook injection context and permission blocks, investigates infra instead of
+writing the simple tests. May need prompt tuning or simpler phase config
+for the test tisket.
 
 **Test tisket:** `8z9n` — add unit tests for tisket Status methods (labeled clc-up-target)
 
-**20 commits on qgsj branch** — original URL fix grew into full clc up pipeline:
+**~30 commits on qgsj branch** — original URL fix grew into full clc up pipeline:
 coordinator API connectivity, workspace retention, stale agent cleanup,
 worker launcher, landing flow, OAuth token passing, branch creation,
 and replacing the custom pack format with tar of .git directory.
