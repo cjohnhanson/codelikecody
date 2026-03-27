@@ -3,7 +3,7 @@ env:
 
 setup:
   - name: "link clc binary"
-    command: "mkdir -p .missouri/bin && ln -sf $(cd ../.. && pwd)/target/debug/clc .missouri/bin/clc"
+    command: "mkdir -p .missouri/bin && ln -sf $(cd ../../.. && pwd)/target/debug/clc .missouri/bin/clc"
 
 packages:
   - git
