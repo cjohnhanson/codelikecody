@@ -598,6 +598,10 @@ fn find_undispatched(
         .list_agents(Some(&scope.id))
         .unwrap_or_default()
         .into_iter()
+        .filter(|(_, s)| matches!(s,
+            clc_sdk::coordination::AgentStatus::Running
+            | clc_sdk::coordination::AgentStatus::Pending
+        ))
         .map(|(id, _)| id)
         .collect();
 
