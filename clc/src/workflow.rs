@@ -253,7 +253,6 @@ impl Workflow {
     }
 
     /// Review types required for a specific transition.
-    #[allow(dead_code)] // Consumed by review gate runtime, not yet implemented
     pub fn transition_requires(&self, from: &str, to: &str) -> Option<&[String]> {
         let phase = self.phase_def(from)?;
         let transitions = phase.transitions.as_ref()?;

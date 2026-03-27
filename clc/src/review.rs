@@ -14,7 +14,6 @@ fn open_coordination(cwd: &Path) -> Result<Coordination, Error> {
         .map_err(|e| Error::NonBlocking(format!("coordination: {e}")))
 }
 
-#[allow(dead_code)] // Used by check_review_requirements
 fn recv_messages(
     coord: &Coordination,
     agent_id: &str,
@@ -142,7 +141,6 @@ pub fn request_changes(cwd: &Path, comments: &str) -> Result<(), Error> {
 
 /// Check if all required review types for a transition have passing verdicts.
 /// Returns Ok(()) if all reviews pass, or Err with details about what's missing.
-#[allow(dead_code)] // Consumed by transition gating in upcoming commit
 pub fn check_review_requirements(
     cwd: &Path,
     worker_id: &str,

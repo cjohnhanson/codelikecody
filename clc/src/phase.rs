@@ -166,6 +166,16 @@ pub fn set_with_workflow(
 
     let is_forward = current_name.map_or(true, |c| !workflow.is_backward(c, target));
 
+    // Review gating: if this forward transition requires reviews, check for approvals.
+    if is_forward {
+        if let Some(current) = current_name {
+            if let Some(required) = workflow.transition_requires(current, target) {
+                let worker_id = crate::git::current_branch(project_dir).unwrap_or_default();
+                crate::review::check_review_requirements(project_dir, &worker_id, required)?;
+            }
+        }
+    }
+
     // Attempt gating: only applies to forward transitions from an existing phase.
     if is_forward && required_attempts > 1 && raw_state.is_some() {
         let current_attempts = raw_state.as_ref().map_or(0, |s| s.attempts);
