@@ -21,21 +21,17 @@ impl ProgressReporter {
 
     pub fn on_event(&self, event: ProgressEvent) {
         match event {
-            ProgressEvent::PathStarted {
-                index, display, ..
-            } => {
-                eprint!("[{}/{}] {display} ...", index + 1, self.total);
-                let _ = io::stderr().flush();
-            }
-            ProgressEvent::PathFinished { index: _, passed } => {
-                if passed {
-                    eprintln!(" \x1b[32m✓\x1b[0m");
+            ProgressEvent::PathStarted { .. } => {}
+            ProgressEvent::PathFinished { index, passed } => {
+                let icon = if passed {
+                    "\x1b[32m✓\x1b[0m"
                 } else {
-                    eprintln!(" \x1b[31m✗\x1b[0m");
-                }
+                    "\x1b[31m✗\x1b[0m"
+                };
+                eprintln!("{icon} [{}/{}]", index + 1, self.total);
             }
             ProgressEvent::Interrupted => {
-                eprintln!("\ninterrupted");
+                eprintln!("interrupted");
             }
         }
     }
