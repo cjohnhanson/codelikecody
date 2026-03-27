@@ -155,12 +155,9 @@ impl Workspace for SSHWorkspace {
         // 6. Create git pack on the host and pipe it to the workspace
         //    via clc workspace receive. Pack created by gix, served as JSON
         //    with base64-encoded pack data + refs.
-        // Coordinators (custom start_command) run on main; workers run on their branch.
-        let branch_name = if self.config.start_command.is_some() {
-            self.config.workspace_config.main_branch.clone()
-        } else {
-            self.config.workspace_config.tisket_id.clone()
-        };
+        // Always transfer main branch. Workers create their tisket branch
+        // inside the container via `clc workspace start --branch <id>`.
+        let branch_name = self.config.workspace_config.main_branch.clone();
         let pack_data = crate::git_pack::create_pack(
             &self.config.workspace_config.project_dir,
             &branch_name,
@@ -249,7 +246,7 @@ impl Workspace for SSHWorkspace {
                 self.config.workspace_config.agent_config.model.clone(),
             ];
 
-            let api_url = format!("https://localhost:{tunnel_port}");
+            let api_url = format!("https://host.docker.internal:{}", self.config.api_port);
             args.push("--api-url".to_string());
             args.push(api_url);
 

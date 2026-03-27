@@ -25,11 +25,21 @@ struct CoordinatorState {
     _workspace: Option<crate::ssh_workspace::SSHWorkspace>,
 }
 
+struct WorkerState {
+    tisket_id: String,
+    #[allow(dead_code)]
+    coordinator_id: String,
+    #[allow(dead_code)]
+    model: String,
+    _workspace: Option<crate::ssh_workspace::SSHWorkspace>,
+}
+
 pub struct Supervisor {
     project_dir: PathBuf,
     main_branch: String,
     admin_branch: String,
     coordinators: Vec<CoordinatorState>,
+    workers: Vec<WorkerState>,
     poll_interval: Duration,
     shutdown: Arc<AtomicBool>,
 }
@@ -58,6 +68,7 @@ impl Supervisor {
             main_branch: main_branch.to_string(),
             admin_branch: admin_branch.to_string(),
             coordinators,
+            workers: Vec::new(),
             poll_interval: Duration::from_secs(config.poll_interval),
             shutdown: Arc::new(AtomicBool::new(false)),
         }
@@ -215,6 +226,11 @@ impl Supervisor {
                     all_done = false;
                 }
             }
+
+            // Start pending workers. Coordinators dispatch via POST /dispatch
+            // which registers the agent as Pending. The supervisor picks up
+            // pending workers here and starts Docker workspaces for them.
+            self.start_pending_workers(&coord);
 
             // Surface escalations.
             if let Ok(escalations) = coord.pending_permissions("admin") {
@@ -464,6 +480,150 @@ impl Supervisor {
             c.scope.id, c.resume_count, c.max_resumes
         );
         self.start_coordinator(idx);
+    }
+
+    /// Poll DB for Pending agents that aren't coordinators and start workspaces.
+    fn start_pending_workers(&mut self, coord: &Coordination) {
+        let all_agents = coord.list_agents(None).unwrap_or_default();
+        let coordinator_ids: Vec<String> = self.coordinators.iter().map(|c| c.scope.id.clone()).collect();
+        let already_launched: Vec<String> = self.workers.iter().map(|w| w.tisket_id.clone()).collect();
+
+        // Collect work items first to avoid borrow conflicts with self.
+        let mut to_launch: Vec<(String, String, String, String)> = Vec::new();
+
+        for (id, status) in &all_agents {
+            if *status != clc_sdk::coordination::AgentStatus::Pending {
+                continue;
+            }
+            if id == "supervisor" || coordinator_ids.iter().any(|cid| cid == id) {
+                continue;
+            }
+            if already_launched.iter().any(|wid| wid == id) {
+                continue;
+            }
+
+            // Find which coordinator owns this worker to get config.
+            let parent_scope = self.coordinators.iter().find(|c| {
+                coord
+                    .list_agents(Some(&c.scope.id))
+                    .unwrap_or_default()
+                    .iter()
+                    .any(|(aid, _)| aid == id)
+            });
+
+            match parent_scope {
+                Some(c) => {
+                    let image = c.scope.docker_image.as_deref().unwrap_or("clc-worker:latest").to_string();
+                    to_launch.push((id.clone(), c.scope.model.clone(), image, c.scope.id.clone()));
+                }
+                None => {
+                    eprintln!("supervisor: pending worker '{id}' has no parent coordinator");
+                }
+            }
+        }
+
+        for (tisket_id, model, image, coordinator_id) in to_launch {
+            eprintln!("supervisor: starting worker '{tisket_id}' (image: {image})");
+            self.start_worker_docker(&tisket_id, &model, &image, &coordinator_id, coord);
+        }
+    }
+
+    /// Start a worker inside a Docker container.
+    fn start_worker_docker(
+        &mut self,
+        tisket_id: &str,
+        model: &str,
+        image: &str,
+        coordinator_id: &str,
+        coord: &Coordination,
+    ) {
+        use crate::ssh_workspace::{DockerEnvironment, SSHWorkspace, SSHWorkspaceConfig};
+        use clc_sdk::agent::AgentConfig;
+        use clc_sdk::workspace::{Workspace, WorkspaceConfig};
+
+        let tunnel_port = 19200 + self.coordinators.len() as u16 + self.workers.len() as u16;
+
+        let ca_cert_path = self.project_dir.join(".clc").join("ca-cert.pem");
+        let ca_key_path = self.project_dir.join(".clc").join("ca-key.pem");
+        let ca = match (
+            std::fs::read_to_string(&ca_cert_path),
+            std::fs::read_to_string(&ca_key_path),
+        ) {
+            (Ok(cert_pem), Ok(key_pem)) => {
+                match crate::tls::EphemeralCA::from_pem(&cert_pem, &key_pem) {
+                    Ok(ca) => std::sync::Arc::new(ca),
+                    Err(e) => {
+                        eprintln!("supervisor: CA load failed for worker '{tisket_id}': {e}");
+                        let _ = coord.set_status(tisket_id, clc_sdk::coordination::AgentStatus::Failed);
+                        return;
+                    }
+                }
+            }
+            _ => {
+                eprintln!("supervisor: CA files not found for worker '{tisket_id}'");
+                let _ = coord.set_status(tisket_id, clc_sdk::coordination::AgentStatus::Failed);
+                return;
+            }
+        };
+
+        let env = match DockerEnvironment::new(image, &self.project_dir, tisket_id) {
+            Ok(env) => env,
+            Err(e) => {
+                eprintln!("supervisor: docker env failed for worker '{tisket_id}': {e}");
+                let _ = coord.set_status(tisket_id, clc_sdk::coordination::AgentStatus::Failed);
+                return;
+            }
+        };
+
+        // Read the oauth token from the environment (set when clc up was invoked).
+        let oauth_token = std::env::var("CLC_CLAUDE_CODE_OAUTH_TOKEN")
+            .or_else(|_| std::env::var("CLAUDE_CODE_OAUTH_TOKEN"))
+            .ok();
+
+        let ws_config = WorkspaceConfig {
+            agent_config: AgentConfig {
+                model: model.to_string(),
+                system_prompt: String::new(),
+                initial_prompt: String::new(),
+                extra_args: vec![],
+            },
+            tisket_id: tisket_id.to_string(),
+            project_dir: self.project_dir.clone(),
+            main_branch: self.main_branch.clone(),
+        };
+
+        let ssh_config = SSHWorkspaceConfig {
+            workspace_config: ws_config,
+            ca,
+            api_port: 19100,
+            oauth_token,
+            start_command: None, // Workers use default clc workspace start
+        };
+
+        let mut workspace = match SSHWorkspace::new(ssh_config, Box::new(env), tunnel_port) {
+            Ok(ws) => ws,
+            Err(e) => {
+                eprintln!("supervisor: SSH workspace failed for worker '{tisket_id}': {e}");
+                let _ = coord.set_status(tisket_id, clc_sdk::coordination::AgentStatus::Failed);
+                return;
+            }
+        };
+
+        match workspace.start() {
+            Ok(()) => {
+                eprintln!("supervisor: worker '{tisket_id}' started in Docker");
+                self.workers.push(WorkerState {
+                    tisket_id: tisket_id.to_string(),
+                    coordinator_id: coordinator_id.to_string(),
+                    model: model.to_string(),
+                    _workspace: Some(workspace),
+                });
+            }
+            Err(e) => {
+                eprintln!("supervisor: docker start failed for worker '{tisket_id}': {e}");
+                let _ = coord.set_status(tisket_id, clc_sdk::coordination::AgentStatus::Failed);
+            }
+        }
     }
 }
 
