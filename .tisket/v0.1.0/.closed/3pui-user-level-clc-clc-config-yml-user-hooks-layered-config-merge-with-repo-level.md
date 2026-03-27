@@ -1,12 +1,12 @@
 ---
 title: "user-level clc: ~/.clc/config.yml, user hooks, layered config merge with repo-level"
-status: in_progress
+status: done
 priority: 2
 assignee:
 labels: [clc, architecture]
 depends_on: []
 created: 2026-03-26T23:14:19Z
-updated: "2026-03-26T23:15:29Z"
+updated: "2026-03-27T01:54:26Z"
 ---
 
 ## Problem
