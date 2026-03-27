@@ -759,6 +759,7 @@ fn kind_to_payload(kind: &clc_sdk::coordination::MessageKind) -> serde_json::Val
 #[cfg(test)]
 mod tests {
     use super::*;
+
     /// Start a plain-HTTP test API server backed by in-memory SQLite.
     fn start_test_api() -> (String, std::thread::JoinHandle<()>) {
         let (tx, rx) = std::sync::mpsc::channel();

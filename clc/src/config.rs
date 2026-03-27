@@ -51,11 +51,116 @@ struct TomlFile {
 
 // --- Workflow policy types ---
 
-/// A named sequence of TDD phases for a workflow.
+/// Permission rules for a workflow phase or review.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct PermissionsDef {
+    #[serde(default)]
+    pub allow: Vec<String>,
+    #[serde(default)]
+    pub deny: Vec<String>,
+}
+
+/// A transition target — either a bare phase name or a rich object with review gates.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum TransitionDef {
+    Simple(String),
+    Rich {
+        target: String,
+        #[serde(default)]
+        requires: Vec<String>,
+    },
+}
+
+impl TransitionDef {
+    /// The target phase name regardless of variant.
+    #[allow(dead_code)] // Used by workflow engine (workflow.rs) in next step
+    pub fn target(&self) -> &str {
+        match self {
+            Self::Simple(s) => s,
+            Self::Rich { target, .. } => target,
+        }
+    }
+
+    /// Review types required for this transition, if any.
+    #[allow(dead_code)] // Used by workflow engine (workflow.rs) in next step
+    pub fn requires(&self) -> &[String] {
+        match self {
+            Self::Simple(_) => &[],
+            Self::Rich { requires, .. } => requires,
+        }
+    }
+}
+
+/// A single phase definition in a workflow.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PhaseDef {
+    pub name: String,
+    #[serde(default)]
+    pub instructions: Option<String>,
+    #[serde(default)]
+    pub nudge: Option<String>,
+    #[serde(default)]
+    pub can_stop: bool,
+    #[serde(default)]
+    pub permissions: Option<PermissionsDef>,
+    #[serde(default)]
+    pub transitions: Option<Vec<TransitionDef>>,
+}
+
+/// Wrapper that allows a phase to be specified as either a bare string (name only)
+/// or a full object. Used for backward compatibility with `phases = ["foo", "bar"]`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+enum PhaseDefOrString {
+    Full(PhaseDef),
+    Name(String),
+}
+
+impl From<PhaseDefOrString> for PhaseDef {
+    fn from(val: PhaseDefOrString) -> Self {
+        match val {
+            PhaseDefOrString::Full(p) => p,
+            PhaseDefOrString::Name(name) => PhaseDef {
+                name,
+                instructions: None,
+                nudge: None,
+                can_stop: false,
+                permissions: None,
+                transitions: None,
+            },
+        }
+    }
+}
+
+/// A review type definition.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct ReviewDef {
+    #[serde(default)]
+    pub instructions: Option<String>,
+    #[serde(default)]
+    pub permissions: Option<PermissionsDef>,
+}
+
+/// A named workflow: description, phase graph, and review types.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct WorkflowDef {
     #[serde(default)]
-    pub phases: Vec<String>,
+    pub description: Option<String>,
+
+    #[serde(default, deserialize_with = "deserialize_phases")]
+    pub phases: Vec<PhaseDef>,
+
+    #[serde(default)]
+    pub reviews: HashMap<String, ReviewDef>,
+}
+
+fn deserialize_phases<'de, D>(deserializer: D) -> Result<Vec<PhaseDef>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw: Vec<PhaseDefOrString> = Vec::deserialize(deserializer)?;
+    Ok(raw.into_iter().map(PhaseDef::from).collect())
 }
 
 /// Match criteria for a workflow policy rule.
@@ -227,7 +332,8 @@ impl Config {
     }
 }
 
-static DEFAULT_WORKFLOW_DEF: WorkflowDef = WorkflowDef { phases: Vec::new() };
+static DEFAULT_WORKFLOW_DEF: std::sync::LazyLock<WorkflowDef> =
+    std::sync::LazyLock::new(WorkflowDef::default);
 
 impl Default for Config {
     fn default() -> Self {
@@ -733,6 +839,153 @@ mod tests {
         let yaml_str = serde_yml::to_string(&config).unwrap();
         assert!(yaml_str.contains("main_branch: trunk"), "expected YAML format but got: {yaml_str}");
         assert!(!yaml_str.contains("main_branch = "), "expected YAML not TOML but got: {yaml_str}");
+    }
+
+    // --- Workflow config tests ---
+
+    #[test]
+    fn parse_workflow_with_full_phase_objects() {
+        let yaml = r#"
+workflows:
+  tdd:
+    description: "Test-driven development"
+    phases:
+      - name: tests-unwritten
+        instructions: "Write failing tests."
+        transitions: [tests-written]
+        permissions:
+          allow: ["Edit(tests/**)"]
+          deny: ["Edit", "Write"]
+      - name: tests-written
+        transitions: [implementing]
+      - name: implementing
+        nudge: "Run tests."
+        transitions: [green]
+      - name: green
+        can_stop: true
+        transitions:
+          - implementing
+          - target: done
+            requires: [code]
+      - name: done
+    reviews:
+      code:
+        instructions: "Review for correctness."
+        permissions:
+          allow: ["Bash(cargo test *)"]
+          deny: ["Edit", "Write", "Bash"]
+"#;
+        let config: Config = serde_yml::from_str(yaml).unwrap();
+        let wf = &config.workflows["tdd"];
+        assert_eq!(wf.description.as_deref(), Some("Test-driven development"));
+        assert_eq!(wf.phases.len(), 5);
+        assert_eq!(wf.phases[0].name, "tests-unwritten");
+        assert_eq!(
+            wf.phases[0].instructions.as_deref(),
+            Some("Write failing tests.")
+        );
+        assert!(wf.phases[0].permissions.is_some());
+        let perms = wf.phases[0].permissions.as_ref().unwrap();
+        assert_eq!(perms.allow, vec!["Edit(tests/**)"]);
+        assert_eq!(perms.deny, vec!["Edit", "Write"]);
+
+        // Simple transition
+        let t = wf.phases[0].transitions.as_ref().unwrap();
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].target(), "tests-written");
+        assert!(t[0].requires().is_empty());
+
+        // Rich transition with requires
+        let green_t = wf.phases[3].transitions.as_ref().unwrap();
+        assert_eq!(green_t.len(), 2);
+        assert_eq!(green_t[0].target(), "implementing");
+        assert_eq!(green_t[1].target(), "done");
+        assert_eq!(green_t[1].requires(), &["code".to_string()]);
+
+        // Terminal phase (no transitions)
+        assert!(wf.phases[4].transitions.is_none());
+
+        // can_stop
+        assert!(wf.phases[3].can_stop);
+        assert!(!wf.phases[0].can_stop);
+
+        // nudge
+        assert_eq!(wf.phases[2].nudge.as_deref(), Some("Run tests."));
+
+        // Reviews
+        let review = &wf.reviews["code"];
+        assert_eq!(review.instructions.as_deref(), Some("Review for correctness."));
+        let rperms = review.permissions.as_ref().unwrap();
+        assert_eq!(rperms.allow, vec!["Bash(cargo test *)"]);
+    }
+
+    #[test]
+    fn parse_workflow_with_plain_string_phases() {
+        let toml = r#"
+[workflows.default]
+phases = ["tests-unwritten", "tests-written", "red", "implementing", "green"]
+"#;
+        let config: Config = toml::from_str::<TomlFile>(toml).unwrap().into();
+        let wf = &config.workflows["default"];
+        assert_eq!(wf.phases.len(), 5);
+        assert_eq!(wf.phases[0].name, "tests-unwritten");
+        assert_eq!(wf.phases[4].name, "green");
+        // All fields default
+        assert!(wf.phases[0].instructions.is_none());
+        assert!(wf.phases[0].transitions.is_none());
+        assert!(!wf.phases[0].can_stop);
+    }
+
+    #[test]
+    fn parse_workflow_empty_phases_default() {
+        let yaml = "workflows:\n  empty: {}\n";
+        let config: Config = serde_yml::from_str(yaml).unwrap();
+        let wf = &config.workflows["empty"];
+        assert!(wf.phases.is_empty());
+        assert!(wf.reviews.is_empty());
+        assert!(wf.description.is_none());
+    }
+
+    #[test]
+    fn resolve_workflow_matches_label() {
+        let yaml = r#"
+workflows:
+  docs:
+    description: "docs workflow"
+    phases:
+      - name: draft
+        transitions: [done]
+      - name: done
+  default:
+    phases:
+      - name: working
+        transitions: [done]
+      - name: done
+rules:
+  - workflow: docs
+    match:
+      label: docs
+"#;
+        let config: Config = serde_yml::from_str(yaml).unwrap();
+        let wf = config.resolve_workflow(&["docs".into()], "v0.1.0");
+        assert_eq!(wf.description.as_deref(), Some("docs workflow"));
+
+        let wf_default = config.resolve_workflow(&["feature".into()], "v0.1.0");
+        assert_eq!(wf_default.phases[0].name, "working");
+    }
+
+    #[test]
+    fn transition_def_target_and_requires() {
+        let simple = TransitionDef::Simple("foo".into());
+        assert_eq!(simple.target(), "foo");
+        assert!(simple.requires().is_empty());
+
+        let rich = TransitionDef::Rich {
+            target: "bar".into(),
+            requires: vec!["code".into(), "security".into()],
+        };
+        assert_eq!(rich.target(), "bar");
+        assert_eq!(rich.requires().len(), 2);
     }
 
     // --- Skills config tests ---

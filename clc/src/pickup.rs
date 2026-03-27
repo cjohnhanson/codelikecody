@@ -94,7 +94,7 @@ pub fn pickup(
         "tests-unwritten"
     } else {
         let workflow = config.resolve_workflow(&issue.frontmatter.labels, &issue.project);
-        workflow.phases.first().map(|s| s.as_str()).unwrap_or("done")
+        workflow.phases.first().map(|p| p.name.as_str()).unwrap_or("done")
     };
 
     crate::phase::init_phase(&worktree_dir, initial_phase)?;
