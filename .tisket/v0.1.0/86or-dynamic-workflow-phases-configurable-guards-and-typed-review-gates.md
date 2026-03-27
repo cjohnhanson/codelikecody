@@ -3,10 +3,10 @@ title: "Dynamic workflow phases, configurable guards, and typed review gates"
 status: todo
 priority: 2
 assignee:
-labels: [clc, architecture, clc-up-target]
+labels: [clc, architecture]
 depends_on: []
 created: 2026-03-23T04:27:05Z
-updated: "2026-03-27T01:33:39Z"
+updated: "2026-03-27T02:31:35Z"
 ---
 
 ## Problem
