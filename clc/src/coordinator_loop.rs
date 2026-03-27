@@ -384,7 +384,7 @@ fn tick(
         }
     }
 
-    // 3. Resume stopped workers (unless they have a pending permission request).
+    // 3. Handle pending reviews for stopped workers, then resume.
     for (id, status) in &agents {
         if *status == clc_sdk::coordination::AgentStatus::Stopped
             || *status == clc_sdk::coordination::AgentStatus::Failed
@@ -392,6 +392,45 @@ fn tick(
             if crate::permissions::pending_request(project_dir, id).is_some() {
                 continue;
             }
+
+            // Check for pending review requests before resuming.
+            match crate::review::pending_review_types(project_dir, id) {
+                Ok(pending_reviews) if !pending_reviews.is_empty() => {
+                    // Spawn reviewers for each pending review type.
+                    let cfg = crate::config::load(project_dir).unwrap_or_default();
+                    let workflow = {
+                        let worktree_dir = project_dir.join(".worktrees").join(id);
+                        let wf_name =
+                            crate::phase::load_workflow_name(&worktree_dir).unwrap_or(None);
+                        wf_name
+                            .as_ref()
+                            .and_then(|name| cfg.workflows.get(name))
+                            .and_then(|def| crate::workflow::Workflow::new(def).ok())
+                            .unwrap_or_else(crate::workflow::Workflow::default_tdd)
+                    };
+
+                    for review_type in &pending_reviews {
+                        eprintln!(
+                            "coordinator '{}': spawning '{review_type}' reviewer for '{id}'",
+                            scope.id
+                        );
+                        match crate::review::spawn_reviewer(project_dir, id, review_type, &workflow)
+                        {
+                            Ok(pid) => eprintln!(
+                                "coordinator '{}': reviewer pid {pid} for '{id}'",
+                                scope.id
+                            ),
+                            Err(e) => eprintln!(
+                                "coordinator '{}': reviewer spawn failed for '{id}': {e}",
+                                scope.id
+                            ),
+                        }
+                    }
+                    continue; // Don't resume worker yet — wait for reviews.
+                }
+                _ => {}
+            }
+
             eprintln!("coordinator '{}': resuming '{id}'", scope.id);
             match crate::worker::resume(project_dir, id) {
                 Ok(()) => {}

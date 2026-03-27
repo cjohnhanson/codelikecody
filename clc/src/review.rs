@@ -6,6 +6,8 @@
 
 use std::path::Path;
 
+use clc_sdk::agent::Agent;
+
 use crate::coordination::Coordination;
 use crate::error::Error;
 
@@ -181,6 +183,144 @@ pub fn check_review_requirements(
             missing.join(", ")
         )))
     }
+}
+
+/// Spawn a reviewer session in the given worktree.
+///
+/// Creates a fresh claude process with `CLC_REVIEW_TYPE` and `CLC_REVIEWER_ID`
+/// env vars set. The reviewer runs, renders a verdict, and exits.
+/// Returns the reviewer process PID.
+pub fn spawn_reviewer(
+    project_dir: &Path,
+    worker_id: &str,
+    review_type: &str,
+    workflow: &crate::workflow::Workflow,
+) -> Result<u32, Error> {
+    let worktree_dir = project_dir.join(".worktrees").join(worker_id);
+    if !worktree_dir.is_dir() {
+        return Err(Error::NonBlocking(format!(
+            "no worktree for worker '{worker_id}'"
+        )));
+    }
+
+    let reviewer_id = format!("{worker_id}-reviewer-{review_type}");
+
+    // Build the review prompt.
+    let review_def = workflow.review_def(review_type);
+    let instructions = review_def
+        .and_then(|r| r.instructions.as_deref())
+        .unwrap_or("Review the work in this worktree and render a verdict.");
+
+    let prompt = format!(
+        "You are a reviewer agent performing a '{review_type}' review of worker '{worker_id}'.\n\n\
+         {instructions}\n\n\
+         Examine the code, tests, and changes. When done, render your verdict:\n\
+         - `clc review approve \"comments\"` to approve\n\
+         - `clc review request-changes \"what needs to change\"` to request changes\n\n\
+         You must render exactly one verdict before stopping."
+    );
+
+    // Build the agent command.
+    let agent = clc_sdk::agent::ClaudeCodeAgent::new();
+    let config = clc_sdk::agent::AgentConfig {
+        model: "sonnet".to_string(),
+        system_prompt: format!(
+            "You are a reviewer agent. Review type: {review_type}. \
+             Render a verdict with `clc review approve` or `clc review request-changes`. \
+             Do not modify any files."
+        ),
+        initial_prompt: String::new(), // Sent via spawn_agent_process
+        extra_args: vec![],
+    };
+
+    let mut cmd = agent
+        .build_start_command(&config, &worktree_dir)
+        .map_err(|e| Error::NonBlocking(format!("failed to build reviewer command: {e}")))?;
+
+    // Set reviewer env vars.
+    cmd.env("CLC_REVIEW_TYPE", review_type);
+    cmd.env("CLC_REVIEWER_ID", &reviewer_id);
+
+    // Seed reviewer permissions into the worktree's settings.
+    // The reviewer needs read-only tools plus verdict commands.
+    let mut allow = vec![
+        "Bash(clc review *)".to_string(),
+        "Read".to_string(),
+        "Glob".to_string(),
+        "Grep".to_string(),
+    ];
+    let mut deny = vec![
+        "Edit".to_string(),
+        "Write".to_string(),
+        "NotebookEdit".to_string(),
+    ];
+    if let Some(ref perms) = review_def.and_then(|r| r.permissions.as_ref()) {
+        allow.extend(perms.allow.iter().cloned());
+        deny.extend(perms.deny.iter().cloned());
+    }
+    crate::permissions::seed_defaults(&worktree_dir, &allow, &deny)?;
+
+    // Spawn in a reviewer-specific state directory (not the worker's).
+    let reviewer_dir = project_dir
+        .join(".clc")
+        .join("reviewers")
+        .join(&reviewer_id);
+
+    let pid = crate::dispatch::spawn_agent_process(cmd, &reviewer_dir, &prompt)?;
+
+    eprintln!(
+        "spawned reviewer '{reviewer_id}' (pid {pid}) for worker '{worker_id}', type '{review_type}'"
+    );
+
+    Ok(pid)
+}
+
+/// Check if a reviewer session has pending review requests for a given worker.
+/// Returns the review types that have been requested but not yet resolved.
+pub fn pending_review_types(
+    cwd: &Path,
+    worker_id: &str,
+) -> Result<Vec<String>, Error> {
+    let coord = open_coordination(cwd)?;
+
+    // Get all messages from the worker to the coordinator.
+    let (msgs, _) = coord
+        .recv("coordinator", &clc_sdk::coordination::Cursor::default())
+        .map_err(|e| Error::NonBlocking(format!("coordination recv: {e}")))?;
+
+    // Find review requests from this worker.
+    let requested: Vec<String> = msgs
+        .iter()
+        .filter(|m| m.from == worker_id)
+        .filter_map(|m| match &m.kind {
+            clc_sdk::coordination::MessageKind::ReviewRequest { review_type, .. } => {
+                Some(review_type.clone())
+            }
+            _ => None,
+        })
+        .collect();
+
+    if requested.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // Check which ones have been resolved (have a ReviewResult).
+    let worker_msgs = recv_messages(&coord, worker_id)?;
+    let approved: Vec<String> = worker_msgs
+        .iter()
+        .filter_map(|m| match &m.kind {
+            clc_sdk::coordination::MessageKind::ReviewResult { review_type, .. } => {
+                Some(review_type.clone())
+            }
+            _ => None,
+        })
+        .collect();
+
+    // Return types that are requested but not yet resolved.
+    Ok(requested
+        .into_iter()
+        .filter(|rt| !approved.contains(rt))
+        .collect())
 }
 
 #[cfg(test)]

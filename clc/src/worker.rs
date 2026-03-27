@@ -519,6 +519,17 @@ pub fn supervise(project_dir: &Path, id: &str, max_resumes: u32) -> Result<(), E
             )));
         }
 
+        // Block on pending review requests — reviewer must complete first.
+        if let Ok(pending) = crate::review::pending_review_types(project_dir, id) {
+            if !pending.is_empty() {
+                return Err(Error::NonBlocking(format!(
+                    "worker '{id}' has pending reviews: {}\n\
+                     Reviews must complete before the worker can be resumed.",
+                    pending.join(", ")
+                )));
+            }
+        }
+
         let phase_str = phase_name.as_deref().unwrap_or("none");
 
         if resumes >= max_resumes {
