@@ -575,10 +575,14 @@ impl Supervisor {
             }
         };
 
-        // Read the oauth token from the environment (set when clc up was invoked).
+        // Read the oauth token: env var first, then ~/.claude/token.
         let oauth_token = std::env::var("CLC_CLAUDE_CODE_OAUTH_TOKEN")
             .or_else(|_| std::env::var("CLAUDE_CODE_OAUTH_TOKEN"))
-            .ok();
+            .ok()
+            .or_else(|| {
+                let token_path = dirs::home_dir()?.join(".claude").join("token");
+                std::fs::read_to_string(token_path).ok().map(|t| t.trim().to_string())
+            });
 
         let ws_config = WorkspaceConfig {
             agent_config: AgentConfig {
