@@ -17,7 +17,12 @@ pub struct ApiClient {
 
 impl ApiClient {
     pub fn new(base_url: &str) -> Result<Self, CoordinationError> {
-        let rt = tokio::runtime::Builder::new_current_thread()
+        // Multi-thread runtime so reqwest's connection pool background tasks
+        // (HTTP/2 keep-alive, flow control) run between block_on() calls.
+        // A current_thread runtime only polls during block_on(), causing
+        // connections to go stale between sequential API calls.
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
             .enable_all()
             .build()
             .map_err(|e| CoordinationError::Storage(format!("tokio: {e}")))?;

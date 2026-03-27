@@ -242,6 +242,9 @@ pub fn run(
     let mut session = CoordinatorSession::new(&scope.model, project_dir);
 
     eprintln!("coordinator '{}' started (poll every {poll_interval:?})", scope.id);
+    // Flush stderr — when redirected to a file (Docker), eprintln output is
+    // fully buffered and may not appear until the process exits.
+    let _ = std::io::Write::flush(&mut std::io::stderr());
 
     loop {
         match tick(project_dir, main_branch, admin_branch, scope, worker_perm_defaults, worker_perm_deny, &coord, &mut session) {
@@ -255,6 +258,7 @@ pub fn run(
                 eprintln!("coordinator '{}' tick error: {e}", scope.id);
             }
         }
+        let _ = std::io::Write::flush(&mut std::io::stderr());
 
         thread::sleep(poll_interval);
     }
