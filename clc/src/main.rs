@@ -558,6 +558,13 @@ fn cmd_workspace(action: &cli::WorkspaceAction) -> Result<(), Error> {
             if git::current_branch(&cwd).as_deref() != Some(branch) {
                 crate::gix_ops::create_branch(&cwd, branch)?;
                 crate::gix_ops::checkout_branch(&cwd, branch)?;
+                // Reset working tree to match HEAD. The git pack unpack
+                // doesn't fully reconcile the index, leaving phantom
+                // deletions that confuse the worker.
+                let _ = std::process::Command::new("git")
+                    .args(["checkout", "--", "."])
+                    .current_dir(&cwd)
+                    .output();
                 // Set initial phase for the new branch.
                 crate::phase::set(&cwd, "tests-unwritten", 0)?;
             }
