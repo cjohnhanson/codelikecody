@@ -274,21 +274,24 @@ impl Workspace for SSHWorkspace {
         // coordinator-run is long-running; background it so exec returns.
         // clc workspace start already daemonizes. Both keep the SSH session
         // alive via the reverse tunnel held by the supervisor.
+        // Both coordinators and workers need mTLS certs to talk to the
+        // supervisor API. Write cert files for the exec env vars.
+        // (The workspace-cert/key/ca-cert files at /tmp/ are for hooks;
+        // ws-cert/key/ca are for the process being started here.)
+        self.rt.block_on(async {
+            session.write_file("/tmp/ws-cert.pem", &cert.cert_pem).await
+                .map_err(|e| WorkspaceError::Process(format!("write cert: {e}")))?;
+            session.write_file("/tmp/ws-key.pem", &cert.key_pem).await
+                .map_err(|e| WorkspaceError::Process(format!("write key: {e}")))?;
+            session.write_file("/tmp/ws-ca.pem", &self.config.ca.ca_cert_pem).await
+                .map_err(|e| WorkspaceError::Process(format!("write CA: {e}")))?;
+            Ok::<_, WorkspaceError>(())
+        })?;
+
         let exec_cmd = if self.config.start_command.is_some() {
-            // Write cert PEM to files, then run the command directly via SSH exec.
-            // A launcher script approach failed with mysterious reqwest builder errors.
-            self.rt.block_on(async {
-                session.write_file("/tmp/ws-cert.pem", &cert.cert_pem).await
-                    .map_err(|e| WorkspaceError::Process(format!("write cert: {e}")))?;
-                session.write_file("/tmp/ws-key.pem", &cert.key_pem).await
-                    .map_err(|e| WorkspaceError::Process(format!("write key: {e}")))?;
-                session.write_file("/tmp/ws-ca.pem", &self.config.ca.ca_cert_pem).await
-                    .map_err(|e| WorkspaceError::Process(format!("write CA: {e}")))?;
-                Ok::<_, WorkspaceError>(())
-            })?;
             build_coordinator_exec_cmd(self.config.api_port, &start_cmd)
         } else {
-            format!("cd /project && {start_cmd} 2>&1")
+            build_worker_exec_cmd(self.config.api_port, &start_cmd)
         };
         let pid_output = self.rt.block_on(async {
             session
@@ -449,6 +452,15 @@ fn build_coordinator_exec_cmd(api_port: u16, start_cmd: &str) -> String {
     )
 }
 
+/// Build the shell command that starts a worker inside a Docker workspace.
+/// Same env vars as coordinator (mTLS certs, API URL) but runs clc workspace start
+/// which daemonizes itself — no nohup needed.
+fn build_worker_exec_cmd(api_port: u16, start_cmd: &str) -> String {
+    format!(
+        "cd /project && export CLC_API_URL=https://host.docker.internal:{api_port} && export CLC_API_CERT=/tmp/ws-cert.pem && export CLC_API_KEY=/tmp/ws-key.pem && export CLC_API_CA=/tmp/ws-ca.pem && {start_cmd} 2>&1"
+    )
+}
+
 impl Environment for DockerEnvironment {
     fn create(&mut self) -> Result<SSHTarget, WorkspaceError> {
         use bollard::container::{Config, CreateContainerOptions};
@@ -599,5 +611,21 @@ mod tests {
     fn coordinator_exec_cmd_cds_to_project() {
         let cmd = build_coordinator_exec_cmd(19100, "clc coordinator-run");
         assert!(cmd.starts_with("cd /project &&"));
+    }
+
+    #[test]
+    fn worker_exec_cmd_sets_mtls_env_vars() {
+        let cmd = build_worker_exec_cmd(19100, "clc workspace start --branch test");
+        assert!(cmd.contains("CLC_API_URL=https://host.docker.internal:19100"));
+        assert!(cmd.contains("CLC_API_CERT=/tmp/ws-cert.pem"));
+        assert!(cmd.contains("CLC_API_KEY=/tmp/ws-key.pem"));
+        assert!(cmd.contains("CLC_API_CA=/tmp/ws-ca.pem"));
+    }
+
+    #[test]
+    fn worker_exec_cmd_does_not_background() {
+        let cmd = build_worker_exec_cmd(19100, "clc workspace start");
+        assert!(!cmd.contains("nohup"));
+        assert!(!cmd.contains("echo $!"));
     }
 }
