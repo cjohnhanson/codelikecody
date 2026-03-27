@@ -74,7 +74,6 @@ pub enum TransitionDef {
 
 impl TransitionDef {
     /// The target phase name regardless of variant.
-    #[allow(dead_code)] // Used by workflow engine (workflow.rs) in next step
     pub fn target(&self) -> &str {
         match self {
             Self::Simple(s) => s,
@@ -83,7 +82,6 @@ impl TransitionDef {
     }
 
     /// Review types required for this transition, if any.
-    #[allow(dead_code)] // Used by workflow engine (workflow.rs) in next step
     pub fn requires(&self) -> &[String] {
         match self {
             Self::Simple(_) => &[],

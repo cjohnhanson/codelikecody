@@ -37,6 +37,7 @@ mod tls;
 mod topology;
 mod zettel;
 mod worker;
+mod workflow;
 
 use std::path::Path;
 
