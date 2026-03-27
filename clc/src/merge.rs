@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::error::Error;
 use crate::git;
-use crate::phase::Phase;
+use crate::workflow::Workflow;
 
 pub fn merge(project_dir: &Path, id: &str, main_branch: &str, admin_branch: &str) -> Result<(), Error> {
     // Must be on main branch.
@@ -31,16 +31,24 @@ pub fn merge(project_dir: &Path, id: &str, main_branch: &str, admin_branch: &str
     // (.clc/state is never tracked by git — it's filesystem-only infrastructure state.)
     let worktree_dir = project_dir.join(".worktrees").join(id);
     if worktree_dir.is_dir() {
-        match crate::phase::load(&worktree_dir)? {
-            Some(Phase::Done) => {}
-            Some(other) => {
+        let cfg = crate::config::load(&worktree_dir).unwrap_or_default();
+        let wf_name = crate::phase::load_workflow_name(&worktree_dir).unwrap_or(None);
+        let workflow = wf_name
+            .as_ref()
+            .and_then(|name| cfg.workflows.get(name))
+            .and_then(|def| Workflow::new(def).ok())
+            .unwrap_or_else(Workflow::default_tdd);
+
+        match crate::phase::load_name(&worktree_dir)? {
+            Some(ref name) if workflow.is_terminal(name) => {}
+            Some(name) => {
                 return Err(Error::NonBlocking(format!(
-                    "branch '{id}' phase is '{other}', must be 'done' to merge"
+                    "branch '{id}' phase is '{name}', must be terminal to merge"
                 )));
             }
             None => {
                 return Err(Error::NonBlocking(format!(
-                    "branch '{id}' has no phase set, must be 'done' to merge"
+                    "branch '{id}' has no phase set, must be terminal to merge"
                 )));
             }
         }

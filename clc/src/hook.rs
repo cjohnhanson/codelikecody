@@ -491,20 +491,6 @@ fn post_tool_nudge_workflow(tool_name: &str, phase_name: Option<&str>, workflow:
     Some(format!("phase: {name} — {nudge}"))
 }
 
-/// Return a phase-aware nudge after a tool use, if applicable (legacy).
-#[allow(dead_code)]
-fn post_tool_nudge(tool_name: &str, phase: Option<phase::Phase>) -> Option<String> {
-    if !WRITE_TOOLS.contains(&tool_name) {
-        return None;
-    }
-
-    match phase {
-        Some(phase::Phase::Implementing) => {
-            Some("phase: implementing — run tests before advancing".to_string())
-        }
-        _ => None,
-    }
-}
 
 /// If on a feature branch with no phase and a matching tisket, auto-set
 /// the initial phase from the workflow. Returns the (possibly new) phase name.
@@ -598,36 +584,6 @@ fn load_phase_name_from_api(git: Option<&git::GitState>) -> Option<String> {
     }
 }
 
-/// Load phase from the supervisor API (legacy, returns Phase enum).
-#[allow(dead_code)] // Kept for backward compat during migration
-fn load_phase_from_api(git: Option<&git::GitState>) -> Option<phase::Phase> {
-    let api_url = std::env::var("CLC_API_URL").ok()?;
-    let agent_id = git.map(|s| s.branch.as_str()).unwrap_or("unknown");
-
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .ok()?;
-
-    let result: Result<serde_json::Value, String> = rt.block_on(async {
-        let client = crate::coordination_client::build_api_client()
-            .map_err(|e| format!("{e}"))?;
-        let resp = client
-            .get(format!("{api_url}/agents/{agent_id}/phase"))
-            .send()
-            .await
-            .map_err(|e| format!("{e}"))?;
-        resp.json().await.map_err(|e| format!("{e}"))
-    });
-
-    match result {
-        Ok(resp) => {
-            let phase_str = resp["phase"].as_str()?;
-            phase_str.parse().ok()
-        }
-        Err(_) => None,
-    }
-}
 
 /// Check a tool use via the supervisor API.
 /// Returns Allow if granted, Block if denied (with escalation message).

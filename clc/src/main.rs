@@ -179,7 +179,7 @@ fn cmd_status() -> Result<(), Error> {
     println!("untracked: {untracked}");
     println!("main_branch: {}", cfg.main_branch);
 
-    if let Some(p) = phase::load(&cwd)? {
+    if let Some(p) = phase::load_name(&cwd)? {
         println!("phase: {p}");
         if cfg.required_attempts > 1 {
             let attempts = phase::load_attempts(&cwd)?;
@@ -270,7 +270,13 @@ fn cmd_status() -> Result<(), Error> {
 fn cmd_status_set(target: &str) -> Result<(), Error> {
     let cwd = std::env::current_dir()?;
     let cfg = config::load(&cwd).unwrap_or_default();
-    phase::set(&cwd, target, cfg.required_attempts)
+    let wf_name = phase::load_workflow_name(&cwd).unwrap_or(None);
+    let wf = wf_name
+        .as_ref()
+        .and_then(|name| cfg.workflows.get(name))
+        .and_then(|def| workflow::Workflow::new(def).ok())
+        .unwrap_or_else(workflow::Workflow::default_tdd);
+    phase::set_with_workflow(&cwd, target, cfg.required_attempts, &wf)
 }
 
 fn cmd_up(dry_run: bool) -> Result<(), Error> {

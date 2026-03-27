@@ -666,12 +666,14 @@ fn collect_stranded(project_dir: &Path) -> Result<Vec<StrandedInfo>, Error> {
         }
 
         // Load phase from the worktree.
-        let Ok(Some(phase)) = crate::phase::load(&path) else {
+        let Ok(Some(phase_name)) = crate::phase::load_name(&path) else {
             continue; // No phase set — not a managed worktree.
         };
 
-        // Skip workers already at done — they just need landing, not recovery.
-        if phase == crate::phase::Phase::Done {
+        // Skip workers at a terminal phase — they just need landing, not recovery.
+        let cfg = crate::config::load(&path).unwrap_or_default();
+        let wf = resolve_worker_workflow(&path, &cfg);
+        if wf.is_terminal(&phase_name) {
             continue;
         }
 
@@ -683,7 +685,7 @@ fn collect_stranded(project_dir: &Path) -> Result<Vec<StrandedInfo>, Error> {
 
         stranded.push(StrandedInfo {
             id,
-            phase: phase.to_string(),
+            phase: phase_name,
             status,
         });
     }

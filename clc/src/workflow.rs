@@ -5,7 +5,6 @@ use crate::error::Error;
 
 /// A validated workflow graph. Constructed from a `WorkflowDef`, with all
 /// transition targets verified to exist in the phase list.
-#[allow(dead_code)] // Consumers migrated incrementally in upcoming commits
 #[derive(Debug, Clone)]
 pub struct Workflow {
     /// Workflow description injected into prime text.
@@ -14,11 +13,11 @@ pub struct Workflow {
     phases: Vec<PhaseDef>,
     /// Phase name → index in `phases` for O(1) lookup.
     index: HashMap<String, usize>,
-    /// Review type definitions.
+    /// Review type definitions (consumed by review gate runtime, not yet implemented).
+    #[allow(dead_code)]
     reviews: HashMap<String, ReviewDef>,
 }
 
-#[allow(dead_code)] // Consumers migrated incrementally in upcoming commits
 impl Workflow {
     /// Build a validated workflow from a config definition.
     ///
@@ -254,6 +253,7 @@ impl Workflow {
     }
 
     /// Review types required for a specific transition.
+    #[allow(dead_code)] // Consumed by review gate runtime, not yet implemented
     pub fn transition_requires(&self, from: &str, to: &str) -> Option<&[String]> {
         let phase = self.phase_def(from)?;
         let transitions = phase.transitions.as_ref()?;
@@ -265,6 +265,7 @@ impl Workflow {
     }
 
     /// Get a review definition by type name.
+    #[allow(dead_code)] // Consumed by review gate runtime, not yet implemented
     pub fn review_def(&self, review_type: &str) -> Option<&ReviewDef> {
         self.reviews.get(review_type)
     }
