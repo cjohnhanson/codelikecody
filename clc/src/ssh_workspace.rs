@@ -274,20 +274,8 @@ impl Workspace for SSHWorkspace {
         // coordinator-run is long-running; background it so exec returns.
         // clc workspace start already daemonizes. Both keep the SSH session
         // alive via the reverse tunnel held by the supervisor.
-        // Both coordinators and workers need mTLS certs to talk to the
-        // supervisor API. Write cert files for the exec env vars.
-        // (The workspace-cert/key/ca-cert files at /tmp/ are for hooks;
-        // ws-cert/key/ca are for the process being started here.)
-        self.rt.block_on(async {
-            session.write_file("/tmp/ws-cert.pem", &cert.cert_pem).await
-                .map_err(|e| WorkspaceError::Process(format!("write cert: {e}")))?;
-            session.write_file("/tmp/ws-key.pem", &cert.key_pem).await
-                .map_err(|e| WorkspaceError::Process(format!("write key: {e}")))?;
-            session.write_file("/tmp/ws-ca.pem", &self.config.ca.ca_cert_pem).await
-                .map_err(|e| WorkspaceError::Process(format!("write CA: {e}")))?;
-            Ok::<_, WorkspaceError>(())
-        })?;
-
+        // mTLS certs were deployed in step 4 above (workspace-cert.pem etc.).
+        // Both coordinator and worker exec commands reference those paths.
         let exec_cmd = if self.config.start_command.is_some() {
             build_coordinator_exec_cmd(self.config.api_port, &start_cmd)
         } else {
@@ -448,16 +436,15 @@ impl DockerEnvironment {
 /// and the API binds to 0.0.0.0 with mTLS protecting it.
 fn build_coordinator_exec_cmd(api_port: u16, start_cmd: &str) -> String {
     format!(
-        "cd /project && export CLC_API_URL=https://host.docker.internal:{api_port} && export CLC_API_CERT=/tmp/ws-cert.pem && export CLC_API_KEY=/tmp/ws-key.pem && export CLC_API_CA=/tmp/ws-ca.pem && nohup {start_cmd} > /tmp/agent.log 2>&1 & echo $!"
+        "cd /project && export CLC_API_URL=https://host.docker.internal:{api_port} && export CLC_API_CERT=/tmp/workspace-cert.pem && export CLC_API_KEY=/tmp/workspace-key.pem && export CLC_API_CA=/tmp/ca-cert.pem && nohup {start_cmd} > /tmp/agent.log 2>&1 & echo $!"
     )
 }
 
 /// Build the shell command that starts a worker inside a Docker workspace.
-/// Same env vars as coordinator (mTLS certs, API URL) but runs clc workspace start
-/// which daemonizes itself — no nohup needed.
+/// Uses the workspace certs deployed earlier in start() (step 4).
 fn build_worker_exec_cmd(api_port: u16, start_cmd: &str) -> String {
     format!(
-        "cd /project && export CLC_API_URL=https://host.docker.internal:{api_port} && export CLC_API_CERT=/tmp/ws-cert.pem && export CLC_API_KEY=/tmp/ws-key.pem && export CLC_API_CA=/tmp/ws-ca.pem && {start_cmd} 2>&1"
+        "cd /project && export CLC_API_URL=https://host.docker.internal:{api_port} && export CLC_API_CERT=/tmp/workspace-cert.pem && export CLC_API_KEY=/tmp/workspace-key.pem && export CLC_API_CA=/tmp/ca-cert.pem && {start_cmd} 2>&1"
     )
 }
 
@@ -593,9 +580,9 @@ mod tests {
     fn coordinator_exec_cmd_sets_mtls_env_vars() {
         let cmd = build_coordinator_exec_cmd(19100, "clc coordinator-run");
 
-        assert!(cmd.contains("CLC_API_CERT=/tmp/ws-cert.pem"));
-        assert!(cmd.contains("CLC_API_KEY=/tmp/ws-key.pem"));
-        assert!(cmd.contains("CLC_API_CA=/tmp/ws-ca.pem"));
+        assert!(cmd.contains("CLC_API_CERT=/tmp/workspace-cert.pem"));
+        assert!(cmd.contains("CLC_API_KEY=/tmp/workspace-key.pem"));
+        assert!(cmd.contains("CLC_API_CA=/tmp/ca-cert.pem"));
     }
 
     #[test]
@@ -617,9 +604,9 @@ mod tests {
     fn worker_exec_cmd_sets_mtls_env_vars() {
         let cmd = build_worker_exec_cmd(19100, "clc workspace start --branch test");
         assert!(cmd.contains("CLC_API_URL=https://host.docker.internal:19100"));
-        assert!(cmd.contains("CLC_API_CERT=/tmp/ws-cert.pem"));
-        assert!(cmd.contains("CLC_API_KEY=/tmp/ws-key.pem"));
-        assert!(cmd.contains("CLC_API_CA=/tmp/ws-ca.pem"));
+        assert!(cmd.contains("CLC_API_CERT=/tmp/workspace-cert.pem"));
+        assert!(cmd.contains("CLC_API_KEY=/tmp/workspace-key.pem"));
+        assert!(cmd.contains("CLC_API_CA=/tmp/ca-cert.pem"));
     }
 
     #[test]
