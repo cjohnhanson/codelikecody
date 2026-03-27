@@ -1,3 +1,5 @@
+entrypoint: true
+
 assertions:
   - name: "is a git repo"
     command: "git rev-parse --git-dir"
