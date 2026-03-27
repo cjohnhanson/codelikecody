@@ -26,7 +26,13 @@ updated: "2026-03-26T23:22:12Z"
 - Supervisor landing flow: SSH into worker → export pack → import → ff_merge to trunk
 - Coordinator skips landing for Docker workspaces (supervisor owns trunk)
 
-**Current blocker: checkout_tree regression**
+**RESOLVED: replaced custom pack format with tar of .git directory**
+The custom pack writer/parser was the root cause — it didn't include symlink
+blob objects, causing checkout_tree to abort mid-walk. The tar approach
+transfers the real .git directory (pack files, indices, refs) that gix reads
+natively. Verified: dirty: 0, all files present including symlinks.
+
+**Previous blocker (resolved): checkout_tree regression**
 After merging main (which has new missouri commits) into the worktree branch,
 the git pack `checkout_tree` only writes a few top-level directories (`.agents/`,
 `.claude/`, `.clc/`) instead of the full tree. `tisket.yml`, `Cargo.toml`, all
@@ -50,10 +56,20 @@ correctly for the new tree entries.
 - `clc/src/main.rs` — workspace start creates+checkouts tisket branch, sets phase
 - `moose/src/native/mod.rs` — removed dangling test module declarations
 
+**Final verified state (2026-03-27 ~23:00):**
+- Full e2e: supervisor → coordinator → dispatch → worker → Claude running
+- Worker: correct branch, dirty: 0, tools working (Read, Bash confirmed)
+- Claude hit rate limit and looped — operational issue, not a code bug
+- Landing flow written but untested (needs completed worker to trigger)
+
 **Next steps:**
-1. Debug `checkout_tree` — why does it only produce a partial tree after the main merge?
-2. Check if `unpack_to_loose` correctly handles OFS_DELTA for all objects
-3. Once clean checkout works, the e2e test should complete (Claude writes tests, `clc done`, supervisor lands)
-4. Create a proper tisket for the `checkout_tree` bug if non-trivial
+1. Re-run with fresh API quota — Claude should complete the tisket
+2. Verify landing: supervisor fetches tar from worker, imports, ff-merges to trunk
+3. Test restart resilience with the tar approach
 
 **Test tisket:** `8z9n` — add unit tests for tisket Status methods (labeled clc-up-target)
+
+**20 commits on qgsj branch** — original URL fix grew into full clc up pipeline:
+coordinator API connectivity, workspace retention, stale agent cleanup,
+worker launcher, landing flow, OAuth token passing, branch creation,
+and replacing the custom pack format with tar of .git directory.
