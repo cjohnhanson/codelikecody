@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -8,6 +8,8 @@ use crate::error::Error;
 const YAML_ROOT_CONFIG_FILENAME: &str = "clc.yml";
 const TOML_CONFIG_FILENAME: &str = "clc.toml";
 const YAML_CONFIG_FILENAME: &str = "config.yml";
+const USER_CONFIG_FILENAME: &str = "config.yml";
+const USER_CONFIG_DIR: &str = ".clc";
 
 // --- TOML deserialization types (match the clc.toml file structure) ---
 
@@ -306,6 +308,96 @@ fn load_yaml(path: &Path) -> Result<Config, Error> {
 
     serde_yml::from_str(&contents)
         .map_err(|e| Error::NonBlocking(format!("invalid config {}: {e}", path.display())))
+}
+
+/// User-level config loaded from `~/.clc/config.yml`.
+/// Contains only fields that make sense at the user level —
+/// no workflow/phase enforcement, no main_branch overrides.
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct UserConfig {
+    #[serde(default)]
+    pub skills: Vec<SkillSource>,
+
+    #[serde(default)]
+    pub tisket: Option<UserTisketConfig>,
+
+    #[serde(default)]
+    pub zettel: Option<UserZettelConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserTisketConfig {
+    pub root: PathBuf,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserZettelConfig {
+    pub root: PathBuf,
+}
+
+/// Load user-level config from `$HOME/.clc/config.yml`.
+/// Returns `None` if the file doesn't exist or HOME isn't set.
+/// Returns an error if the file exists but is invalid.
+pub fn load_user_config() -> Result<Option<UserConfig>, Error> {
+    let home = match std::env::var("HOME") {
+        Ok(h) => PathBuf::from(h),
+        Err(_) => return Ok(None),
+    };
+    let config_path = home.join(USER_CONFIG_DIR).join(USER_CONFIG_FILENAME);
+    if !config_path.exists() {
+        return Ok(None);
+    }
+    let contents = std::fs::read_to_string(&config_path).map_err(|e| {
+        Error::NonBlocking(format!(
+            "failed to read user config {}: {e}",
+            config_path.display()
+        ))
+    })?;
+    let mut user_config: UserConfig = serde_yml::from_str(&contents).map_err(|e| {
+        Error::NonBlocking(format!(
+            "invalid user config {}: {e}",
+            config_path.display()
+        ))
+    })?;
+
+    // Resolve relative skill paths against the config file's parent directory.
+    let config_dir = config_path.parent().unwrap_or(&home);
+    resolve_skill_paths(&mut user_config.skills, config_dir);
+
+    // Resolve relative tisket/zettel roots against the config file's parent directory.
+    if let Some(ref mut t) = user_config.tisket {
+        if t.root.is_relative() {
+            t.root = config_dir.join(&t.root);
+        }
+    }
+    if let Some(ref mut z) = user_config.zettel {
+        if z.root.is_relative() {
+            z.root = config_dir.join(&z.root);
+        }
+    }
+
+    Ok(Some(user_config))
+}
+
+/// Resolve relative skill paths against a base directory.
+fn resolve_skill_paths(skills: &mut [SkillSource], base: &Path) {
+    for skill in skills.iter_mut() {
+        if let SkillSource::Path { path } = skill {
+            let p = PathBuf::from(path.as_str());
+            if p.is_relative() {
+                *path = base.join(&p).to_string_lossy().to_string();
+            }
+        }
+    }
+}
+
+/// Merge user-level config into a repo-level config.
+/// Skills are unioned. Other repo-level settings are preserved as-is.
+pub fn merge_user_config(repo: &mut Config, user: &UserConfig) {
+    // Union skills: user skills come first, then repo skills.
+    let mut merged_skills = user.skills.clone();
+    merged_skills.extend(repo.skills.drain(..));
+    repo.skills = merged_skills;
 }
 
 /// Print the effective config as YAML.

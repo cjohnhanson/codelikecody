@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 
@@ -72,6 +72,29 @@ pub fn init(project_dir: &Path, untracked: bool, force: bool) -> Result<(), Erro
         write_git_excludes(project_dir)?;
     }
 
+    Ok(())
+}
+
+/// Initialize user-level config at `$HOME/.clc/config.yml`.
+/// Creates the config file with default contents if it doesn't exist.
+/// Idempotent — does nothing if the file already exists.
+pub fn init_user() -> Result<(), Error> {
+    let home = std::env::var("HOME")
+        .map(PathBuf::from)
+        .map_err(|_| Error::Block("HOME environment variable not set".to_string()))?;
+
+    let clc_dir = home.join(".clc");
+    std::fs::create_dir_all(&clc_dir)?;
+
+    let config_path = clc_dir.join("config.yml");
+    if !config_path.exists() {
+        std::fs::write(
+            &config_path,
+            "skills: []\n",
+        )?;
+    }
+
+    eprintln!("initialized user-level clc config at {}", config_path.display());
     Ok(())
 }
 

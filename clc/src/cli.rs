@@ -20,6 +20,9 @@ pub enum Command {
         /// Overwrite existing hooks in settings.local.json.
         #[arg(long)]
         force: bool,
+        /// Initialize user-level config at ~/.clc/config.yml instead of repo-level.
+        #[arg(long)]
+        user: bool,
     },
     /// Process a hook event from stdin (called by agent hooks).
     Hook,
