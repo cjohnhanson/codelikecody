@@ -1,12 +1,12 @@
 ---
 title: "missouri: replace indicatif progress spinners with line-oriented reporting and timing summary"
-status: in_progress
+status: done
 priority: 2
 assignee:
 labels: [missouri, reporting]
 depends_on: []
 created: 2026-03-27T01:49:23Z
-updated: "2026-03-27T01:55:22Z"
+updated: "2026-03-27T02:04:02Z"
 ---
 
 ## Problem
@@ -60,5 +60,3 @@ transitions, and doesn't distinguish wall time from sum-of-path time
 - Summary shows slowest transitions
 - Killing missouri mid-run leaves terminal in normal state
 - All existing missouri test suites still pass
-
-## Scratch Notes
