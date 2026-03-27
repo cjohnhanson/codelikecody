@@ -9,17 +9,14 @@ camino = { version = "1", features = ["serde1"] }
 bollard = "0.18"
 futures-util = "0.3"
 tokio = { version = "1", features = ["rt-multi-thread"] }
-console = "0.15"
 ctrlc = "3.4"
 clap = { version = "4", features = ["derive", "env", "unicode", "wrap_help"] }
 dotenvy = "0.15"
 ignore = "0.4"
-indicatif = "0.17"
 libc = "0.2"
 miette = { version = "7", features = ["fancy"] }
 serde = { version = "1", features = ["derive"] }
 serde_yml = "0.0"
-termimad = "0.34"
 tar = "0.4"
 tempfile = "3"
 thiserror = "2"

@@ -287,7 +287,7 @@ pub fn run_command(config_dir: &str, command: Command) -> miette::Result<bool> {
                 }
             }
 
-            let progress = crate::report::ProgressReporter::new();
+            let mut progress = crate::report::ProgressReporter::new();
             progress.prepare(&paths, &graph);
             let results = crate::executor::run_all_paths(
                 &graph,
@@ -565,7 +565,7 @@ fn run_workspace_members(
             }
         }
 
-        let progress = crate::report::ProgressReporter::new();
+        let mut progress = crate::report::ProgressReporter::new();
         progress.prepare(&paths, &graph);
         let results = crate::executor::run_all_paths(
             &graph,

@@ -1132,6 +1132,7 @@ pub struct AssertionResult {
     pub stdout_diff: Option<(String, String)>,
     pub stderr_diff: Option<(String, String)>,
     pub error: Option<String>,
+    pub duration: Duration,
 }
 
 /// Result of executing a single transition.
@@ -1707,6 +1708,7 @@ fn run_single_assertion(
     graph: &StateGraph,
     sandbox: &dyn Backend,
 ) -> AssertionResult {
+    let assertion_start = std::time::Instant::now();
     let state = &graph.states[assertion.state.0];
     let bin_dir = state.path.join(&graph.config_dir).join("bin");
     let bin_dir_opt = if bin_dir.exists() {
@@ -1741,6 +1743,7 @@ fn run_single_assertion(
                     stdout_diff: None,
                     stderr_diff: None,
                     error: Some(format!("failed to start service: {e}")),
+                    duration: assertion_start.elapsed(),
                 };
             }
         }
@@ -1774,6 +1777,7 @@ fn run_single_assertion(
                 stdout_diff: None,
                 stderr_diff: None,
                 error: Some("empty command".into()),
+                duration: assertion_start.elapsed(),
             };
         }
     };
@@ -1788,6 +1792,7 @@ fn run_single_assertion(
                 stdout_diff: None,
                 stderr_diff: None,
                 error: Some(format!("failed to execute command: {e}")),
+                duration: assertion_start.elapsed(),
             };
         }
     };
@@ -1806,6 +1811,7 @@ fn run_single_assertion(
                 stdout_diff: None,
                 stderr_diff: None,
                 error: Some("expected command to fail, but it exited 0".into()),
+                duration: assertion_start.elapsed(),
             };
         }
         // Command failed as expected — pass (no stdout/stderr comparison for should_fail)
@@ -1816,6 +1822,7 @@ fn run_single_assertion(
             stdout_diff: None,
             stderr_diff: None,
             error: None,
+            duration: assertion_start.elapsed(),
         };
     }
 
@@ -1832,6 +1839,7 @@ fn run_single_assertion(
                     .map(|c| c.to_string())
                     .unwrap_or_else(|| "signal".into())
             )),
+            duration: assertion_start.elapsed(),
         };
     }
 
@@ -1861,6 +1869,7 @@ fn run_single_assertion(
         stdout_diff,
         stderr_diff,
         error: None,
+        duration: assertion_start.elapsed(),
     }
 }
 
