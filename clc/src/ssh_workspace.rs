@@ -241,7 +241,7 @@ impl Workspace for SSHWorkspace {
                 "workspace".to_string(),
                 "start".to_string(),
                 "--branch".to_string(),
-                branch_name.clone(),
+                self.config.workspace_config.tisket_id.clone(),
                 "--model".to_string(),
                 self.config.workspace_config.agent_config.model.clone(),
             ];
@@ -276,7 +276,7 @@ impl Workspace for SSHWorkspace {
             })?;
             build_coordinator_exec_cmd(self.config.api_port, &start_cmd)
         } else {
-            format!("cd /project && {start_cmd}")
+            format!("cd /project && {start_cmd} 2>&1")
         };
         let pid_output = self.rt.block_on(async {
             session
