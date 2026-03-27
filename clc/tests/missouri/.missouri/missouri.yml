@@ -2,8 +2,8 @@ env:
   CLC_GUARD_OFF: ""
 
 setup:
-  - name: "build clc"
-    command: "cargo build --quiet --manifest-path ../../Cargo.toml"
+  - name: "link clc binary"
+    command: "mkdir -p .missouri/bin && ln -sf $(cd ../.. && pwd)/target/debug/clc .missouri/bin/clc"
 
 packages:
   - git
