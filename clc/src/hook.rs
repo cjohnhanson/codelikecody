@@ -17,6 +17,7 @@ use crate::missouri;
 use crate::phase;
 use crate::skills;
 use crate::tisket;
+use crate::workflow::Workflow;
 use crate::zettel;
 
 use clc_sdk::ClcTool;
@@ -41,39 +42,41 @@ pub fn run() -> Result<i32, Error> {
         config::merge_user_config(&mut cfg, uc);
     }
     let git_state = git::detect(cwd, &cfg.main_branch, &cfg.admin_branch);
-    let current_phase = if std::env::var("CLC_API_URL").is_ok() {
-        // Read phase from supervisor API.
-        load_phase_from_api(git_state.as_ref())
+
+    // Load phase name (string, not enum) and resolve workflow.
+    let phase_name = if std::env::var("CLC_API_URL").is_ok() {
+        load_phase_name_from_api(git_state.as_ref())
     } else {
-        phase::load(cwd).unwrap_or(None)
+        phase::load_name(cwd).unwrap_or(None)
     };
 
-    // Phase bootstrap: auto-set tests-unwritten on unphased feature branches
-    // with a matching tisket. This catches worktrees created outside `clc pickup`.
-    // Skip bootstrap when using API — the supervisor manages phase.
-    let current_phase = if matches!(event, Event::SessionStart { .. })
+    let workflow = resolve_workflow(cwd, &cfg);
+
+    // Phase bootstrap: auto-set initial phase on unphased feature branches
+    // with a matching tisket. Skip when using API — the supervisor manages phase.
+    let phase_name = if matches!(event, Event::SessionStart { .. })
         && std::env::var("CLC_API_URL").is_err()
     {
-        maybe_bootstrap_phase(cwd, git_state.as_ref(), current_phase)
+        maybe_bootstrap_phase(cwd, git_state.as_ref(), phase_name, &workflow)
     } else {
-        current_phase
+        phase_name
     };
 
     let response = match event {
         Event::SessionStart { .. } => {
-            let prime = assemble_prime(cwd, git_state.as_ref(), current_phase, &cfg);
+            let prime = assemble_prime(cwd, git_state.as_ref(), phase_name.as_deref(), &workflow, &cfg);
             Response::Allow {
                 context: Some(prime),
             }
         }
         Event::UserPromptSubmit { .. } => {
-            let reinforcement = assemble_reinforcement(cwd, git_state.as_ref(), current_phase, &cfg);
+            let reinforcement = assemble_reinforcement(cwd, git_state.as_ref(), phase_name.as_deref(), &cfg);
             Response::Allow {
                 context: Some(reinforcement),
             }
         }
         Event::PostToolUse { ref tool_name, .. } => {
-            let nudge = post_tool_nudge(tool_name, current_phase);
+            let nudge = post_tool_nudge_workflow(tool_name, phase_name.as_deref(), &workflow);
             nudge.map_or(Response::Passthrough, |text| Response::Allow {
                 context: Some(text),
             })
@@ -103,7 +106,7 @@ pub fn run() -> Result<i32, Error> {
                 other => other,
             }
         }
-        _ => guard::evaluate(&event, git_state.as_ref(), current_phase, cwd),
+        _ => guard::evaluate_with_workflow(&event, git_state.as_ref(), phase_name.as_deref(), &workflow, cwd),
     };
 
     let (output, exit_code) = adapter.format_response(&event, &response);
@@ -123,9 +126,15 @@ pub fn run() -> Result<i32, Error> {
 
 /// Assemble the full prime text from clc header + tisket + missouri + skills.
 #[allow(clippy::too_many_lines)]
-fn assemble_prime(cwd: &Path, git: Option<&git::GitState>, phase: Option<phase::Phase>, cfg: &Config) -> String {
+fn assemble_prime(
+    cwd: &Path,
+    git: Option<&git::GitState>,
+    phase_name: Option<&str>,
+    workflow: &Workflow,
+    cfg: &Config,
+) -> String {
     let ctx = clc_sdk::PrimeContext {
-        phase: phase.map(|p| p.to_string()),
+        phase: phase_name.map(|p| p.to_string()),
     };
 
     let mut out = String::new();
@@ -204,32 +213,44 @@ fn assemble_prime(cwd: &Path, git: Option<&git::GitState>, phase: Option<phase::
         );
     }
 
-    // --- workflow loop ---
+    // --- workflow description ---
+    out.push_str("## The workflow loop\n\n");
+    out.push_str("1. `clc pickup <id>` — creates a worktree, checks out a branch, sets phase\n");
+    if let Some(desc) = workflow.description() {
+        let _ = writeln!(out, "2. {desc}");
+    }
+    out.push_str("\nPhases: ");
+    let names: Vec<&str> = workflow.phase_names().collect();
+    out.push_str(&names.join(" → "));
+    out.push_str("\n\n");
     out.push_str(
-        "## The workflow loop\n\n\
-         1. `clc pickup <id>` — creates a worktree, checks out a branch, sets phase\n\
-         2. Write tests first — phase gates prevent implementation until tests exist\n\
-         3. Implement — phase advances to `implementing`, all edits unlocked\n\
-         4. Get green — run tests, reach `green` phase\n\
-         5. `clc done` — finalize the work\n\n\
-         Phases constrain what you can edit and whether you can stop. The hooks\n\
+        "Phases constrain what you can edit and whether you can stop. The hooks\n\
          enforce this automatically. Run `clc status` to see where you are.\n\n",
     );
 
-    // --- TDD mandate ---
-    out.push_str(
-        "## Test-driven development\n\n\
-         Every implementation change starts with a test. This is not a phase system\n\
-         rule — it is the development methodology for all work in this project.\n\n\
-         1. Write a failing test that specifies the desired behavior\n\
-         2. Verify the test fails (red)\n\
-         3. Write the minimum code to make it pass (green)\n\
-         4. Refactor if needed, keeping tests green\n\n\
-         Do not write implementation code without a corresponding test. If you find\n\
-         yourself editing source files without having written or updated tests first,\n\
-         stop and write the test. Phase gates enforce this mechanically, but TDD\n\
-         discipline should hold even when phase gates are absent or permissive.\n\n",
-    );
+    // --- phase instructions ---
+    if let Some(name) = phase_name {
+        if let Some(instructions) = workflow.phase_instructions(name) {
+            let _ = writeln!(out, "**Current phase `{name}`:** {instructions}\n");
+        }
+    }
+
+    // --- TDD mandate (only for TDD-like workflows with test phases) ---
+    if workflow.phase_names().any(|n| n.contains("test")) {
+        out.push_str(
+            "## Test-driven development\n\n\
+             Every implementation change starts with a test. This is not a phase system\n\
+             rule — it is the development methodology for all work in this project.\n\n\
+             1. Write a failing test that specifies the desired behavior\n\
+             2. Verify the test fails (red)\n\
+             3. Write the minimum code to make it pass (green)\n\
+             4. Refactor if needed, keeping tests green\n\n\
+             Do not write implementation code without a corresponding test. If you find\n\
+             yourself editing source files without having written or updated tests first,\n\
+             stop and write the test. Phase gates enforce this mechanically, but TDD\n\
+             discipline should hold even when phase gates are absent or permissive.\n\n",
+        );
+    }
 
     // --- working memory ---
     out.push_str(
@@ -391,15 +412,16 @@ pub fn prime_text() -> Result<String, Error> {
         config::merge_user_config(&mut cfg, uc);
     }
     let git_state = git::detect(&cwd, &cfg.main_branch, &cfg.admin_branch);
-    let current_phase = phase::load(&cwd).unwrap_or(None);
-    Ok(assemble_prime(&cwd, git_state.as_ref(), current_phase, &cfg))
+    let phase_name = phase::load_name(&cwd).unwrap_or(None);
+    let workflow = resolve_workflow(&cwd, &cfg);
+    Ok(assemble_prime(&cwd, git_state.as_ref(), phase_name.as_deref(), &workflow, &cfg))
 }
 
 /// Assemble lean status reinforcement for `UserPromptSubmit`.
 fn assemble_reinforcement(
     cwd: &Path,
     git: Option<&git::GitState>,
-    phase: Option<phase::Phase>,
+    phase_name: Option<&str>,
     cfg: &Config,
 ) -> String {
     let mut out = String::new();
@@ -448,7 +470,7 @@ fn assemble_reinforcement(
         }
     }
 
-    if let Some(p) = phase {
+    if let Some(p) = phase_name {
         let _ = writeln!(out, "phase: {p}");
     }
 
@@ -458,7 +480,19 @@ fn assemble_reinforcement(
 /// File-modifying tools that trigger post-tool nudges.
 const WRITE_TOOLS: &[&str] = &["Edit", "Write", "NotebookEdit"];
 
-/// Return a phase-aware nudge after a tool use, if applicable.
+/// Return a phase-aware nudge using the workflow's per-phase nudge config.
+fn post_tool_nudge_workflow(tool_name: &str, phase_name: Option<&str>, workflow: &Workflow) -> Option<String> {
+    if !WRITE_TOOLS.contains(&tool_name) {
+        return None;
+    }
+
+    let name = phase_name?;
+    let nudge = workflow.phase_nudge(name)?;
+    Some(format!("phase: {name} — {nudge}"))
+}
+
+/// Return a phase-aware nudge after a tool use, if applicable (legacy).
+#[allow(dead_code)]
 fn post_tool_nudge(tool_name: &str, phase: Option<phase::Phase>) -> Option<String> {
     if !WRITE_TOOLS.contains(&tool_name) {
         return None;
@@ -473,12 +507,13 @@ fn post_tool_nudge(tool_name: &str, phase: Option<phase::Phase>) -> Option<Strin
 }
 
 /// If on a feature branch with no phase and a matching tisket, auto-set
-/// the initial phase to `tests-unwritten`. Returns the (possibly new) phase.
+/// the initial phase from the workflow. Returns the (possibly new) phase name.
 fn maybe_bootstrap_phase(
     cwd: &Path,
     git: Option<&git::GitState>,
-    current_phase: Option<phase::Phase>,
-) -> Option<phase::Phase> {
+    current_phase: Option<String>,
+    workflow: &Workflow,
+) -> Option<String> {
     // Already has a phase — nothing to do.
     if current_phase.is_some() {
         return current_phase;
@@ -497,8 +532,9 @@ fn maybe_bootstrap_phase(
     let issue = tisket_state.current_issue.as_ref()?;
     let issue_id = issue.id.clone();
 
-    // Bootstrap: set phase to tests-unwritten.
-    if phase::set(cwd, "tests-unwritten", 1).is_ok() {
+    // Bootstrap: set phase to the workflow's initial phase.
+    let initial = workflow.initial_phase();
+    if phase::set_with_workflow(cwd, initial, 1, workflow).is_ok() {
         // Advance the matching tisket to in_progress.
         if let Some(s) = cwd.to_str()
             && let Ok(repo) = ::tisket::Repo::open(Utf8Path::new(s))
@@ -511,13 +547,59 @@ fn maybe_bootstrap_phase(
                 },
             );
         }
-        Some(phase::Phase::TestsUnwritten)
+        Some(initial.to_string())
     } else {
         None
     }
 }
 
-/// Load phase from the supervisor API.
+/// Resolve the active workflow from config + state.
+fn resolve_workflow(cwd: &Path, cfg: &Config) -> Workflow {
+    // Try to read the workflow name from the state file.
+    let wf_name = phase::load_workflow_name(cwd).unwrap_or(None);
+
+    if let Some(name) = &wf_name {
+        if let Some(def) = cfg.workflows.get(name) {
+            if let Ok(wf) = Workflow::new(def) {
+                return wf;
+            }
+        }
+    }
+
+    // No stored workflow or it's invalid — check if any workflows are configured.
+    // If so, we can't resolve without issue labels, so fall back to default.
+    Workflow::default_tdd()
+}
+
+/// Load phase name from the supervisor API (string, not enum).
+fn load_phase_name_from_api(git: Option<&git::GitState>) -> Option<String> {
+    let api_url = std::env::var("CLC_API_URL").ok()?;
+    let agent_id = git.map(|s| s.branch.as_str()).unwrap_or("unknown");
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .ok()?;
+
+    let result: Result<serde_json::Value, String> = rt.block_on(async {
+        let client = crate::coordination_client::build_api_client()
+            .map_err(|e| format!("{e}"))?;
+        let resp = client
+            .get(format!("{api_url}/agents/{agent_id}/phase"))
+            .send()
+            .await
+            .map_err(|e| format!("{e}"))?;
+        resp.json().await.map_err(|e| format!("{e}"))
+    });
+
+    match result {
+        Ok(resp) => resp["phase"].as_str().map(|s| s.to_string()),
+        Err(_) => None,
+    }
+}
+
+/// Load phase from the supervisor API (legacy, returns Phase enum).
+#[allow(dead_code)] // Kept for backward compat during migration
 fn load_phase_from_api(git: Option<&git::GitState>) -> Option<phase::Phase> {
     let api_url = std::env::var("CLC_API_URL").ok()?;
     let agent_id = git.map(|s| s.branch.as_str()).unwrap_or("unknown");

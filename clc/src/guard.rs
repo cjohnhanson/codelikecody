@@ -13,6 +13,7 @@ use crate::workflow::Workflow;
 const READ_ONLY_TOOLS: &[&str] = &["Read", "Glob", "Grep"];
 
 /// Tools that target a file via `file_path` in `tool_input`.
+#[allow(dead_code)] // Legacy — removed when Phase enum is deleted
 const FILE_TARGETING_TOOLS: &[&str] = &["Edit", "Write", "NotebookEdit"];
 
 /// Bash command prefixes allowed on trunk. Anything not matching is blocked.
@@ -49,6 +50,7 @@ const BASH_ALLOWLIST: &[&str] = &[
 ];
 
 /// Evaluate an event against the current git state and phase (legacy, uses Phase enum).
+#[allow(dead_code)] // Legacy — removed when Phase enum is deleted
 pub fn evaluate(event: &Event, git: Option<&GitState>, phase: Option<Phase>, cwd: &Path) -> Response {
     // Escape hatch: set CLC_GUARD_OFF=1 to bypass all guard checks.
     // Used during clc development when the guard itself is being modified.
