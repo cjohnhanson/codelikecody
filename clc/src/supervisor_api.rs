@@ -334,11 +334,22 @@ async fn dispatch_worker(
     State(state): State<Arc<ApiState>>,
     Json(req): Json<DispatchRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), StatusCode> {
-    state
+    // Register or re-activate. If the agent exists from a prior run (status
+    // Stopped/Failed), reset it to Pending instead of failing.
+    if let Err(_) = state
         .db
         .register_agent(&req.tisket_id, Some(&req.coordinator_id))
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    {
+        state
+            .db
+            .set_status(
+                &req.tisket_id,
+                clc_sdk::coordination::AgentStatus::Pending,
+            )
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    }
 
     Ok((
         StatusCode::CREATED,
