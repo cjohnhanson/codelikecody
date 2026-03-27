@@ -1,0 +1,18 @@
+assertions:
+  - name: "user config file was created"
+    command: "test -f fake-home/.clc/config.yml"
+
+  - name: "user config is valid YAML"
+    command: "cat fake-home/.clc/config.yml"
+
+  - name: "no repo-level .clc directory was created"
+    command: "! test -d .clc"
+
+  - name: "no repo-level .claude directory was created"
+    command: "! test -d .claude"
+
+  - name: "no repo-level settings.local.json was created"
+    command: "! test -f .claude/settings.local.json"
+
+  - name: "init --user is idempotent"
+    command: "HOME=./fake-home clc init --user"

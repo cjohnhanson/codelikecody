@@ -1,0 +1,15 @@
+assertions:
+  - name: "no user config exists yet"
+    command: "! test -f fake-home/.clc/config.yml"
+
+  - name: "fake home directory exists"
+    command: "test -d fake-home"
+
+transitions:
+  - name: "initialize user-level clc config"
+    command: "HOME=./fake-home clc init --user"
+    target: "../user-initialized"
+    comparators:
+      files:
+        - path: "fake-home/"
+          ignore: true

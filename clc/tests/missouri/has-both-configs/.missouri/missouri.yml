@@ -1,0 +1,39 @@
+assertions:
+  - name: "user config exists"
+    command: "test -f fake-home/.clc/config.yml"
+
+  - name: "repo config exists"
+    command: "test -f clc.yml"
+
+  # Skills merge: union of user + repo
+  - name: "prime includes user-level skill"
+    command: "HOME=./fake-home clc prime | grep 'user-skill'"
+
+  - name: "prime includes repo-level skill"
+    command: "HOME=./fake-home clc prime | grep 'repo-skill'"
+
+  - name: "almanac list shows both user and repo skills"
+    command: "HOME=./fake-home clc almanac list | grep 'user-skill' && HOME=./fake-home clc almanac list | grep 'repo-skill'"
+
+  - name: "SessionStart hook context includes both skills"
+    command: >
+      echo '{"hook_event_name":"SessionStart","session_id":"test","cwd":".","source":"startup"}'
+      | HOME=./fake-home clc hook
+      | jq -r '.hookSpecificOutput.additionalContext'
+      | grep 'user-skill'
+      &&
+      echo '{"hook_event_name":"SessionStart","session_id":"test","cwd":".","source":"startup"}'
+      | HOME=./fake-home clc hook
+      | jq -r '.hookSpecificOutput.additionalContext'
+      | grep 'repo-skill'
+
+  # Tisket merge: shows both personal and repo issues
+  - name: "prime includes repo tisket"
+    command: "HOME=./fake-home clc prime | grep -i 'tisket'"
+
+  - name: "prime mentions both personal and repo tisket contexts"
+    command: "HOME=./fake-home clc prime | grep -i 'personal' && HOME=./fake-home clc prime | grep -i 'repo'"
+
+  # Repo-level settings apply
+  - name: "repo-level config settings still apply"
+    command: "HOME=./fake-home clc config show 2>&1 | grep 'skills:'"

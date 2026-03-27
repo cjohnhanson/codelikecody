@@ -69,7 +69,13 @@ fn main() {
     }
 
     let result = match cli.command {
-        cli::Command::Init { untracked, force } => cmd_init(untracked, force),
+        cli::Command::Init { untracked, force, user } => {
+            if user {
+                cmd_init_user()
+            } else {
+                cmd_init(untracked, force)
+            }
+        }
         cli::Command::Status { action: None } => cmd_status(),
         cli::Command::Status {
             action: Some(cli::StatusAction::Set { ref phase }),
@@ -397,7 +403,10 @@ fn cmd_config(action: &cli::ConfigAction) -> Result<(), Error> {
 
 fn cmd_almanac(command: ::almanac::cli::Command) -> Result<(), Error> {
     let project_dir = std::env::current_dir()?;
-    let cfg = config::load(&project_dir).unwrap_or_default();
+    let mut cfg = config::load(&project_dir).unwrap_or_default();
+    if let Some(ref uc) = config::load_user_config().unwrap_or(None) {
+        config::merge_user_config(&mut cfg, uc);
+    }
     ::almanac::cli::run_command(&project_dir, &cfg.skills, command)
         .map_err(|e: ::almanac::Error| Error::NonBlocking(e.to_string()))
 }
@@ -941,6 +950,11 @@ fn cmd_init(untracked: bool, force: bool) -> Result<(), Error> {
     } else {
         eprintln!("initialized clc in {}", project_dir.display());
     }
+    Ok(())
+}
+
+fn cmd_init_user() -> Result<(), Error> {
+    init::init_user()?;
     Ok(())
 }
 

@@ -35,7 +35,11 @@ pub fn run() -> Result<i32, Error> {
         .get("cwd")
         .and_then(Value::as_str)
         .map_or_else(|| Path::new("."), Path::new);
-    let cfg = config::load(cwd).unwrap_or_default();
+    let mut cfg = config::load(cwd).unwrap_or_default();
+    let user_cfg = config::load_user_config().unwrap_or(None);
+    if let Some(ref uc) = user_cfg {
+        config::merge_user_config(&mut cfg, uc);
+    }
     let git_state = git::detect(cwd, &cfg.main_branch, &cfg.admin_branch);
     let current_phase = if std::env::var("CLC_API_URL").is_ok() {
         // Read phase from supervisor API.
@@ -363,7 +367,10 @@ fn assemble_prime(cwd: &Path, git: Option<&git::GitState>, phase: Option<phase::
 /// Build and return the prime text for CLI output.
 pub fn prime_text() -> Result<String, Error> {
     let cwd = std::env::current_dir()?;
-    let cfg = config::load(&cwd).unwrap_or_default();
+    let mut cfg = config::load(&cwd).unwrap_or_default();
+    if let Some(ref uc) = config::load_user_config().unwrap_or(None) {
+        config::merge_user_config(&mut cfg, uc);
+    }
     let git_state = git::detect(&cwd, &cfg.main_branch, &cfg.admin_branch);
     let current_phase = phase::load(&cwd).unwrap_or(None);
     Ok(assemble_prime(&cwd, git_state.as_ref(), current_phase, &cfg))
