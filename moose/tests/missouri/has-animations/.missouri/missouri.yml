@@ -1,0 +1,42 @@
+assertions:
+  # --- Open page with animations ---
+  - name: "open animation page"
+    command: "moose open file://$(pwd)/fixtures/animation-page.html && sleep 0.5"
+
+  # --- List animations ---
+  - name: "animation list shows running animations"
+    command: "moose animation list | grep -i 'spin'"
+
+  - name: "animation list json produces valid json"
+    command: "moose animation list --json | jq -e 'length > 0'"
+
+  - name: "animation list shows animation type"
+    command: "moose animation list --json | jq -e '.[] | .type'"
+
+  - name: "animation list shows play state"
+    command: "moose animation list --json | jq -e '.[] | .playState'"
+
+  # --- Pause and resume ---
+  - name: "animation pause freezes animations"
+    command: "moose animation pause && moose animation list --json | jq -e '.[] | select(.pausedState == true)'"
+
+  - name: "snapshot during pause captures frozen state"
+    command: "moose snapshot | grep -q 'Welcome'"
+
+  - name: "animation resume continues animations"
+    command: "moose animation resume && moose animation list --json | jq -e '.[] | select(.pausedState == false or .pausedState == null)'"
+
+  # --- Playback rate ---
+  - name: "animation slow changes playback rate"
+    command: "moose animation slow 0.1 && moose animation list --json | jq -e '.[] | select(.playbackRate == 0.1)'"
+
+  - name: "animation slow 1 restores normal speed"
+    command: "moose animation slow 1"
+
+  # --- Wait for animations ---
+  - name: "wait animation completes without timeout on finite animation"
+    command: "moose open file://$(pwd)/fixtures/animation-page.html && moose wait --animation '#hero'"
+
+  # --- Cleanup ---
+  - name: "close browser"
+    command: "moose close"
