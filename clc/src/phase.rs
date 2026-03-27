@@ -4,6 +4,7 @@ use std::str::FromStr;
 
 use crate::coordination::Coordination;
 use crate::error::Error;
+use crate::workflow::Workflow;
 
 const STATE_FILENAME: &str = "state";
 
@@ -92,6 +93,53 @@ pub fn load(project_dir: &Path) -> Result<Option<Phase>, Error> {
     Ok(state.map(|s| s.phase))
 }
 
+/// Load the current phase name as a string. Does not require the Phase enum.
+/// Uses supervisor API when CLC_API_URL is set, falls back to `.clc/state`.
+#[allow(dead_code)] // Consumed by guard/hook migration in upcoming commits
+pub fn load_name(project_dir: &Path) -> Result<Option<String>, Error> {
+    if let Ok(api_url) = std::env::var("CLC_API_URL") {
+        let agent_id = crate::git::current_branch(project_dir).unwrap_or_default();
+        return load_phase_name_from_api(&api_url, &agent_id);
+    }
+    let state = load_state_raw(project_dir)?;
+    Ok(state.map(|s| s.phase_name))
+}
+
+/// Load the workflow name from state. Returns None if no workflow is stored.
+#[allow(dead_code)] // Consumed by guard/hook migration in upcoming commits
+pub fn load_workflow_name(project_dir: &Path) -> Result<Option<String>, Error> {
+    let state = load_state_raw(project_dir)?;
+    Ok(state.and_then(|s| s.workflow))
+}
+
+fn load_phase_name_from_api(api_url: &str, agent_id: &str) -> Result<Option<String>, Error> {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| Error::NonBlocking(format!("tokio: {e}")))?;
+
+    let result: Result<serde_json::Value, Error> = rt.block_on(async {
+        let client = crate::coordination_client::build_api_client()
+            .map_err(|e| Error::NonBlocking(format!("{e}")))?;
+        client
+            .get(format!("{api_url}/agents/{agent_id}/phase"))
+            .send()
+            .await
+            .map_err(|e| Error::NonBlocking(format!("{e}")))?
+            .json()
+            .await
+            .map_err(|e| Error::NonBlocking(format!("{e}")))
+    });
+
+    match result {
+        Ok(resp) => {
+            let name = resp["phase"].as_str().unwrap_or("tests-unwritten");
+            Ok(Some(name.to_string()))
+        }
+        Err(_) => Ok(None),
+    }
+}
+
 fn load_phase_from_api(api_url: &str, agent_id: &str) -> Result<Option<Phase>, Error> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -131,7 +179,28 @@ struct State {
     attempts: u32,
 }
 
+/// Raw state: phase as a string, not parsed through the Phase enum.
+struct RawState {
+    phase_name: String,
+    attempts: u32,
+    workflow: Option<String>,
+}
+
 fn load_state(project_dir: &Path) -> Result<Option<State>, Error> {
+    let raw = load_state_raw(project_dir)?;
+    match raw {
+        None => Ok(None),
+        Some(r) => {
+            let phase = r.phase_name.parse()?;
+            Ok(Some(State {
+                phase,
+                attempts: r.attempts,
+            }))
+        }
+    }
+}
+
+fn load_state_raw(project_dir: &Path) -> Result<Option<RawState>, Error> {
     let state_path = project_dir.join(".clc").join(STATE_FILENAME);
 
     if !state_path.exists() {
@@ -145,7 +214,7 @@ fn load_state(project_dir: &Path) -> Result<Option<State>, Error> {
         ))
     })?;
 
-    let phase_str = contents
+    let phase_name = contents
         .lines()
         .find_map(|line| line.strip_prefix("phase:").map(str::trim))
         .ok_or_else(|| {
@@ -153,7 +222,8 @@ fn load_state(project_dir: &Path) -> Result<Option<State>, Error> {
                 "state file {} missing phase field",
                 state_path.display()
             ))
-        })?;
+        })?
+        .to_string();
 
     let attempts = contents
         .lines()
@@ -161,26 +231,140 @@ fn load_state(project_dir: &Path) -> Result<Option<State>, Error> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
 
-    let phase = phase_str.parse()?;
-    Ok(Some(State { phase, attempts }))
+    let workflow = contents
+        .lines()
+        .find_map(|line| line.strip_prefix("workflow:").map(str::trim))
+        .map(|s| s.to_string());
+
+    Ok(Some(RawState {
+        phase_name,
+        attempts,
+        workflow,
+    }))
 }
 
 /// Initialize the phase state for a freshly created worktree.
 /// Unlike `set`, this bypasses sequential-transition validation — it is
 /// only for use during `clc pickup` when the worktree has no prior state.
 /// Routes through the supervisor API when CLC_API_URL is set.
+#[allow(dead_code)] // Convenience wrapper, kept for backward compat
 pub fn init_phase(project_dir: &Path, target: &str) -> Result<(), Error> {
-    let target_phase: Phase = target.parse()?;
+    init_phase_with_workflow(project_dir, target, None)
+}
 
+/// Initialize phase state with an explicit workflow name.
+pub fn init_phase_with_workflow(
+    project_dir: &Path,
+    target: &str,
+    workflow_name: Option<&str>,
+) -> Result<(), Error> {
     if let Ok(api_url) = std::env::var("CLC_API_URL") {
         let agent_id = crate::git::current_branch(project_dir).unwrap_or_default();
         return init_phase_via_api(&api_url, &agent_id, target);
     }
 
-    write_state(project_dir, target_phase, 0)
+    write_state_str(project_dir, target, 0, workflow_name)
 }
 
-/// Validate and perform a phase transition.
+/// Validate and perform a phase transition using the given workflow.
+/// The workflow graph determines valid transitions.
+#[allow(dead_code)] // Consumed by guard/hook migration in upcoming commits
+pub fn set_with_workflow(
+    project_dir: &Path,
+    target: &str,
+    required_attempts: u32,
+    workflow: &Workflow,
+) -> Result<(), Error> {
+    if !workflow.has_phase(target) {
+        return Err(Error::NonBlocking(format!(
+            "unknown phase '{target}' in the active workflow"
+        )));
+    }
+
+    let raw_state = load_state_raw(project_dir)?;
+    let current_name = raw_state.as_ref().map(|s| s.phase_name.as_str());
+
+    match current_name {
+        None => {
+            if target != workflow.initial_phase() {
+                return Err(Error::NonBlocking(format!(
+                    "cannot set phase to '{target}': no current phase, must start with '{}'",
+                    workflow.initial_phase()
+                )));
+            }
+        }
+        Some(current) => {
+            if current == target {
+                return Err(Error::NonBlocking(format!(
+                    "already at phase '{current}'"
+                )));
+            }
+
+            if !workflow.is_valid_transition(current, target) {
+                return Err(Error::NonBlocking(format!(
+                    "cannot transition from '{current}' to '{target}': not a valid transition"
+                )));
+            }
+        }
+    }
+
+    let is_forward = current_name.map_or(true, |c| !workflow.is_backward(c, target));
+
+    // Attempt gating: only applies to forward transitions from an existing phase.
+    if is_forward && required_attempts > 1 && raw_state.is_some() {
+        let current_attempts = raw_state.as_ref().map_or(0, |s| s.attempts);
+        let next_attempt = current_attempts + 1;
+
+        if next_attempt < required_attempts {
+            let wf_name = raw_state.as_ref().and_then(|s| s.workflow.as_deref());
+            write_state_str(
+                project_dir,
+                current_name.unwrap_or(workflow.initial_phase()),
+                next_attempt,
+                wf_name,
+            )?;
+            return Err(Error::NonBlocking(format!(
+                "attempt {next_attempt}/{required_attempts} to advance to '{target}': \
+                 reconsider before trying again"
+            )));
+        }
+    }
+
+    // Transition succeeds — write new phase with attempts reset.
+    let wf_name = raw_state.as_ref().and_then(|s| s.workflow.as_deref());
+    write_state_str(project_dir, target, 0, wf_name)?;
+
+    // Record phase transition in coordination database.
+    let has_api = std::env::var("CLC_API_URL").is_ok();
+    let has_db = project_dir.join(".clc").join("coordination.db").exists();
+    if has_api || has_db {
+        if let Ok(coord) = Coordination::open(project_dir) {
+            let branch = crate::git::current_branch(project_dir).unwrap_or_default();
+            let msg = clc_sdk::coordination::Message {
+                id: format!(
+                    "phase-{}-{}",
+                    target,
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis()
+                ),
+                from: branch,
+                to: "coordinator".into(),
+                kind: clc_sdk::coordination::MessageKind::StatusUpdate {
+                    phase: target.to_string(),
+                    detail: format!("transitioned to {target}"),
+                },
+                timestamp: std::time::SystemTime::now(),
+            };
+            let _ = coord.send(msg);
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate and perform a phase transition using the default TDD workflow.
 /// Routes through the supervisor API when CLC_API_URL is set,
 /// otherwise writes to `.clc/state` for local worktree mode.
 pub fn set(project_dir: &Path, target: &str, required_attempts: u32) -> Result<(), Error> {
@@ -277,6 +461,15 @@ pub fn set(project_dir: &Path, target: &str, required_attempts: u32) -> Result<(
 }
 
 fn write_state(project_dir: &Path, phase: Phase, attempts: u32) -> Result<(), Error> {
+    write_state_str(project_dir, &phase.to_string(), attempts, None)
+}
+
+fn write_state_str(
+    project_dir: &Path,
+    phase: &str,
+    attempts: u32,
+    workflow: Option<&str>,
+) -> Result<(), Error> {
     use std::fmt::Write;
 
     let clc_dir = project_dir.join(".clc");
@@ -284,7 +477,7 @@ fn write_state(project_dir: &Path, phase: Phase, attempts: u32) -> Result<(), Er
         .map_err(|e| Error::NonBlocking(format!("failed to create .clc dir: {e}")))?;
     let state_path = clc_dir.join(STATE_FILENAME);
 
-    // Preserve non-phase/non-attempts lines (e.g., "untracked: true").
+    // Preserve lines that aren't phase/attempts/workflow (e.g., "untracked: true").
     let existing = if state_path.exists() {
         std::fs::read_to_string(&state_path).unwrap_or_default()
     } else {
@@ -296,10 +489,17 @@ fn write_state(project_dir: &Path, phase: Phase, attempts: u32) -> Result<(), Er
     if attempts > 0 {
         let _ = writeln!(content, "attempts: {attempts}");
     }
+    if let Some(wf) = workflow {
+        let _ = writeln!(content, "workflow: {wf}");
+    }
 
-    // Carry forward lines that aren't phase or attempts.
+    // Carry forward lines that aren't phase, attempts, or workflow.
     for line in existing.lines() {
-        if !line.starts_with("phase:") && !line.starts_with("attempts:") && !line.is_empty() {
+        if !line.starts_with("phase:")
+            && !line.starts_with("attempts:")
+            && !line.starts_with("workflow:")
+            && !line.is_empty()
+        {
             content.push_str(line);
             content.push('\n');
         }
@@ -741,5 +941,116 @@ mod tests {
             let parsed: Phase = s.parse().unwrap();
             assert_eq!(parsed, phase, "roundtrip failed for {s}");
         }
+    }
+
+    // --- Workflow-based transition tests ---
+
+    #[test]
+    fn set_with_workflow_forward_transition() {
+        let dir = tempfile::tempdir().unwrap();
+        let clc_dir = dir.path().join(".clc");
+        std::fs::create_dir_all(&clc_dir).unwrap();
+        std::fs::write(clc_dir.join("state"), "phase: tests-unwritten\n").unwrap();
+
+        let wf = crate::workflow::Workflow::default_tdd();
+        set_with_workflow(dir.path(), "tests-written", 1, &wf).unwrap();
+        let name = load_name(dir.path()).unwrap();
+        assert_eq!(name.as_deref(), Some("tests-written"));
+    }
+
+    #[test]
+    fn set_with_workflow_backward_transition() {
+        let dir = tempfile::tempdir().unwrap();
+        let clc_dir = dir.path().join(".clc");
+        std::fs::create_dir_all(&clc_dir).unwrap();
+        std::fs::write(clc_dir.join("state"), "phase: implementing\n").unwrap();
+
+        let wf = crate::workflow::Workflow::default_tdd();
+        set_with_workflow(dir.path(), "tests-unwritten", 1, &wf).unwrap();
+        let name = load_name(dir.path()).unwrap();
+        assert_eq!(name.as_deref(), Some("tests-unwritten"));
+    }
+
+    #[test]
+    fn set_with_workflow_rejects_invalid_transition() {
+        let dir = tempfile::tempdir().unwrap();
+        let clc_dir = dir.path().join(".clc");
+        std::fs::create_dir_all(&clc_dir).unwrap();
+        std::fs::write(clc_dir.join("state"), "phase: tests-unwritten\n").unwrap();
+
+        let wf = crate::workflow::Workflow::default_tdd();
+        let result = set_with_workflow(dir.path(), "implementing", 1, &wf);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn set_with_workflow_rejects_unknown_phase() {
+        let dir = tempfile::tempdir().unwrap();
+        let clc_dir = dir.path().join(".clc");
+        std::fs::create_dir_all(&clc_dir).unwrap();
+        std::fs::write(clc_dir.join("state"), "phase: tests-unwritten\n").unwrap();
+
+        let wf = crate::workflow::Workflow::default_tdd();
+        let result = set_with_workflow(dir.path(), "nonexistent", 1, &wf);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn set_with_workflow_rejects_same_phase() {
+        let dir = tempfile::tempdir().unwrap();
+        let clc_dir = dir.path().join(".clc");
+        std::fs::create_dir_all(&clc_dir).unwrap();
+        std::fs::write(clc_dir.join("state"), "phase: implementing\n").unwrap();
+
+        let wf = crate::workflow::Workflow::default_tdd();
+        let result = set_with_workflow(dir.path(), "implementing", 1, &wf);
+        assert!(result.is_err());
+    }
+
+    // --- Workflow name in state ---
+
+    #[test]
+    fn init_phase_with_workflow_stores_workflow_name() {
+        let dir = tempfile::tempdir().unwrap();
+        init_phase_with_workflow(dir.path(), "outline", Some("docs")).unwrap();
+
+        let wf_name = load_workflow_name(dir.path()).unwrap();
+        assert_eq!(wf_name.as_deref(), Some("docs"));
+
+        let phase = load_name(dir.path()).unwrap();
+        assert_eq!(phase.as_deref(), Some("outline"));
+    }
+
+    #[test]
+    fn init_phase_without_workflow_name() {
+        let dir = tempfile::tempdir().unwrap();
+        init_phase_with_workflow(dir.path(), "tests-unwritten", None).unwrap();
+
+        let wf_name = load_workflow_name(dir.path()).unwrap();
+        assert!(wf_name.is_none());
+    }
+
+    #[test]
+    fn workflow_name_preserved_through_set_with_workflow() {
+        let dir = tempfile::tempdir().unwrap();
+        init_phase_with_workflow(dir.path(), "tests-unwritten", Some("tdd")).unwrap();
+
+        let wf = crate::workflow::Workflow::default_tdd();
+        set_with_workflow(dir.path(), "tests-written", 1, &wf).unwrap();
+
+        let wf_name = load_workflow_name(dir.path()).unwrap();
+        assert_eq!(wf_name.as_deref(), Some("tdd"));
+    }
+
+    #[test]
+    fn load_name_reads_phase_as_string() {
+        let dir = tempfile::tempdir().unwrap();
+        let clc_dir = dir.path().join(".clc");
+        std::fs::create_dir_all(&clc_dir).unwrap();
+        // Write a custom phase name that isn't in the Phase enum.
+        std::fs::write(clc_dir.join("state"), "phase: outline\n").unwrap();
+
+        let name = load_name(dir.path()).unwrap();
+        assert_eq!(name.as_deref(), Some("outline"));
     }
 }

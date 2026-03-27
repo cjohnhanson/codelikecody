@@ -87,17 +87,28 @@ pub fn pickup(
     // Initialize clc in the worktree.
     crate::init::init(&worktree_dir, false, true)?;
 
-    // Resolve initial phase from workflow policy.
-    // If no workflows are configured, fall back to the standard TDD starting phase.
+    // Resolve workflow and initial phase from policy rules.
+    // If no workflows are configured, use the built-in TDD workflow.
     let config = crate::config::load(project_dir).unwrap_or_default();
-    let initial_phase = if config.workflows.is_empty() {
-        "tests-unwritten"
+    let (initial_phase, workflow_name): (&str, Option<&str>) = if config.workflows.is_empty() {
+        ("tests-unwritten", None)
     } else {
-        let workflow = config.resolve_workflow(&issue.frontmatter.labels, &issue.project);
-        workflow.phases.first().map(|p| p.name.as_str()).unwrap_or("done")
+        let wf_def = config.resolve_workflow(&issue.frontmatter.labels, &issue.project);
+        let phase = wf_def
+            .phases
+            .first()
+            .map(|p| p.name.as_str())
+            .unwrap_or("done");
+        // Find which workflow name matched by searching the map.
+        let name = config
+            .workflows
+            .iter()
+            .find(|(_, v)| std::ptr::eq(*v, wf_def))
+            .map(|(k, _)| k.as_str());
+        (phase, name)
     };
 
-    crate::phase::init_phase(&worktree_dir, initial_phase)?;
+    crate::phase::init_phase_with_workflow(&worktree_dir, initial_phase, workflow_name)?;
 
     Ok(())
 }
