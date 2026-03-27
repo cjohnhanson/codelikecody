@@ -1,12 +1,12 @@
 ---
 title: "Dynamic workflow phases, configurable guards, and typed review gates"
-status: in_progress
+status: todo
 priority: 2
 assignee:
 labels: [clc, architecture, clc-up-target]
 depends_on: []
 created: 2026-03-23T04:27:05Z
-updated: "2026-03-27T01:28:48Z"
+updated: "2026-03-27T01:33:39Z"
 ---
 
 ## Problem
@@ -322,5 +322,3 @@ passing tests is necessary but not sufficient — code review catches
 things tests don't. A reviewer agent with constrained permissions and
 fresh context is the automated equivalent of a code review, and gating
 phase advancement on review approval is how you enforce it.
-
-## Scratch Notes
