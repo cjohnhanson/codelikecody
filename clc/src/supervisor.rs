@@ -77,6 +77,27 @@ impl Supervisor {
         let coord = Coordination::open(&self.project_dir)
             .map_err(|e| Error::NonBlocking(format!("coordination DB: {e}")))?;
 
+        // Reset stale agents from prior runs. Everything non-terminal (Pending,
+        // Running) is stale — the supervisor just started, so no agents are
+        // actually running. Must happen BEFORE the API server starts so the
+        // API's DB connection sees the cleaned-up state.
+        let all_agents = coord.list_agents(None).unwrap_or_default();
+        eprintln!("supervisor: found {} agent(s) in DB", all_agents.len());
+        let mut reset_count = 0;
+        for (id, status) in &all_agents {
+            if matches!(
+                status,
+                clc_sdk::coordination::AgentStatus::Pending
+                    | clc_sdk::coordination::AgentStatus::Running
+            ) {
+                let _ = coord.set_status(id, clc_sdk::coordination::AgentStatus::Stopped);
+                reset_count += 1;
+            }
+        }
+        if reset_count > 0 {
+            eprintln!("supervisor: reset {reset_count} stale agent(s) from prior run");
+        }
+
         let _ = coord.register_agent("supervisor", None);
         let _ = coord.set_status("supervisor", clc_sdk::coordination::AgentStatus::Running);
 
