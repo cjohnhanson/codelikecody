@@ -143,6 +143,7 @@ async fn main() {
             "worker-1",
             "coordinator",
             MessageKind::ReviewRequest {
+                review_type: "code".into(),
                 branch: "feat/thing".into(),
                 summary: "added the thing".into(),
             },
@@ -160,6 +161,7 @@ async fn main() {
             "worker-1",
             MessageKind::ReviewResult {
                 request_id: "review-req-1".into(),
+                review_type: "code".into(),
                 verdict: ReviewVerdict::Approved,
                 comments: "lgtm".into(),
             },
