@@ -280,7 +280,7 @@ fn write_state_str(
 }
 
 /// Initialize phase via the supervisor API. No transition validation.
-fn init_phase_via_api(api_url: &str, agent_id: &str, target: &str) -> Result<(), Error> {
+pub fn init_phase_via_api(api_url: &str, agent_id: &str, target: &str) -> Result<(), Error> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()

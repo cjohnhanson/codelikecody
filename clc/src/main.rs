@@ -567,8 +567,12 @@ fn cmd_workspace(action: &cli::WorkspaceAction) -> Result<(), Error> {
             if git::current_branch(&cwd).as_deref() != Some(branch) {
                 crate::gix_ops::create_branch(&cwd, branch)?;
                 crate::gix_ops::checkout_branch(&cwd, branch)?;
-                // Set initial phase for the new branch.
-                crate::phase::set(&cwd, "tests-unwritten", 0)?;
+                // Set initial phase — route through API if available.
+                if let Some(url) = &api_url {
+                    crate::phase::init_phase_via_api(url, branch, "tests-unwritten")?;
+                } else {
+                    crate::phase::init_phase_with_workflow(&cwd, "tests-unwritten", None)?;
+                }
             }
 
             // Build prompts.
