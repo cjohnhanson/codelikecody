@@ -73,21 +73,12 @@ pub fn enumerate_subgraph_paths(graph: &StateGraph) -> Vec<TestPath> {
         );
     }
 
-    // Enumerate from each entrypoint, stopping at other entrypoints.
+    // Enumerate from each entrypoint (treating it as a root, no boundaries).
     for &ep in &entrypoints {
         let mut visited = HashSet::new();
         visited.insert(ep);
         let mut current_path = Vec::new();
-        let other_entrypoints: HashSet<StateId> =
-            entrypoints.iter().copied().filter(|&e| e != ep).collect();
-        dfs_with_boundaries(
-            graph,
-            ep,
-            &mut visited,
-            &mut current_path,
-            &mut all_paths,
-            &other_entrypoints,
-        );
+        dfs(graph, ep, &mut visited, &mut current_path, &mut all_paths);
     }
 
     all_paths
