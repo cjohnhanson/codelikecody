@@ -7,20 +7,20 @@ assertions:
 
   # Skills merge: union of user + repo
   - name: "prime includes user-level skill"
-    command: "HOME=./fake-home clc prime | grep 'user-skill'"
+    command: "HOME=./fake-home clc prime | grep 'personal-skill'"
 
   - name: "prime includes repo-level skill"
     command: "HOME=./fake-home clc prime | grep 'repo-skill'"
 
   - name: "almanac list shows both user and repo skills"
-    command: "HOME=./fake-home clc almanac list | grep 'user-skill' && HOME=./fake-home clc almanac list | grep 'repo-skill'"
+    command: "HOME=./fake-home clc almanac list | grep 'personal-skill' && HOME=./fake-home clc almanac list | grep 'repo-skill'"
 
   - name: "SessionStart hook context includes both skills"
     command: >
       echo '{"hook_event_name":"SessionStart","session_id":"test","cwd":".","source":"startup"}'
       | HOME=./fake-home clc hook
       | jq -r '.hookSpecificOutput.additionalContext'
-      | grep 'user-skill'
+      | grep 'personal-skill'
       &&
       echo '{"hook_event_name":"SessionStart","session_id":"test","cwd":".","source":"startup"}'
       | HOME=./fake-home clc hook

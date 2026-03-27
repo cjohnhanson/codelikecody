@@ -1,5 +1,5 @@
 ---
-name: user-skill
+name: personal-skill
 description: A skill from user-level config
 ---
 
