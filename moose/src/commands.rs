@@ -408,6 +408,19 @@ pub fn parse_command(args: &[String], flags: &Flags) -> Result<Value, ParseError
                 return Ok(cmd);
             }
 
+            // Check for --animation flag: wait --animation [selector]
+            if rest.iter().any(|&s| s == "--animation") {
+                let anim_idx = rest.iter().position(|&s| s == "--animation").unwrap();
+                let selector = rest.get(anim_idx + 1).filter(|s| !s.starts_with('-')).copied().unwrap_or("");
+                let mut cmd = json!({ "id": id, "action": "wait_animation", "selector": selector });
+                if let Some(t_idx) = rest.iter().position(|&s| s == "--timeout") {
+                    if let Some(Ok(ms)) = rest.get(t_idx + 1).map(|s| s.parse::<u64>()) {
+                        cmd["timeout"] = json!(ms);
+                    }
+                }
+                return Ok(cmd);
+            }
+
             // Check for --download flag: wait --download [path] [--timeout ms]
             if rest.iter().any(|&s| s == "--download" || s == "-d") {
                 let mut cmd = json!({ "id": id, "action": "waitfordownload" });
@@ -442,7 +455,7 @@ pub fn parse_command(args: &[String], flags: &Flags) -> Result<Value, ParseError
             } else {
                 Err(ParseError::MissingArguments {
                     context: "wait".to_string(),
-                    usage: "wait <selector|ms|--url|--load|--fn|--text>",
+                    usage: "wait <selector|ms|--url|--load|--fn|--text|--animation>",
                 })
             }
         }
@@ -866,6 +879,9 @@ pub fn parse_command(args: &[String], flags: &Flags) -> Result<Value, ParseError
 
         // === Set (browser settings) ===
         "set" => parse_set(&rest, &id),
+
+        // === Animation ===
+        "animation" => parse_animation(&rest, &id),
 
         // === Network ===
         "network" => parse_network(&rest, &id),
@@ -2129,6 +2145,49 @@ fn parse_set(rest: &[&str], id: &str) -> Result<Value, ParseError> {
         None => Err(ParseError::MissingArguments {
             context: "set".to_string(),
             usage: "set <viewport|device|geo|offline|headers|credentials|media> [args...]",
+        }),
+    }
+}
+
+/// Parse animation inspection and control commands.
+fn parse_animation(rest: &[&str], id: &str) -> Result<Value, ParseError> {
+    const VALID: &[&str] = &["list", "pause", "resume", "slow", "seek"];
+
+    match rest.first().copied() {
+        Some("list") => {
+            let json_flag = rest.contains(&"--json");
+            Ok(json!({ "id": id, "action": "animation_list", "json": json_flag }))
+        }
+        Some("pause") => {
+            let anim_id = rest.get(1).filter(|s| !s.starts_with('-')).copied().unwrap_or("");
+            Ok(json!({ "id": id, "action": "animation_pause", "animationId": anim_id }))
+        }
+        Some("resume") => Ok(json!({ "id": id, "action": "animation_resume" })),
+        Some("slow") => {
+            let rate = rest
+                .get(1)
+                .and_then(|s| s.parse::<f64>().ok())
+                .unwrap_or(0.1);
+            Ok(json!({ "id": id, "action": "animation_slow", "rate": rate }))
+        }
+        Some("seek") => {
+            let anim_id = rest.get(1).ok_or_else(|| ParseError::MissingArguments {
+                context: "animation seek".to_string(),
+                usage: "animation seek <id> <percent>",
+            })?;
+            let pct = rest
+                .get(2)
+                .and_then(|s| s.trim_end_matches('%').parse::<f64>().ok())
+                .unwrap_or(50.0);
+            Ok(json!({ "id": id, "action": "animation_seek", "animationId": anim_id, "percent": pct }))
+        }
+        Some(other) => Err(ParseError::UnknownSubcommand {
+            subcommand: other.to_string(),
+            valid_options: VALID,
+        }),
+        None => Err(ParseError::MissingArguments {
+            context: "animation".to_string(),
+            usage: "animation <list|pause|resume|slow|seek>",
         }),
     }
 }
