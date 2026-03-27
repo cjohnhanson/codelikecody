@@ -564,7 +564,7 @@ fn cmd_workspace(action: &cli::WorkspaceAction) -> Result<(), Error> {
             }
 
             // Build prompts.
-            let system_prompt = dispatch::build_system_prompt(branch);
+            let system_prompt = dispatch::build_system_prompt(branch, None);
             let initial_prompt = dispatch::build_worker_prompt_from_dir(&cwd, branch)?;
 
             let agent = ClaudeCodeAgent::new();

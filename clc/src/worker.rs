@@ -496,12 +496,18 @@ pub fn supervise(project_dir: &Path, id: &str, max_resumes: u32) -> Result<(), E
         // Wait for the worker process to exit.
         wait_for_exit(&wdir);
 
-        // Check phase.
-        let phase = crate::phase::load(&work_dir).unwrap_or(None);
+        // Check phase — use string-based loading to support configurable workflows.
+        let phase_name = crate::phase::load_name(&work_dir).unwrap_or(None);
 
-        if phase == Some(crate::phase::Phase::Done) {
-            eprintln!("worker '{id}' reached done phase");
-            return Ok(());
+        // Resolve workflow to check terminal status.
+        let cfg = crate::config::load(&work_dir).unwrap_or_default();
+        let workflow = resolve_worker_workflow(&work_dir, &cfg);
+
+        if let Some(ref name) = phase_name {
+            if workflow.is_terminal(name) {
+                eprintln!("worker '{id}' reached terminal phase '{name}'");
+                return Ok(());
+            }
         }
 
         // Block on pending permission requests before attempting auto-resume.
@@ -513,7 +519,7 @@ pub fn supervise(project_dir: &Path, id: &str, max_resumes: u32) -> Result<(), E
             )));
         }
 
-        let phase_str = phase.map_or_else(|| "none".to_string(), |p| p.to_string());
+        let phase_str = phase_name.as_deref().unwrap_or("none");
 
         if resumes >= max_resumes {
             return Err(Error::NonBlocking(format!(
@@ -705,34 +711,67 @@ pub fn recover(project_dir: &Path, id: &str, main_branch: &str, admin_branch: &s
         )));
     }
 
-    // Check phase.
-    let phase = crate::phase::load(&work_dir)?
+    // Resolve workflow and check phase.
+    let cfg = crate::config::load(&work_dir).unwrap_or_default();
+    let workflow = resolve_worker_workflow(&work_dir, &cfg);
+
+    let phase_name = crate::phase::load_name(&work_dir)?
         .ok_or_else(|| Error::NonBlocking(format!("no phase set for worker '{id}'")))?;
 
-    if phase == crate::phase::Phase::Done {
+    if workflow.is_terminal(&phase_name) {
         return Err(Error::NonBlocking(format!(
-            "worker '{id}' is already done — use `clc land {id}` to merge"
+            "worker '{id}' is already at terminal phase '{phase_name}' — use `clc land {id}` to merge"
         )));
     }
 
-    if phase != crate::phase::Phase::Green {
-        return Err(Error::NonBlocking(format!(
-            "worker '{id}' is at phase '{phase}', not 'green' — use `clc worker {id} resume` to continue the work"
-        )));
+    // Walk the graph edges to the nearest terminal phase.
+    // This is a manual recovery — it bypasses review gates.
+    let mut current = phase_name.clone();
+    let mut steps = 0;
+    while !workflow.is_terminal(&current) {
+        // Find the first forward transition from the current phase.
+        let names: Vec<&str> = workflow.phase_names().collect();
+        let mut advanced = false;
+        for name in &names {
+            if workflow.can_transition(&current, name) {
+                crate::phase::set_with_workflow(&work_dir, name, 1, &workflow)?;
+                current = name.to_string();
+                advanced = true;
+                break;
+            }
+        }
+        if !advanced {
+            return Err(Error::NonBlocking(format!(
+                "worker '{id}' at phase '{current}' has no forward transitions to a terminal phase"
+            )));
+        }
+        steps += 1;
+        if steps > 20 {
+            return Err(Error::NonBlocking(format!(
+                "worker '{id}' recovery exceeded 20 steps — possible cycle in workflow"
+            )));
+        }
     }
-
-    // Advance through review phases to done (manual recovery bypasses coordinator review).
-    crate::phase::set(&work_dir, "review-requested", 1)?;
-    crate::phase::set(&work_dir, "in-review", 1)?;
-    crate::phase::set(&work_dir, "reviewed", 1)?;
-    crate::phase::set(&work_dir, "done", 1)?;
 
     // Run the done ceremony on the worktree.
     crate::done::done(&work_dir, main_branch, admin_branch)?;
 
-    eprintln!("recovered worker '{id}' — phase advanced to done");
+    eprintln!("recovered worker '{id}' — phase advanced to '{current}'");
 
     Ok(())
+}
+
+/// Resolve the active workflow for a worker's worktree.
+fn resolve_worker_workflow(work_dir: &Path, cfg: &crate::config::Config) -> crate::workflow::Workflow {
+    let wf_name = crate::phase::load_workflow_name(work_dir).unwrap_or(None);
+    if let Some(name) = &wf_name {
+        if let Some(def) = cfg.workflows.get(name) {
+            if let Ok(wf) = crate::workflow::Workflow::new(def) {
+                return wf;
+            }
+        }
+    }
+    crate::workflow::Workflow::default_tdd()
 }
 
 // --- Helpers ---

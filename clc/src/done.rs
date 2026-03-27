@@ -2,10 +2,12 @@ use std::path::Path;
 
 use camino::Utf8Path;
 
+use crate::config;
 use crate::coordination::Coordination;
 use crate::error::Error;
 use crate::git;
-use crate::phase::{self, Phase};
+use crate::phase;
+use crate::workflow::Workflow;
 
 pub fn done(project_dir: &Path, main_branch: &str, admin_branch: &str) -> Result<(), Error> {
     // Must not be on main branch.
@@ -18,13 +20,16 @@ pub fn done(project_dir: &Path, main_branch: &str, admin_branch: &str) -> Result
         ));
     }
 
-    // Phase must be done (coordinator advances to done before calling `clc done`).
-    let current_phase = phase::load(project_dir)?
+    // Resolve workflow and check that current phase is terminal.
+    let cfg = config::load(project_dir).unwrap_or_default();
+    let workflow = resolve_done_workflow(project_dir, &cfg);
+
+    let phase_name = phase::load_name(project_dir)?
         .ok_or_else(|| Error::NonBlocking("no phase set — nothing to finalize".into()))?;
 
-    if current_phase != Phase::Done {
+    if !workflow.is_terminal(&phase_name) {
         return Err(Error::NonBlocking(format!(
-            "phase must be 'done' to finalize, currently '{current_phase}'"
+            "phase must be terminal to finalize, currently '{phase_name}'"
         )));
     }
 
@@ -78,4 +83,17 @@ pub fn done(project_dir: &Path, main_branch: &str, admin_branch: &str) -> Result
     }
 
     Ok(())
+}
+
+/// Resolve the active workflow for done ceremony.
+fn resolve_done_workflow(project_dir: &Path, cfg: &config::Config) -> Workflow {
+    let wf_name = phase::load_workflow_name(project_dir).unwrap_or(None);
+    if let Some(name) = &wf_name {
+        if let Some(def) = cfg.workflows.get(name) {
+            if let Ok(wf) = Workflow::new(def) {
+                return wf;
+            }
+        }
+    }
+    Workflow::default_tdd()
 }

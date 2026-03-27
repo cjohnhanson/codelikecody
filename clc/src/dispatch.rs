@@ -122,7 +122,7 @@ pub fn dispatch_with_workspace(
 
     // Build prompts.
     let initial_prompt = build_worker_prompt(project_dir, id)?;
-    let system_prompt = build_system_prompt(id);
+    let system_prompt = build_system_prompt(id, None);
 
     // Spawn the worker.
     let agent = clc_sdk::agent::ClaudeCodeAgent::new();
@@ -399,12 +399,29 @@ pub fn build_worker_prompt(project_dir: &Path, tisket_id: &str) -> Result<String
         .find_issue(tisket_id)
         .map_err(|e| Error::NonBlocking(format!("tisket '{tisket_id}': {e}")))?;
 
+    // Resolve workflow description for the prompt.
+    let cfg = crate::config::load(project_dir).unwrap_or_default();
+    let wf_name = crate::phase::load_workflow_name(project_dir).unwrap_or(None);
+    let workflow_desc = wf_name
+        .as_ref()
+        .and_then(|name| cfg.workflows.get(name))
+        .and_then(|def| crate::workflow::Workflow::new(def).ok())
+        .unwrap_or_else(crate::workflow::Workflow::default_tdd);
+
+    let phase_list: Vec<&str> = workflow_desc.phase_names().collect();
+    let desc = workflow_desc
+        .description()
+        .unwrap_or("Follow the workflow phases.");
+
     Ok(format!(
         "You are working on tisket '{tisket_id}': {}\n\n\
          {}\n\n\
-         Follow the clc workflow: write tests, implement, get green, run `clc done`.\n\
-         The hooks will guide you through each phase.",
-        issue.frontmatter.title, issue.body,
+         {desc}\n\
+         Phases: {}\n\
+         The hooks will guide you through each phase. Run `clc done` when complete.",
+        issue.frontmatter.title,
+        issue.body,
+        phase_list.join(" → "),
     ))
 }
 
@@ -413,18 +430,28 @@ pub fn build_worker_prompt_from_dir(workspace_dir: &Path, tisket_id: &str) -> Re
     build_worker_prompt(workspace_dir, tisket_id)
 }
 
-pub fn build_system_prompt(tisket_id: &str) -> String {
+pub fn build_system_prompt(tisket_id: &str, workflow: Option<&crate::workflow::Workflow>) -> String {
+    let wf = workflow
+        .cloned()
+        .unwrap_or_else(crate::workflow::Workflow::default_tdd);
+    let phase_list: Vec<&str> = wf.phase_names().collect();
+    let desc = wf
+        .description()
+        .unwrap_or("Follow the workflow phases.");
+
     format!(
         "You are an autonomous worker agent managed by clc. \
          Your task is defined by tisket '{tisket_id}'. \
-         Follow the phase system: tests-unwritten -> tests-written -> red -> implementing -> green -> done. \
-         When all tests pass and work is complete, run `clc done` to finalize. \
-         Do not stop before reaching the 'done' phase.\n\n\
+         {desc} \
+         Phases: {}. \
+         When work is complete, run `clc done` to finalize. \
+         Do not stop before reaching a terminal phase.\n\n\
          Your permissions are limited. You have access to file operations, search, \
          web lookup, clc/tisket/missouri/cargo commands, and basic shell commands. \
          If a tool call is denied, do not retry it. Run \
          `clc permissions request \"<what you need and why>\"` and stop working. \
          The coordinator will review your request and either grant the permission \
-         or send you new instructions. Wait to be resumed."
+         or send you new instructions. Wait to be resumed.",
+        phase_list.join(" → "),
     )
 }
