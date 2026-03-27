@@ -704,3 +704,35 @@ transitions:
           ignore: true
         - path: ".clc/"
           ignore: true
+
+  - name: "setup custom workflow with full PhaseDef objects"
+    command: >-
+      git init -q -b main &&
+      git -c user.name=test -c user.email=test@test add -A &&
+      git -c user.name=test -c user.email=test@test commit -q -m init &&
+      printf 'tisket_dir: .tisket\nadditional_instructions: ""\n' > tisket.yml &&
+      mkdir -p .tisket/v0.1.0 &&
+      printf 'name: v0.1.0\n' > .tisket/v0.1.0/project.yml &&
+      printf -- '---\ntitle: "Write docs"\nstatus: todo\npriority:\nassignee:\nlabels: [docs]\ndepends_on: []\ncreated: "2025-01-01T00:00:00Z"\nupdated: "2025-01-01T00:00:00Z"\n---\n' > .tisket/v0.1.0/write-docs.md &&
+      printf 'workflows:\n  docs:\n    description: "Documentation writing workflow"\n    phases:\n      - name: outline\n        instructions: "Establish document structure."\n        transitions: [draft]\n        permissions:\n          allow: ["Edit(docs/**)", "Write(docs/**)"]\n          deny: ["Edit", "Write"]\n      - name: draft\n        instructions: "Write sections."\n        can_stop: true\n        transitions:\n          - outline\n          - target: done\n            requires: [writing]\n      - name: done\n    reviews:\n      writing:\n        instructions: "Review for clarity and accuracy."\nrules:\n  - workflow: docs\n    match:\n      label: docs\n' > clc.yml &&
+      git -c user.name=test -c user.email=test@test add -A &&
+      git -c user.name=test -c user.email=test@test commit -q -m 'add custom workflow config'
+    target: "../has-custom-workflow-config"
+    comparators:
+      files:
+        - path: ".claude/"
+          ignore: true
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true
+        - path: "clc.yml"
+          ignore: true
+        - path: "Cargo.toml"
+          ignore: true
+        - path: "src/"
+          ignore: true

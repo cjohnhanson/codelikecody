@@ -81,10 +81,9 @@ impl Workflow {
             allow: vec![
                 "Edit(tests/**)".into(),
                 "Write(tests/**)".into(),
-                "Bash(cargo test *)".into(),
-                "Bash(missouri *)".into(),
+                "NotebookEdit(tests/**)".into(),
             ],
-            deny: vec!["Edit".into(), "Write".into(), "Bash".into()],
+            deny: vec!["Edit".into(), "Write".into(), "NotebookEdit".into()],
         });
 
         let def = WorkflowDef {

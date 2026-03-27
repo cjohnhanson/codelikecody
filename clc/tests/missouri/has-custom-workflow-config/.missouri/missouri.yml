@@ -1,0 +1,33 @@
+assertions:
+  - name: "clc config show succeeds"
+    command: "clc config show"
+
+  - name: "config contains docs workflow"
+    command: "clc config show | grep -q 'docs'"
+
+  - name: "config contains outline phase"
+    command: "clc config show | grep -q 'outline'"
+
+  - name: "docs-task exists with docs label"
+    command: "grep -q 'labels:.*docs' .tisket/v0.1.0/write-docs.md"
+
+transitions:
+  - name: "pickup docs task (uses docs workflow)"
+    command: "clc pickup write-docs"
+    target: "../picked-up-custom-workflow"
+    comparators:
+      files:
+        - path: ".claude/"
+          ignore: true
+        - path: ".clc/"
+          ignore: true
+        - path: ".git/"
+          ignore: true
+        - path: ".worktrees/"
+          ignore: true
+        - path: ".tisket/"
+          ignore: true
+        - path: "tisket.yml"
+          ignore: true
+        - path: "clc.yml"
+          ignore: true
