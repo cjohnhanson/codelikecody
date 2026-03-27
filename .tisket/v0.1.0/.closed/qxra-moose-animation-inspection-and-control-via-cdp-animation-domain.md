@@ -1,12 +1,12 @@
 ---
 title: "moose: animation inspection and control via CDP Animation domain"
-status: in_progress
+status: done
 priority: 2
 assignee:
 labels: [moose, feature]
 depends_on: []
 created: 2026-03-27T12:39:25Z
-updated: "2026-03-27T12:42:22Z"
+updated: "2026-03-27T13:26:33Z"
 ---
 
 ## Problem
@@ -145,5 +145,3 @@ Add an "Animations" section to the moose skill covering:
   through CLI commands
 - Animation state is observable in missouri tests via `--json` output
 - The moose skill teaches agents when and how to use animation inspection
-
-## Scratch Notes
