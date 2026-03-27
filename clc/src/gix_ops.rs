@@ -404,19 +404,21 @@ fn is_ephemeral_path(path: &gix::bstr::BStr) -> bool {
 
 /// Switch HEAD to point to the given branch (without updating the worktree).
 /// Create a new branch pointing at HEAD.
+/// Writes the ref file directly to avoid reflog issues in minimal repos
+/// (e.g. repos created from git pack without .git/logs/).
 pub fn create_branch(project_dir: &Path, branch_name: &str) -> Result<(), Error> {
     let repo = open(project_dir)?;
     let head_id = repo
         .head_id()
         .map_err(|e| Error::NonBlocking(format!("failed to get HEAD: {e}")))?;
-    let ref_name = format!("refs/heads/{branch_name}");
-    repo.reference(
-        ref_name,
-        head_id.detach(),
-        gix::refs::transaction::PreviousValue::MustNotExist,
-        format!("branch: create {branch_name}"),
-    )
-    .map_err(|e| Error::NonBlocking(format!("create branch '{branch_name}': {e}")))?;
+
+    let ref_path = repo.path().join("refs").join("heads").join(branch_name);
+    if let Some(parent) = ref_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| Error::NonBlocking(format!("create ref dir: {e}")))?;
+    }
+    std::fs::write(&ref_path, format!("{}\n", head_id))
+        .map_err(|e| Error::NonBlocking(format!("write ref for '{branch_name}': {e}")))?;
     Ok(())
 }
 
