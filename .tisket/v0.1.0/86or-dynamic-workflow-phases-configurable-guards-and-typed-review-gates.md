@@ -1,12 +1,12 @@
 ---
 title: "Dynamic workflow phases, configurable guards, and typed review gates"
-status: todo
+status: in_progress
 priority: 2
 assignee:
-labels: [clc, architecture]
+labels: [clc, architecture, clc-up-target]
 depends_on: []
 created: 2026-03-23T04:27:05Z
-updated: "2026-03-27T02:31:35Z"
+updated: "2026-03-27T01:28:48Z"
 ---
 
 ## Problem
@@ -322,3 +322,54 @@ passing tests is necessary but not sufficient — code review catches
 things tests don't. A reviewer agent with constrained permissions and
 fresh context is the automated equivalent of a code review, and gating
 phase advancement on review approval is how you enforce it.
+
+## Scratch Notes
+
+### Done — 18 commits on branch 86or
+
+**Schema + engine:**
+- PhaseDef, TransitionDef, PermissionsDef, ReviewDef in config.rs
+- Workflow engine (workflow.rs) — directed graph validation, default_tdd()
+- Phase enum deleted — all consumers use string phases + Workflow graph
+
+**Guard + hook:**
+- Guard uses permission patterns (deny/allow with tool globs)
+- Hook: prime text, nudge, bootstrap, stop all workflow-driven
+- Reviewer session detection via CLC_REVIEW_TYPE env var
+- Reviewer prime text: review instructions, verdict commands, tisket context
+
+**Review gates:**
+- review.rs: CLI commands (request/approve/request-changes)
+- review_type field on ReviewRequest/ReviewResult messages
+- Transition gating: set_with_workflow checks DB for required approvals
+- Coordinator spawns reviewer sessions for pending reviews
+- Worker supervise blocks on pending reviews
+
+**Identity:**
+- Bearer token per agent at registration (stored in coordination_agents.token)
+- Client sends Authorization: Bearer header via CLC_AGENT_TOKEN env var
+- Supervisor validates token identity on ReviewResult messages
+
+**Consumer migration:**
+- done.rs, worker.rs, dispatch.rs, merge.rs, pickup.rs, main.rs all use Workflow
+- Recover walks forward graph edges (no hardcoded phase sequence)
+
+**Verification:**
+- 189 clc unit tests, zero failures
+- Full workspace: zero warnings, zero failures
+- Missouri: 37 paths, 106 steps, 4562 assertions, zero failures
+- New missouri states: has-custom-workflow-config, picked-up-custom-workflow
+
+### Follow-up
+- p7yy (mTLS cert extraction) can be cancelled — bearer token auth covers it
+
+### Files modified
+- clc/src: config.rs, workflow.rs (new), phase.rs, guard.rs, hook.rs,
+  done.rs, worker.rs, dispatch.rs, merge.rs, pickup.rs, main.rs, cli.rs,
+  review.rs (new), supervisor_api.rs, coordination.rs, coordination_client.rs
+- clc-sdk/src: coordination.rs, coordination_db.rs
+- clc-sdk/examples: coordination_exercise.rs
+- clc/tests/missouri: initialized, has-custom-workflow-config (new),
+  picked-up-custom-workflow (new), ready-to-done, stranded-at-green,
+  has-custom-workflow-config (new)
+- moose/src/native: e2e_tests.rs (new), parity_tests.rs (new)
