@@ -737,16 +737,17 @@ pub fn recover(project_dir: &Path, id: &str, main_branch: &str, admin_branch: &s
         )));
     }
 
-    // Walk the graph edges to the nearest terminal phase.
+    // Walk forward transitions to the nearest terminal phase.
+    // Only follow non-backward edges to avoid cycles.
     // This is a manual recovery — it bypasses review gates.
     let mut current = phase_name.clone();
     let mut steps = 0;
     while !workflow.is_terminal(&current) {
-        // Find the first forward transition from the current phase.
         let names: Vec<&str> = workflow.phase_names().collect();
         let mut advanced = false;
         for name in &names {
-            if workflow.can_transition(&current, name) {
+            // Only follow forward transitions (not backward edges).
+            if workflow.can_transition(&current, name) && !workflow.is_backward(&current, name) {
                 crate::phase::set_with_workflow(&work_dir, name, 1, &workflow)?;
                 current = name.to_string();
                 advanced = true;
