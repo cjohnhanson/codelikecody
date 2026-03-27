@@ -81,8 +81,27 @@ pub fn run() -> Result<i32, Error> {
         Event::PreToolUse { ref tool_name, ref tool_input }
             if std::env::var("CLC_API_URL").is_ok() =>
         {
-            // Route through supervisor API for permission check.
-            check_tool_via_api(tool_name, tool_input, git_state.as_ref())
+            // Check local phase/permission guards first. Only escalate to the
+            // supervisor API if the local guard doesn't explicitly allow it.
+            let local = guard::evaluate(&event, git_state.as_ref(), current_phase, cwd);
+            match local {
+                Response::Passthrough => {
+                    // Local guard says passthrough — tool is allowed locally.
+                    // No need to call the API for tools that are already permitted.
+                    Response::Passthrough
+                }
+                Response::Block { .. } => {
+                    // Local guard blocked it — check if the API has a grant.
+                    let api_result = check_tool_via_api(tool_name, tool_input, git_state.as_ref());
+                    if matches!(api_result, Response::Passthrough) {
+                        api_result
+                    } else {
+                        // Both local and API denied — use local message (more specific).
+                        local
+                    }
+                }
+                other => other,
+            }
         }
         _ => guard::evaluate(&event, git_state.as_ref(), current_phase, cwd),
     };
