@@ -264,7 +264,6 @@ impl Workflow {
     }
 
     /// Get a review definition by type name.
-    #[allow(dead_code)] // Consumed by review gate runtime, not yet implemented
     pub fn review_def(&self, review_type: &str) -> Option<&ReviewDef> {
         self.reviews.get(review_type)
     }

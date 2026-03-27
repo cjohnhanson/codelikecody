@@ -62,20 +62,38 @@ pub fn run() -> Result<i32, Error> {
         phase_name
     };
 
+    // Detect reviewer sessions via env var.
+    let review_type = std::env::var("CLC_REVIEW_TYPE").ok();
+    let is_reviewer = review_type.is_some();
+
     let response = match event {
         Event::SessionStart { .. } => {
-            let prime = assemble_prime(cwd, git_state.as_ref(), phase_name.as_deref(), &workflow, &cfg);
+            let prime = if is_reviewer {
+                assemble_reviewer_prime(
+                    cwd,
+                    git_state.as_ref(),
+                    review_type.as_deref().unwrap_or(""),
+                    &workflow,
+                    &cfg,
+                )
+            } else {
+                assemble_prime(cwd, git_state.as_ref(), phase_name.as_deref(), &workflow, &cfg)
+            };
             Response::Allow {
                 context: Some(prime),
             }
         }
         Event::UserPromptSubmit { .. } => {
-            let reinforcement = assemble_reinforcement(cwd, git_state.as_ref(), phase_name.as_deref(), &cfg);
+            let reinforcement = if is_reviewer {
+                format!("reviewer: type={}", review_type.as_deref().unwrap_or("?"))
+            } else {
+                assemble_reinforcement(cwd, git_state.as_ref(), phase_name.as_deref(), &cfg)
+            };
             Response::Allow {
                 context: Some(reinforcement),
             }
         }
-        Event::PostToolUse { ref tool_name, .. } => {
+        Event::PostToolUse { ref tool_name, .. } if !is_reviewer => {
             let nudge = post_tool_nudge_workflow(tool_name, phase_name.as_deref(), &workflow);
             nudge.map_or(Response::Passthrough, |text| Response::Allow {
                 context: Some(text),
@@ -400,6 +418,63 @@ fn assemble_prime(
          The message should describe what you were doing so you can resume\n\
          with context if the reminder fires in a new session.\n\n",
     );
+
+    out
+}
+
+/// Assemble prime text for a reviewer session.
+fn assemble_reviewer_prime(
+    cwd: &Path,
+    git: Option<&git::GitState>,
+    review_type: &str,
+    workflow: &Workflow,
+    _cfg: &Config,
+) -> String {
+    use std::fmt::Write;
+
+    let mut out = String::new();
+
+    out.push_str("# clc reviewer session\n\n");
+    let _ = writeln!(out, "You are a **reviewer agent** performing a **{review_type}** review.");
+    out.push_str(
+        "Your role is to examine the work in this worktree and render a verdict.\n\
+         You are NOT the worker — do not make changes to the code.\n\n",
+    );
+
+    // Branch context
+    if let Some(state) = git {
+        let _ = writeln!(out, "Branch: `{}`", state.branch);
+    }
+    let _ = writeln!(out, "Review type: `{review_type}`\n");
+
+    // Review instructions from workflow config
+    if let Some(review_def) = workflow.review_def(review_type) {
+        if let Some(instructions) = &review_def.instructions {
+            out.push_str("## Review instructions\n\n");
+            out.push_str(instructions);
+            out.push_str("\n\n");
+        }
+    }
+
+    // Verdict commands
+    out.push_str("## Rendering your verdict\n\n");
+    out.push_str("When your review is complete, render exactly one verdict:\n\n");
+    out.push_str("- **Approve:** `clc review approve \"optional comments\"`\n");
+    out.push_str("- **Request changes:** `clc review request-changes \"description of what needs to change\"`\n\n");
+    out.push_str(
+        "You must render a verdict before stopping. The worker is waiting on your review.\n\n",
+    );
+
+    // Tisket context (reviewer sees the same tisket as the worker)
+    let ctx = clc_sdk::PrimeContext { phase: None };
+    let branch = git.map(|s| s.branch.as_str());
+    if let Ok(tisket_state) = tisket::detect(cwd, branch) {
+        let section = tisket_state.prime(&ctx);
+        if !section.is_empty() {
+            out.push_str(&section);
+            out.push('\n');
+        }
+    }
 
     out
 }
