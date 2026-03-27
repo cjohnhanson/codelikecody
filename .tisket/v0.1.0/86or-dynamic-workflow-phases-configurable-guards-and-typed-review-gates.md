@@ -1,12 +1,12 @@
 ---
 title: "Dynamic workflow phases, configurable guards, and typed review gates"
-status: todo
+status: in_progress
 priority: 2
 assignee:
 labels: [clc, architecture, clc-up-target]
 depends_on: []
 created: 2026-03-23T04:27:05Z
-updated: "2026-03-25T03:05:59Z"
+updated: "2026-03-27T01:28:48Z"
 ---
 
 ## Problem
@@ -37,126 +37,274 @@ gets TDD structure that doesn't fit.
 
 There is also no mechanism for review gates — points in the workflow
 where a fresh, independent agent examines the work and must approve
-before the worker can advance. The coordination protocol already has
-`ReviewRequest` and `ReviewResult` message kinds with a `ReviewVerdict`
-enum, but nothing in the runtime uses them and they carry no review
-type.
+before the worker can advance.
 
-## Open Questions
+## Schema
 
-### Dynamic phases and guards
+### WorkflowDef
 
-- The guard currently receives `Option<Phase>` — a typed enum. Making
-  this a string means the guard loses compile-time exhaustiveness
-  checking. Is the trade-off acceptable, or should there be a validated
-  "DynamicPhase" type that's checked against the workflow at construction?
-- The guard needs the active workflow definition at evaluation time. The
-  hook currently loads config from `cwd` (`config::load(cwd)`) but
-  doesn't resolve which workflow applies — that happens at pickup. Should
-  the active workflow name be stored in the state (DB or file) so the
-  guard can look it up without re-resolving from tisket labels?
-- `restricted_paths` in the current guard checks `path.contains("tests/missouri/")`.
-  For configurable paths, should this be glob patterns? Prefix matching?
-  Regex? Glob patterns match how Claude Code permissions work.
-- The trunk Bash allowlist is a safety net against accidental writes on
-  the main branch. Should it remain hardcoded (defense in depth) or
-  become configurable (flexibility)? A hardcoded minimum plus
-  configurable additions might be the right middle.
-- The prime text currently describes the TDD workflow loop in prose.
-  With dynamic workflows, the prime text needs to describe the *active*
-  workflow's loop. Should this come from the workflow definition in
-  config (a `description` or `instructions` field)? Or should the
-  phase list be enough for the agent to infer the workflow?
-- `done.rs` checks `current_phase != Phase::Done`. With dynamic phases,
-  what's the terminal phase? The last phase in the workflow's list?
-  An explicitly marked terminal phase? Always literally "done"?
-- The worker system prompt (`dispatch.rs:379-392`) hardcodes the phase
-  sequence. The worker prompt (`dispatch.rs:370-377`) hardcodes "follow
-  the clc workflow: write tests, implement, get green, run `clc done`."
-  Both need to become workflow-aware.
-- `worker.rs:640` recover function hardcodes stepping through
-  `review-requested → in-review → reviewed → done`. Recovery needs to
-  understand the active workflow's phase sequence.
-- `hook.rs:346-351` post-tool nudge only fires for `Phase::Implementing`.
-  With dynamic phases, which phases get nudges? Should this be
-  configurable per-workflow?
-- `hook.rs:355-396` bootstrap logic hardcodes `tests-unwritten` as the
-  initial phase for unphased feature branches. With dynamic workflows,
-  bootstrap needs to resolve the workflow first.
+```yaml
+workflows:
+  <name>:
+    description: <string>         # injected into prime text
+    phases: [<PhaseDef>, ...]     # first is initial phase
+    reviews:                      # optional
+      <type>: <ReviewDef>
+```
 
-### Typed review gates
+Workflows are selected by policy rules at pickup time (this already
+works via `config::resolve_workflow`). The active workflow name is stored
+in the supervisor DB so the guard can look it up without re-resolving.
 
-- Who spawns the reviewer session? The worker calls `clc review request code`
-  — does clc itself spawn a fresh `claude` process in the same worktree?
-  Or does the coordinator handle it? If the worker spawns it, the worker
-  is blocked (same worktree, can't make edits while reviewer reads). If
-  the coordinator spawns it, there's coordination overhead.
-- The reviewer runs in the same worktree — shared filesystem, but a
-  fresh Claude session (no `--resume`). The reviewer's SessionStart hook
-  needs to inject different context than the worker's. How does the hook
-  know it's a reviewer session vs a worker session? A marker file in
-  `.clc/`? An environment variable? A different `role` in the DB?
-- Review prompts need to be configurable per review type in the workflow
-  definition. A short `instructions` field in config is too limiting for
-  real review guidance — "review for correctness" doesn't tell a reviewer
-  agent what patterns to check, what the project's conventions are, or
-  what past mistakes to watch for. Options:
-  - `prompt` field in the review config: inline text, simple but limited
-  - `prompt_file` pointing to a markdown file: richer, versionable, but
-    adds a file to maintain
-  - `skill` pointing to an almanac skill: richest — the reviewer loads
-    a skill that teaches it how to do that type of review, same way
-    workers load skills for development. Skills already exist for
-    `code-review`, `security-review`, `writing-review` in this project's
-    `skills/` directory
-  - Some combination: short `instructions` for the hook injection, plus
-    a `skill` for deep guidance the reviewer loads on its own
-- Reviewer permissions need to be configurable per review type. The base
-  is read-only tools plus the verdict commands (`clc review approve`,
-  `clc review request-changes`). But different review types need
-  different capabilities: a code reviewer might need `cargo test` and
-  `cargo clippy`; a security reviewer might need `cargo audit` or
-  pattern-grepping; a writing reviewer might need `agent-browser` to
-  render output. The review config should declare `permissions.allow`
-  and `permissions.deny` per type, seeded via `permissions::seed_defaults`
-  the same way worker permissions are seeded. Example:
-  ```yaml
-  reviews:
-    code:
-      skill: code-review
-      instructions: "Review for correctness and project patterns"
-      permissions:
-        allow: ["Bash(cargo test *)", "Bash(cargo clippy *)"]
-        deny: ["Edit", "Write"]
-      required_before: [done]
-    security:
-      skill: security-review
-      instructions: "Review for injection, auth, secret exposure"
-      permissions:
-        allow: ["Bash(cargo audit *)"]
-        deny: ["Edit", "Write"]
-      required_before: [done]
-  ```
-- What happens if the reviewer crashes or times out without rendering a
-  verdict? Is the review request left pending forever? Should there be
-  a timeout after which the request can be re-issued?
-- Can a worker request multiple review types simultaneously? If
-  `code` review and `security` review are both required before `done`,
-  can they run in parallel (two reviewer sessions in the same worktree)?
-  Concurrent read-only sessions in the same worktree should be safe,
-  but the guard needs to handle two verdict commands potentially racing.
-- `request-changes` notifies the worker, but how? If the worker session
-  is still alive (waiting on the review), it needs to receive the
-  feedback and resume. Via the stdin pipe? Via a coordination DB message
-  that the hook surfaces on next prompt? Via a phase regression that
-  the hook announces?
-- Should reviews be recorded permanently (in the coordination DB or
-  tisket scratch notes) for audit? The review verdict and any comments
-  are useful history.
-- How does this interact with the existing review phases
-  (`review-requested`, `in-review`, `reviewed`) in the hardcoded TDD
-  workflow? Are those phases the *implementation* of review gates in the
-  TDD workflow, or are they separate concepts?
+### PhaseDef
+
+```yaml
+- name: <string>                    # kebab-case identifier
+  instructions: <string>            # optional — injected into prime text
+  nudge: <string>                   # optional — post-tool reminder
+  can_stop: <bool>                  # default false
+  permissions:                      # optional — absent = unrestricted
+    allow: [<tool-pattern>, ...]
+    deny: [<tool-pattern>, ...]
+  transitions:                      # optional — absent = terminal phase
+    - <string>                      # simple: target phase name
+    - target: <string>              # rich: target + review gate
+      requires: [<review-type>, ...]
+```
+
+Phases form a directed graph. Each phase declares its outgoing edges via
+`transitions`. The runtime validates that target is in the current
+phase's transitions list. No ordinal math, no forward/backward
+distinction — just edge validation.
+
+- **Initial phase**: first in the list (set on pickup by `init_phase`)
+- **Terminal phases**: any phase with no `transitions` — `clc done`
+  succeeds at any terminal phase
+- **Self-transitions**: implicit — not transitioning means staying put
+- **Permissions**: same syntax as Claude Code tool patterns. `deny`
+  blocks the tool; `allow` with a glob punches exceptions. Absent
+  permissions block = unrestricted.
+- **YAML anchors**: use `&name` / `*name` for DRY when multiple phases
+  share the same permission profile
+
+### ReviewDef
+
+```yaml
+reviews:
+  <type>:
+    instructions: <string>        # injected into reviewer session prompt
+    permissions:                  # reviewer's tool permissions
+      allow: [<tool-pattern>, ...]
+      deny: [<tool-pattern>, ...]
+```
+
+- Reviews are referenced by type name in transition `requires` lists
+- `instructions` is a free-form string — can reference almanac skills
+  ("load the `code-review-eval` skill"), inline short guidance, or both
+- Verdict commands (`clc review approve`, `clc review request-changes`)
+  are always available to reviewers, never to workers
+- Reviewer identity verified via mTLS — worker cannot impersonate
+
+### Tool patterns
+
+Same syntax as Claude Code permissions:
+
+- `"Edit"` — block/allow the tool entirely
+- `"Edit(tests/**)"` — scoped to matching paths
+- `"Bash(cargo test *)"` — scoped to matching commands
+
+Evaluation order: deny first, then allow exceptions.
+
+## Design Decisions
+
+### Phases are a graph, not a sequence
+
+The hardcoded linear sequence is an artifact of TDD being the only
+workflow. Even TDD has backward edges (green → implementing on
+regression). Other workflows need cycles (review → draft on changes
+requested), shortcuts (triage → verify on false alarm), and multiple
+terminals (done, abandoned).
+
+Each phase declares outgoing edges. The runtime validates transitions
+against those edges. The `Phase` enum is replaced with strings validated
+against the active workflow definition.
+
+### Review gates live on transitions, not phases
+
+A gated transition uses `requires: [<review-type>, ...]` to declare
+which review types must pass before the edge can be crossed. This is
+an edge property, not a node property — different transitions out of
+the same phase can have different review requirements (or none).
+
+### Review lifecycle
+
+1. Worker tries to cross a gated transition (`clc phase set done`)
+2. Runtime sees `requires`, blocks the transition, dispatches review(s)
+   via supervisor
+3. Worker stops (stop hook allows exit when awaiting review)
+4. Multiple required reviews run in parallel — concurrent read-only
+   sessions in the same worktree
+5. Verdicts land in supervisor
+6. Supervisor resumes the worker
+7. Worker's SessionStart hook delivers review results (approved, or
+   changes-requested with feedback)
+8. On approval: worker retries the transition, gate is now open
+9. On changes-requested: gate stays closed, worker decides whether to
+   regress or address feedback in place, then re-requests review
+
+### Reviewer sessions
+
+Fresh Claude session in the same worktree (no `--resume`). The
+reviewer's SessionStart hook injects different context than the
+worker's — the review instructions, appropriate permissions, and
+verdict commands. The supervisor spawns and monitors the reviewer
+lifecycle.
+
+### Worker operational status
+
+Separate from phase (which tracks the *work*), the supervisor tracks
+worker operational state: running, stopped, awaiting-review,
+awaiting-permission, done, failed. The supervisor resume loop checks
+this status rather than sniffing for indirect signals. This is a
+runtime concern, not part of the workflow schema.
+
+### Trunk allowlist stays project-level
+
+The Bash allowlist on the main branch is defense-in-depth independent
+of any workflow. It stays hardcoded / project-config, not per-workflow.
+
+## Examples
+
+### TDD workflow
+
+```yaml
+workflows:
+  tdd:
+    description: >
+      Test-driven development. Write failing tests, implement until
+      green, request code review, finalize.
+
+    phases:
+      - name: tests-unwritten
+        instructions: "Write failing tests that specify the desired behavior."
+        transitions: [tests-written]
+        permissions: &test-only
+          allow: ["Edit(tests/**)", "Write(tests/**)", "Bash(cargo test *)"]
+          deny: ["Edit", "Write", "Bash"]
+
+      - name: tests-written
+        instructions: "Verify tests fail for the right reasons."
+        transitions: [red, tests-unwritten]
+        permissions: *test-only
+
+      - name: red
+        instructions: "Tests are red. Confirm failures match expectations."
+        transitions: [implementing, tests-unwritten]
+        permissions: *test-only
+
+      - name: implementing
+        instructions: "Write the minimum code to make failing tests pass."
+        nudge: "Run tests to check your progress."
+        transitions: [green, red]
+
+      - name: green
+        instructions: "Tests pass. Refactor if needed."
+        can_stop: true
+        transitions:
+          - implementing
+          - target: done
+            requires: [code]
+
+      - name: done
+
+    reviews:
+      code:
+        instructions: >
+          Load the code-review-eval skill. Review for correctness,
+          project patterns, and test coverage.
+        permissions:
+          allow: ["Bash(cargo test *)", "Bash(cargo clippy *)"]
+          deny: ["Edit", "Write", "Bash"]
+```
+
+### Docs workflow
+
+```yaml
+workflows:
+  docs:
+    description: >
+      Documentation writing. Outline, draft, review, finalize.
+
+    phases:
+      - name: outline
+        instructions: "Establish document structure and section plan."
+        transitions: [draft]
+        permissions: &docs-edit
+          allow: ["Edit(docs/**)", "Write(docs/**)"]
+          deny: ["Edit", "Write"]
+
+      - name: draft
+        instructions: "Write sections per the outline. Source-verify technical claims."
+        transitions: [review, outline]
+        permissions: *docs-edit
+
+      - name: review
+        instructions: "Documentation is under review."
+        can_stop: true
+        transitions:
+          - draft
+          - target: done
+            requires: [writing]
+
+      - name: done
+
+    reviews:
+      writing:
+        instructions: >
+          Load the writing-review skill. Review for clarity, accuracy,
+          and Diataxis type discipline.
+        permissions:
+          deny: ["Edit", "Write", "Bash"]
+```
+
+### Admin workflow (minimal)
+
+```yaml
+workflows:
+  admin:
+    description: "Administrative work — triage, planning, cleanup."
+    phases:
+      - name: working
+        instructions: "Do the work."
+        can_stop: true
+        transitions: [done]
+      - name: done
+```
+
+## Runtime Changes Required
+
+These are the hardcoded sites that need to become workflow-aware:
+
+- `phase.rs`: `Phase` enum → string validated against active workflow's
+  phase list. `set()` validates transitions against the phase's
+  `transitions` list instead of ordinal math.
+- `guard.rs`: loads the active workflow and current phase's `PhaseDef`,
+  applies its `permissions` block instead of hardcoded unrestricted/
+  restricted logic. Trunk allowlist stays separate.
+- `hook.rs` (stop): checks `can_stop` on the current `PhaseDef` instead
+  of hardcoded phase match.
+- `hook.rs` (post-tool nudge): checks `nudge` field on current
+  `PhaseDef` instead of hardcoded `Phase::Implementing` check.
+- `hook.rs` (bootstrap): resolves workflow first, uses `phases[0]`
+  instead of hardcoding `tests-unwritten`.
+- `done.rs`: checks whether current phase has no `transitions` (terminal)
+  instead of checking `Phase::Done`.
+- `dispatch.rs` (worker prompt): injects workflow `description` and
+  current phase `instructions` instead of hardcoded TDD description.
+- `worker.rs` (recover): reads the workflow's phase graph instead of
+  hardcoding `review-requested → in-review → reviewed → done`.
+- Prime text: injects workflow `description` and phase `instructions`
+  from config.
 
 ## Why It Matters
 
@@ -175,9 +323,4 @@ things tests don't. A reviewer agent with constrained permissions and
 fresh context is the automated equivalent of a code review, and gating
 phase advancement on review approval is how you enforce it.
 
-The review skills already exist in `skills/` (`code-review`,
-`security-review`, `writing-review`). The infrastructure for teaching
-reviewer agents what to look for is already built. The review gate
-mechanism is what connects "here's a skill that knows how to review"
-to "a fresh agent loads that skill, gets appropriate permissions, and
-renders a verdict that gates workflow progression."
+## Scratch Notes
