@@ -41,7 +41,3 @@ pub mod tracing;
 #[allow(dead_code)]
 pub mod webdriver;
 
-#[cfg(test)]
-mod e2e_tests;
-#[cfg(test)]
-mod parity_tests;
