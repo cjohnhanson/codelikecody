@@ -241,6 +241,13 @@ pub fn spawn_reviewer(
     cmd.env("CLC_REVIEW_TYPE", review_type);
     cmd.env("CLC_REVIEWER_ID", &reviewer_id);
 
+    // Register reviewer agent and get bearer token for API authentication.
+    if let Ok(coord) = crate::coordination::Coordination::open(project_dir) {
+        if let Ok(token) = coord.register_agent_with_token(&reviewer_id, Some(worker_id)) {
+            cmd.env("CLC_AGENT_TOKEN", &token);
+        }
+    }
+
     // Seed reviewer permissions into the worktree's settings.
     // The reviewer needs read-only tools plus verdict commands.
     let mut allow = vec![

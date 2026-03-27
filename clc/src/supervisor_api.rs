@@ -186,14 +186,37 @@ async fn list_agents(
 async fn register_agent(
     State(state): State<Arc<ApiState>>,
     Json(req): Json<RegisterAgentRequest>,
-) -> Result<StatusCode, StatusCode> {
+) -> Result<Json<serde_json::Value>, StatusCode> {
     state
         .db
         .register_agent(&req.id, req.parent_id.as_deref())
         .await
         .map_err(|_| StatusCode::CONFLICT)?;
 
-    Ok(StatusCode::CREATED)
+    // Generate and store a bearer token for this agent.
+    let token = generate_token();
+    state
+        .db
+        .set_token(&req.id, &token)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(serde_json::json!({ "id": req.id, "token": token })))
+}
+
+/// Generate a random bearer token (32 hex chars) from /dev/urandom.
+fn generate_token() -> String {
+    use std::fmt::Write;
+    let mut bytes = [0u8; 16];
+    if let Ok(mut f) = std::fs::File::open("/dev/urandom") {
+        use std::io::Read;
+        let _ = f.read_exact(&mut bytes);
+    }
+    let mut buf = String::with_capacity(32);
+    for b in &bytes {
+        let _ = write!(buf, "{b:02x}");
+    }
+    buf
 }
 
 async fn get_agent(
@@ -245,9 +268,16 @@ async fn update_agent(
 async fn send_message(
     State(state): State<Arc<ApiState>>,
     Path(to): Path<String>,
+    headers: axum::http::HeaderMap,
     Json(req): Json<SendMessageRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let kind = parse_message_kind(&req.kind, &req.payload).ok_or(StatusCode::BAD_REQUEST)?;
+
+    // For ReviewResult messages, validate that the caller's identity matches
+    // the `from` field. This prevents workers from impersonating reviewers.
+    if matches!(kind, clc_sdk::coordination::MessageKind::ReviewResult { .. }) {
+        validate_sender_identity(&state, &headers, &req.from).await?;
+    }
 
     let msg = clc_sdk::coordination::Message {
         id: format!(
@@ -270,6 +300,32 @@ async fn send_message(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(serde_json::json!({ "id": msg_id })))
+}
+
+/// Validate that the bearer token in the request matches the claimed sender.
+async fn validate_sender_identity(
+    state: &ApiState,
+    headers: &axum::http::HeaderMap,
+    claimed_from: &str,
+) -> Result<(), StatusCode> {
+    let token = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+
+    let actual_agent_id = state
+        .db
+        .get_agent_id_by_token(token)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+
+    if actual_agent_id != claimed_from {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    Ok(())
 }
 
 async fn recv_messages(

@@ -26,6 +26,7 @@ mod agent_entity {
         pub parent_id: Option<String>,
         pub status: String,
         pub pid: Option<i32>,
+        pub token: Option<String>,
         pub created_at: DateTimeUtc,
         pub updated_at: DateTimeUtc,
     }
@@ -239,6 +240,7 @@ const SQLITE_DDL: &[&str] = &[
         parent_id TEXT,
         status TEXT NOT NULL DEFAULT 'pending',
         pid INTEGER,
+        token TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     )",
@@ -450,6 +452,7 @@ impl CoordinationBackend for DbBackend {
             parent_id: Set(parent_id.map(str::to_string)),
             status: Set("pending".to_string()),
             pid: Set(None),
+            token: Set(None),
             created_at: Set(now),
             updated_at: Set(now),
         };
@@ -682,6 +685,47 @@ impl DbBackend {
             .ok_or_else(|| CoordinationError::NotFound(agent_id.to_string()))?;
 
         Ok(model.parent_id)
+    }
+
+    /// Store a bearer token for an agent.
+    pub async fn set_token(
+        &self,
+        agent_id: &str,
+        token: &str,
+    ) -> Result<(), CoordinationError> {
+        let existing = agent_entity::Entity::find_by_id(agent_id.to_string())
+            .one(&self.db)
+            .await
+            .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+
+        let model = existing
+            .ok_or_else(|| CoordinationError::NotFound(agent_id.to_string()))?;
+
+        let mut active: agent_entity::ActiveModel = model.into();
+        active.token = Set(Some(token.to_string()));
+        active.updated_at = Set(chrono::Utc::now());
+
+        active
+            .update(&self.db)
+            .await
+            .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Look up the agent_id associated with a bearer token.
+    /// Returns None if no agent has that token.
+    pub async fn get_agent_id_by_token(
+        &self,
+        token: &str,
+    ) -> Result<Option<String>, CoordinationError> {
+        let model = agent_entity::Entity::find()
+            .filter(agent_entity::Column::Token.eq(token))
+            .one(&self.db)
+            .await
+            .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+
+        Ok(model.map(|m| m.id))
     }
 
     /// Create an agent session.

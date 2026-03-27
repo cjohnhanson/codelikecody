@@ -136,15 +136,21 @@ pub fn dispatch_with_workspace(
 
     match workspace_type {
         DispatchWorkspace::Worktree => {
-            let cmd = agent
+            let mut cmd = agent
                 .build_start_command(&agent_config, &worktree_dir)
                 .map_err(|e| Error::NonBlocking(format!("failed to build agent command: {e}")))?;
+
+            // Register agent and get bearer token for API authentication.
+            if let Ok(coord) = Coordination::open(project_dir) {
+                if let Ok(token) = coord.register_agent_with_token(id, coordinator_id) {
+                    cmd.env("CLC_AGENT_TOKEN", &token);
+                }
+            }
 
             let worker_dir = worktree_dir.join(".clc").join(WORKER_DIR);
             let pid = spawn_agent_process(cmd, &worker_dir, &initial_prompt)?;
 
             if let Ok(coord) = Coordination::open(project_dir) {
-                let _ = coord.register_agent(id, coordinator_id);
                 let _ = coord.set_status(id, clc_sdk::coordination::AgentStatus::Running);
                 let _ = coord.set_pid(id, Some(pid.cast_signed()));
             }

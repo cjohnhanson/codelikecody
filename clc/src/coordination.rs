@@ -78,6 +78,25 @@ impl Coordination {
         }
     }
 
+    /// Register an agent and return its bearer token for API authentication.
+    /// In DB mode, generates and stores the token locally.
+    /// In API mode, the API generates and returns the token.
+    pub fn register_agent_with_token(
+        &self,
+        id: &str,
+        parent_id: Option<&str>,
+    ) -> Result<String, CoordinationError> {
+        match &self.inner {
+            Backend::Db { backend, rt } => {
+                rt.block_on(backend.register_agent(id, parent_id))?;
+                let token = generate_local_token();
+                rt.block_on(backend.set_token(id, &token))?;
+                Ok(token)
+            }
+            Backend::Api(client) => client.register_agent_with_token(id, parent_id),
+        }
+    }
+
     pub fn set_status(
         &self,
         agent_id: &str,
@@ -211,4 +230,19 @@ impl Coordination {
             Backend::Api(_) => Ok(None),
         }
     }
+}
+
+/// Generate a random 32-hex-char token from /dev/urandom.
+fn generate_local_token() -> String {
+    use std::fmt::Write;
+    let mut bytes = [0u8; 16];
+    if let Ok(mut f) = std::fs::File::open("/dev/urandom") {
+        use std::io::Read;
+        let _ = f.read_exact(&mut bytes);
+    }
+    let mut buf = String::with_capacity(32);
+    for b in &bytes {
+        let _ = write!(buf, "{b:02x}");
+    }
+    buf
 }

@@ -71,6 +71,43 @@ impl ApiClient {
         }
     }
 
+    /// Register an agent and return the bearer token for API authentication.
+    pub fn register_agent_with_token(
+        &self,
+        id: &str,
+        parent_id: Option<&str>,
+    ) -> Result<String, CoordinationError> {
+        let body = serde_json::json!({
+            "id": id,
+            "parent_id": parent_id,
+        });
+
+        let resp: serde_json::Value = self.rt.block_on(async {
+            let resp = self.client.clone()
+                .post(self.url("/agents"))
+                .json(&body)
+                .send()
+                .await
+                .map_err(|e| CoordinationError::Storage(format!("http: {e}")))?;
+
+            if !resp.status().is_success() {
+                return Err(CoordinationError::Storage(format!(
+                    "register_agent: HTTP {}",
+                    resp.status()
+                )));
+            }
+
+            resp.json()
+                .await
+                .map_err(|e| CoordinationError::Storage(format!("parse response: {e}")))
+        })?;
+
+        resp["token"]
+            .as_str()
+            .map(|s| s.to_string())
+            .ok_or_else(|| CoordinationError::Storage("no token in registration response".into()))
+    }
+
     pub fn set_status(
         &self,
         agent_id: &str,
@@ -374,6 +411,14 @@ pub fn build_api_client() -> Result<reqwest::Client, Box<dyn std::error::Error>>
         }
     };
 
+    // If CLC_AGENT_TOKEN is set, include it as a default Authorization header.
+    let mut default_headers = reqwest::header::HeaderMap::new();
+    if let Ok(token) = std::env::var("CLC_AGENT_TOKEN") {
+        if let Ok(val) = reqwest::header::HeaderValue::from_str(&format!("Bearer {token}")) {
+            default_headers.insert(reqwest::header::AUTHORIZATION, val);
+        }
+    }
+
     match (cert_path, key_path, ca_path) {
         (Some(cert), Some(key), Some(ca)) => {
             let cert_pem = read_pem(&cert, "cert")?;
@@ -386,12 +431,16 @@ pub fn build_api_client() -> Result<reqwest::Client, Box<dyn std::error::Error>>
                 .map_err(|e| format!("parse CA cert: {e}"))?;
 
             reqwest::Client::builder()
+                .default_headers(default_headers)
                 .identity(identity)
                 .add_root_certificate(ca_cert)
                 .danger_accept_invalid_certs(false)
                 .build()
                 .map_err(|e| format!("build client: {e}").into())
         }
-        _ => Ok(reqwest::Client::new()),
+        _ => reqwest::Client::builder()
+            .default_headers(default_headers)
+            .build()
+            .map_err(|e| format!("build client: {e}").into()),
     }
 }
