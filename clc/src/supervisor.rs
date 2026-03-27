@@ -31,7 +31,7 @@ struct WorkerState {
     coordinator_id: String,
     #[allow(dead_code)]
     model: String,
-    _workspace: Option<crate::ssh_workspace::SSHWorkspace>,
+    workspace: Option<crate::ssh_workspace::SSHWorkspace>,
 }
 
 pub struct Supervisor {
@@ -231,6 +231,10 @@ impl Supervisor {
             // which registers the agent as Pending. The supervisor picks up
             // pending workers here and starts Docker workspaces for them.
             self.start_pending_workers(&coord);
+
+            // Land completed workers. Fetch the git pack from the worker's
+            // container, import into the host repo, and attempt ff-merge.
+            self.land_completed_workers(&coord);
 
             // Surface escalations.
             if let Ok(escalations) = coord.pending_permissions("admin") {
@@ -620,12 +624,123 @@ impl Supervisor {
                     tisket_id: tisket_id.to_string(),
                     coordinator_id: coordinator_id.to_string(),
                     model: model.to_string(),
-                    _workspace: Some(workspace),
+                    workspace: Some(workspace),
                 });
             }
             Err(e) => {
                 eprintln!("supervisor: docker start failed for worker '{tisket_id}': {e}");
                 let _ = coord.set_status(tisket_id, clc_sdk::coordination::AgentStatus::Failed);
+            }
+        }
+    }
+
+    /// Land completed workers: fetch pack from container, import, merge to trunk.
+    fn land_completed_workers(&mut self, coord: &Coordination) {
+        let all_agents = coord.list_agents(None).unwrap_or_default();
+        let coordinator_ids: Vec<String> =
+            self.coordinators.iter().map(|c| c.scope.id.clone()).collect();
+
+        for (id, status) in &all_agents {
+            if *status != clc_sdk::coordination::AgentStatus::Completed {
+                continue;
+            }
+            if id == "supervisor" || coordinator_ids.iter().any(|cid| cid == id) {
+                continue;
+            }
+
+            // Find the worker state with the SSH workspace.
+            let worker = self.workers.iter_mut().find(|w| w.tisket_id == *id);
+            let Some(worker) = worker else {
+                continue;
+            };
+            let Some(ref mut ws) = worker.workspace else {
+                continue;
+            };
+
+            eprintln!("supervisor: landing worker '{id}'");
+
+            // 1. Fetch the git pack from the worker container.
+            let pack_output = match ws.exec(
+                &format!("cd /project && clc workspace export --branch {id} 2>/dev/null"),
+            ) {
+                Ok(data) => data,
+                Err(e) => {
+                    eprintln!("supervisor: export pack from '{id}' failed: {e}");
+                    continue;
+                }
+            };
+
+            // Parse the base64 pack + refs JSON.
+            let pack_json: serde_json::Value = match serde_json::from_slice(&pack_output) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("supervisor: parse pack from '{id}' failed: {e}");
+                    continue;
+                }
+            };
+
+            let pack_b64 = match pack_json["pack"].as_str() {
+                Some(s) => s,
+                None => {
+                    eprintln!("supervisor: pack from '{id}' missing 'pack' field");
+                    continue;
+                }
+            };
+
+            let pack_data = match crate::base64_decode(pack_b64) {
+                Ok(d) => d,
+                Err(e) => {
+                    eprintln!("supervisor: decode pack from '{id}' failed: {e}");
+                    continue;
+                }
+            };
+
+            let refs: Vec<(String, String)> = pack_json["refs"]
+                .as_array()
+                .unwrap_or(&Vec::new())
+                .iter()
+                .filter_map(|r| {
+                    let arr = r.as_array()?;
+                    Some((
+                        arr.first()?.as_str()?.to_string(),
+                        arr.get(1)?.as_str()?.to_string(),
+                    ))
+                })
+                .collect();
+
+            // 2. Import the pack into the host repo.
+            if let Err(e) = crate::git_pack::import_pack(&pack_data, &refs, &self.project_dir) {
+                eprintln!("supervisor: import pack for '{id}' failed: {e}");
+                continue;
+            }
+            eprintln!("supervisor: imported pack from '{id}'");
+
+            // 3. Attempt merge to trunk.
+            match crate::gix_ops::ff_merge(&self.project_dir, id) {
+                Ok(()) => {
+                    eprintln!("supervisor: landed '{id}' on trunk");
+                    let _ = coord.set_status(id, clc_sdk::coordination::AgentStatus::Stopped);
+                    // Clean up the worker container.
+                    if let Some(ref mut ws) = worker.workspace {
+                        let _ = clc_sdk::workspace::Workspace::stop(ws);
+                    }
+                    worker.workspace = None;
+                }
+                Err(e) => {
+                    // Conflict — leave as Completed so the coordinator can
+                    // tell the worker to merge main and retry.
+                    eprintln!("supervisor: merge conflict landing '{id}': {e}");
+                    // Send a message to the coordinator about the conflict.
+                    let _ = coord.send(clc_sdk::coordination::Message {
+                        id: String::new(),
+                        from: "supervisor".to_string(),
+                        to: id.to_string(),
+                        kind: clc_sdk::coordination::MessageKind::Text(format!(
+                            "Landing failed: {e}\nMerge the latest main into your branch and retry `clc done`."
+                        )),
+                        timestamp: std::time::SystemTime::now(),
+                    });
+                }
             }
         }
     }

@@ -56,6 +56,18 @@ pub struct SSHWorkspace {
 }
 
 impl SSHWorkspace {
+    /// Execute a command on the workspace via SSH. Used by the supervisor
+    /// to fetch packs from worker containers for landing.
+    pub fn exec(&mut self, command: &str) -> Result<Vec<u8>, WorkspaceError> {
+        let session = self.session.as_mut()
+            .ok_or_else(|| WorkspaceError::Process("no SSH session".into()))?;
+        self.rt.block_on(async {
+            session.exec_with_stdin(command, &[])
+                .await
+                .map_err(|e| WorkspaceError::Process(format!("exec: {e}")))
+        })
+    }
+
     pub fn new(
         config: SSHWorkspaceConfig,
         env: Box<dyn Environment>,
