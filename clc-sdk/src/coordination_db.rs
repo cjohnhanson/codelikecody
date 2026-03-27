@@ -331,11 +331,12 @@ fn kind_to_payload(kind: &MessageKind) -> String {
         MessageKind::PermissionDenied { request_id, reason } => {
             serde_json::json!({ "request_id": request_id, "reason": reason }).to_string()
         }
-        MessageKind::ReviewRequest { branch, summary } => {
-            serde_json::json!({ "branch": branch, "summary": summary }).to_string()
+        MessageKind::ReviewRequest { review_type, branch, summary } => {
+            serde_json::json!({ "review_type": review_type, "branch": branch, "summary": summary }).to_string()
         }
         MessageKind::ReviewResult {
             request_id,
+            review_type,
             verdict,
             comments,
         } => {
@@ -344,7 +345,7 @@ fn kind_to_payload(kind: &MessageKind) -> String {
                 ReviewVerdict::ChangesRequested => "changes_requested",
                 ReviewVerdict::Rejected => "rejected",
             };
-            serde_json::json!({ "request_id": request_id, "verdict": v, "comments": comments })
+            serde_json::json!({ "request_id": request_id, "review_type": review_type, "verdict": v, "comments": comments })
                 .to_string()
         }
         MessageKind::StatusUpdate { phase, detail } => {
@@ -380,6 +381,7 @@ fn payload_to_kind(
             reason: v["reason"].as_str().unwrap_or_default().to_string(),
         }),
         "review_request" => Ok(MessageKind::ReviewRequest {
+            review_type: v["review_type"].as_str().unwrap_or_default().to_string(),
             branch: v["branch"].as_str().unwrap_or_default().to_string(),
             summary: v["summary"].as_str().unwrap_or_default().to_string(),
         }),
@@ -396,6 +398,7 @@ fn payload_to_kind(
             };
             Ok(MessageKind::ReviewResult {
                 request_id: v["request_id"].as_str().unwrap_or_default().to_string(),
+                review_type: v["review_type"].as_str().unwrap_or_default().to_string(),
                 verdict,
                 comments: v["comments"].as_str().unwrap_or_default().to_string(),
             })

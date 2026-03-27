@@ -26,6 +26,7 @@ mod missouri;
 mod permissions;
 mod phase;
 mod pickup;
+mod review;
 mod reviewer;
 mod skills;
 mod supervisor;
@@ -144,6 +145,7 @@ fn main() {
         cli::Command::Zettel { command } => cmd_zettel(command),
         cli::Command::Belmont { command } => cmd_belmont(command),
         cli::Command::Permissions { ref action } => cmd_permissions(action),
+        cli::Command::Review { ref action } => cmd_review(action),
         cli::Command::Inbox { ref action } => cmd_inbox(action),
         cli::Command::Outbox { ref action } => cmd_outbox(action),
         cli::Command::Integrate { ref action } => cmd_integrate(action),
@@ -917,6 +919,15 @@ fn cmd_permissions(action: &cli::PermissionsAction) -> Result<(), Error> {
         cli::PermissionsAction::Deny { worker_id, reason } => {
             permissions::deny(&project_dir, worker_id, reason)
         }
+    }
+}
+
+fn cmd_review(action: &cli::ReviewAction) -> Result<(), Error> {
+    let cwd = std::env::current_dir()?;
+    match action {
+        cli::ReviewAction::Request { review_type } => review::request(&cwd, review_type),
+        cli::ReviewAction::Approve { comments } => review::approve(&cwd, comments),
+        cli::ReviewAction::RequestChanges { comments } => review::request_changes(&cwd, comments),
     }
 }
 

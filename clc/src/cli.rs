@@ -185,6 +185,11 @@ pub enum Command {
         #[command(subcommand)]
         action: PermissionsAction,
     },
+    /// Manage review verdicts (approve, request-changes).
+    Review {
+        #[command(subcommand)]
+        action: ReviewAction,
+    },
     /// Poll the inbox for new items (.clc/inbox/).
     Inbox {
         #[command(subcommand)]
@@ -292,6 +297,26 @@ pub enum PermissionsAction {
         worker_id: String,
         /// Reason for denying the permission request.
         reason: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ReviewAction {
+    /// Approve the current review (called by a reviewer agent).
+    Approve {
+        /// Comments to include with the approval.
+        #[arg(default_value = "")]
+        comments: String,
+    },
+    /// Request changes (called by a reviewer agent).
+    RequestChanges {
+        /// Feedback describing what needs to change.
+        comments: String,
+    },
+    /// Request a review of the specified type (called by a worker).
+    Request {
+        /// The review type to request (must match a review defined in the workflow).
+        review_type: String,
     },
 }
 

@@ -53,15 +53,17 @@ pub enum MessageKind {
         reason: String,
     },
 
-    /// Request for code review.
+    /// Request for a typed review (e.g., "code", "security", "writing").
     ReviewRequest {
+        review_type: String,
         branch: String,
         summary: String,
     },
 
-    /// Review result.
+    /// Review result with typed verdict.
     ReviewResult {
         request_id: MessageId,
+        review_type: String,
         verdict: ReviewVerdict,
         comments: String,
     },
@@ -520,6 +522,7 @@ pub mod contract_tests {
             "w1",
             "reviewer",
             MessageKind::ReviewRequest {
+                review_type: "code".into(),
                 branch: "feat/thing".into(),
                 summary: "added thing".into(),
             },
@@ -536,6 +539,7 @@ pub mod contract_tests {
             "w1",
             MessageKind::ReviewResult {
                 request_id: "rev-1".into(),
+                review_type: "code".into(),
                 verdict: ReviewVerdict::Approved,
                 comments: "lgtm".into(),
             },

@@ -738,15 +738,17 @@ fn kind_to_payload(kind: &clc_sdk::coordination::MessageKind) -> serde_json::Val
         clc_sdk::coordination::MessageKind::PermissionDenied { request_id, reason } => {
             serde_json::json!({ "request_id": request_id, "reason": reason })
         }
-        clc_sdk::coordination::MessageKind::ReviewRequest { branch, summary } => {
-            serde_json::json!({ "branch": branch, "summary": summary })
+        clc_sdk::coordination::MessageKind::ReviewRequest { review_type, branch, summary } => {
+            serde_json::json!({ "review_type": review_type, "branch": branch, "summary": summary })
         }
         clc_sdk::coordination::MessageKind::ReviewResult {
             request_id,
+            review_type,
             verdict,
             comments,
         } => serde_json::json!({
             "request_id": request_id,
+            "review_type": review_type,
             "verdict": format!("{verdict:?}"),
             "comments": comments
         }),

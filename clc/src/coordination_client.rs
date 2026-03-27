@@ -283,18 +283,20 @@ fn kind_to_json(kind: &MessageKind) -> (&'static str, serde_json::Value) {
             "permission_denied",
             serde_json::json!({ "request_id": request_id, "reason": reason }),
         ),
-        MessageKind::ReviewRequest { branch, summary } => (
+        MessageKind::ReviewRequest { review_type, branch, summary } => (
             "review_request",
-            serde_json::json!({ "branch": branch, "summary": summary }),
+            serde_json::json!({ "review_type": review_type, "branch": branch, "summary": summary }),
         ),
         MessageKind::ReviewResult {
             request_id,
+            review_type,
             verdict,
             comments,
         } => (
             "review_result",
             serde_json::json!({
                 "request_id": request_id,
+                "review_type": review_type,
                 "verdict": format!("{verdict:?}"),
                 "comments": comments
             }),
