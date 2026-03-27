@@ -124,6 +124,22 @@ pub fn run() -> Result<i32, Error> {
                 other => other,
             }
         }
+        Event::Stop if std::env::var("CLC_API_URL").is_ok() => {
+            // Allow stopping when a permission escalation is pending —
+            // the worker should not burn tokens waiting for coordinator.
+            let guard_result = guard::evaluate_with_workflow(
+                &event, git_state.as_ref(), phase_name.as_deref(), &workflow, cwd,
+            );
+            if matches!(guard_result, Response::Block { .. }) {
+                if has_pending_escalation(git_state.as_ref()) {
+                    Response::Passthrough
+                } else {
+                    guard_result
+                }
+            } else {
+                guard_result
+            }
+        }
         _ => guard::evaluate_with_workflow(&event, git_state.as_ref(), phase_name.as_deref(), &workflow, cwd),
     };
 
@@ -730,6 +746,39 @@ fn check_tool_via_api(
             Response::Passthrough
         }
     }
+}
+
+/// Check if this agent has a pending permission escalation via the API.
+/// Used by the Stop hook to allow stopping when waiting for coordinator approval.
+fn has_pending_escalation(git: Option<&git::GitState>) -> bool {
+    let api_url = match std::env::var("CLC_API_URL") {
+        Ok(url) => url,
+        Err(_) => return false,
+    };
+    let agent_id = git
+        .map(|s| s.branch.clone())
+        .unwrap_or_default();
+
+    let rt = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(_) => return false,
+    };
+
+    rt.block_on(async {
+        let client = crate::coordination_client::build_api_client().ok()?;
+        let resp = client
+            .get(format!("{api_url}/agents/{agent_id}/permissions"))
+            .send()
+            .await
+            .ok()?;
+        let body: serde_json::Value = resp.json().await.ok()?;
+        let pending = body.as_array().map(|a| !a.is_empty()).unwrap_or(false);
+        Some(pending)
+    })
+    .unwrap_or(false)
 }
 
 fn read_stdin() -> Result<String, Error> {
