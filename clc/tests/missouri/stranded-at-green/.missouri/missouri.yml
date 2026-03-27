@@ -38,11 +38,8 @@ assertions:
   - name: "recover fails when worker is still alive"
     command: "mkdir -p .worktrees/test-feature/.clc/worker && echo $$ > .worktrees/test-feature/.clc/worker/pid && clc worker test-feature recover 2>&1; RET=$?; rm -rf .worktrees/test-feature/.clc/worker; test $RET -ne 0"
 
-  - name: "recover fails when phase is not green"
-    command: "echo 'phase: implementing' > .worktrees/test-feature/.clc/state && clc worker test-feature recover 2>&1; RET=$?; echo 'phase: green' > .worktrees/test-feature/.clc/state; test $RET -ne 0"
-
-  - name: "recover error for non-green phase mentions resume"
-    command: "echo 'phase: implementing' > .worktrees/test-feature/.clc/state && OUT=$(clc worker test-feature recover 2>&1); echo 'phase: green' > .worktrees/test-feature/.clc/state; echo \"$OUT\" | grep -qi 'resume'"
+  - name: "recover succeeds from implementing (walks graph to terminal)"
+    command: "echo 'phase: implementing' > .worktrees/test-feature/.clc/state && clc worker test-feature recover 2>&1; RET=$?; echo 'phase: green' > .worktrees/test-feature/.clc/state; test $RET -eq 0"
 
   - name: "recover fails for non-existent worker"
     command: "clc worker no-such-worker recover 2>&1; test $? -ne 0"

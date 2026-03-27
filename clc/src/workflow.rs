@@ -138,7 +138,7 @@ impl Workflow {
                     name: "green".into(),
                     instructions: Some("Tests pass. Refactor if needed.".into()),
                     nudge: None,
-                    can_stop: true,
+                    can_stop: false,
                     permissions: test_only.clone(),
                     transitions: Some(vec![
                         TransitionDef::Simple("implementing".into()),
@@ -318,7 +318,7 @@ mod tests {
         assert!(wf.can_stop("done")); // terminal
         assert!(wf.can_stop("review-requested"));
         assert!(wf.can_stop("reviewed"));
-        assert!(wf.can_stop("green"));
+        assert!(!wf.can_stop("green"));
         assert!(!wf.can_stop("tests-unwritten"));
         assert!(!wf.can_stop("implementing"));
         assert!(!wf.can_stop("in-review"));

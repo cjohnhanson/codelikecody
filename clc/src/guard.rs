@@ -382,8 +382,8 @@ mod tests {
     fn workflow_stop_allowed_at_can_stop_phase() {
         let git = feature_branch();
         let wf = tdd_workflow();
-        // green has can_stop: true
-        let resp = check_stop_workflow(Some(&git), Some("green"), &wf);
+        // review-requested has can_stop: true
+        let resp = check_stop_workflow(Some(&git), Some("review-requested"), &wf);
         assert!(matches!(resp, Response::Passthrough));
     }
 

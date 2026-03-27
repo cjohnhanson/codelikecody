@@ -14,8 +14,8 @@ assertions:
   - name: "done rejects green phase (review required)"
     command: "clc done 2>&1; test $? -ne 0"
 
-  - name: "done rejection message mentions done phase"
-    command: "OUT=$(clc done 2>&1); test $? -ne 0 && echo \"$OUT\" | grep -i 'done'"
+  - name: "done rejection message mentions terminal or current phase"
+    command: "OUT=$(clc done 2>&1); test $? -ne 0 && echo \"$OUT\" | grep -iE 'terminal|green'"
 
   - name: "prime includes all three sections"
     command: "clc prime | grep -i 'workflow' && clc prime | grep -i 'tisket' && clc prime | grep -i 'missouri'"

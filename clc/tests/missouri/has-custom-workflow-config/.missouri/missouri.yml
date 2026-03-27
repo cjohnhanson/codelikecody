@@ -31,3 +31,7 @@ transitions:
           ignore: true
         - path: "clc.yml"
           ignore: true
+        - path: "Cargo.toml"
+          ignore: true
+        - path: "src/"
+          ignore: true
