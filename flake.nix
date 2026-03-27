@@ -96,7 +96,7 @@
                 tmpHome="$(mktemp -d)"
                 export HOME="$tmpHome"
                 export MISSOURI_SANDBOX=preinstalled
-                cargo test --profile release --locked --workspace --exclude moose
+                cargo test --profile release --locked
               '';
             }
           );

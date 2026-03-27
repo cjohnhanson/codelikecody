@@ -206,7 +206,7 @@ mod tests {
 
     #[test]
     fn test_confirm_actions_from_env() {
-        let _guard = EnvGuard::new(&["MOOSE_CONFIRM_ACTIONS"]);
+        let _guard = EnvGuard::new(&["MOOSE_CONFIRM_ACTIONS", "HOME"]);
         _guard.set("MOOSE_CONFIRM_ACTIONS", "navigate,click,fill");
         let ca = ConfirmActions::from_env().unwrap();
         assert!(ca.requires_confirmation("navigate"));

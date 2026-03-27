@@ -7148,7 +7148,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_stream_enable_disable_and_status_without_browser() {
-        let guard = EnvGuard::new(&["MOOSE_SOCKET_DIR", "MOOSE_SESSION"]);
+        let guard = EnvGuard::new(&["MOOSE_SOCKET_DIR", "MOOSE_SESSION", "HOME"]);
         let socket_dir = unique_socket_dir("stream-runtime");
         fs::create_dir_all(&socket_dir).expect("socket dir should be created");
         guard.set(
@@ -7221,7 +7221,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_stream_disable_preserves_existing_screencast_state() {
-        let guard = EnvGuard::new(&["MOOSE_SOCKET_DIR", "MOOSE_SESSION"]);
+        let guard = EnvGuard::new(&["MOOSE_SOCKET_DIR", "MOOSE_SESSION", "HOME"]);
         let socket_dir = unique_socket_dir("stream-preserve-screencast");
         fs::create_dir_all(&socket_dir).expect("socket dir should be created");
         guard.set(
@@ -7253,7 +7253,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_stream_disable_clears_state_when_stream_file_removal_fails() {
-        let guard = EnvGuard::new(&["MOOSE_SOCKET_DIR", "MOOSE_SESSION"]);
+        let guard = EnvGuard::new(&["MOOSE_SOCKET_DIR", "MOOSE_SESSION", "HOME"]);
         let socket_dir = unique_socket_dir("stream-disable-cleanup");
         fs::create_dir_all(&socket_dir).expect("socket dir should be created");
         guard.set(
@@ -7289,7 +7289,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_stream_enable_port_conflict_returns_error() {
-        let guard = EnvGuard::new(&["MOOSE_SOCKET_DIR", "MOOSE_SESSION"]);
+        let guard = EnvGuard::new(&["MOOSE_SOCKET_DIR", "MOOSE_SESSION", "HOME"]);
         let socket_dir = unique_socket_dir("stream-port-conflict");
         fs::create_dir_all(&socket_dir).expect("socket dir should be created");
         guard.set(
@@ -7346,6 +7346,7 @@ mod tests {
             "MOOSE_ALLOWED_DOMAINS",
             "MOOSE_SESSION_NAME",
             "MOOSE_SESSION",
+            "HOME",
         ]);
         guard.remove("MOOSE_ALLOWED_DOMAINS");
         guard.remove("MOOSE_SESSION_NAME");
@@ -7451,7 +7452,39 @@ mod tests {
 
     #[test]
     fn test_launch_options_from_env_defaults() {
-        let _guard = EnvGuard::new(&["MOOSE_HEADED"]);
+        let _guard = EnvGuard::new(&[
+            "MOOSE_HEADED",
+            "MOOSE_EXECUTABLE_PATH",
+            "MOOSE_EXTENSIONS",
+            "MOOSE_ARGS",
+            "MOOSE_USER_AGENT",
+            "MOOSE_PROXY",
+            "MOOSE_PROXY_BYPASS",
+            "MOOSE_PROXY_USERNAME",
+            "MOOSE_PROXY_PASSWORD",
+            "MOOSE_PROFILE",
+            "MOOSE_ALLOW_FILE_ACCESS",
+            "MOOSE_STATE",
+            "MOOSE_IGNORE_HTTPS_ERRORS",
+            "MOOSE_COLOR_SCHEME",
+            "MOOSE_DOWNLOAD_PATH",
+            "HOME",
+        ]);
+        _guard.remove("MOOSE_HEADED");
+        _guard.remove("MOOSE_EXECUTABLE_PATH");
+        _guard.remove("MOOSE_EXTENSIONS");
+        _guard.remove("MOOSE_ARGS");
+        _guard.remove("MOOSE_USER_AGENT");
+        _guard.remove("MOOSE_PROXY");
+        _guard.remove("MOOSE_PROXY_BYPASS");
+        _guard.remove("MOOSE_PROXY_USERNAME");
+        _guard.remove("MOOSE_PROXY_PASSWORD");
+        _guard.remove("MOOSE_PROFILE");
+        _guard.remove("MOOSE_ALLOW_FILE_ACCESS");
+        _guard.remove("MOOSE_STATE");
+        _guard.remove("MOOSE_IGNORE_HTTPS_ERRORS");
+        _guard.remove("MOOSE_COLOR_SCHEME");
+        _guard.remove("MOOSE_DOWNLOAD_PATH");
         let opts = launch_options_from_env();
         assert!(opts.headless);
         assert!(opts.args.is_empty());
@@ -7460,7 +7493,7 @@ mod tests {
 
     #[test]
     fn test_launch_options_from_env_headed_flag() {
-        let _guard = EnvGuard::new(&["MOOSE_HEADED"]);
+        let _guard = EnvGuard::new(&["MOOSE_HEADED", "HOME"]);
         _guard.set("MOOSE_HEADED", "1");
         let opts = launch_options_from_env();
         assert!(

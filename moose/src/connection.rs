@@ -548,7 +548,7 @@ mod tests {
 
     #[test]
     fn test_get_socket_dir_explicit_override() {
-        let _guard = EnvGuard::new(&["MOOSE_SOCKET_DIR", "XDG_RUNTIME_DIR"]);
+        let _guard = EnvGuard::new(&["MOOSE_SOCKET_DIR", "XDG_RUNTIME_DIR", "HOME"]);
 
         _guard.set("MOOSE_SOCKET_DIR", "/custom/socket/path");
         _guard.remove("XDG_RUNTIME_DIR");
@@ -558,19 +558,20 @@ mod tests {
 
     #[test]
     fn test_get_socket_dir_ignores_empty_socket_dir() {
-        let _guard = EnvGuard::new(&["MOOSE_SOCKET_DIR", "XDG_RUNTIME_DIR"]);
+        let _guard = EnvGuard::new(&["MOOSE_SOCKET_DIR", "XDG_RUNTIME_DIR", "HOME"]);
+        let tmp = std::env::temp_dir().join(format!("moose-test-home-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).ok();
 
         _guard.set("MOOSE_SOCKET_DIR", "");
         _guard.remove("XDG_RUNTIME_DIR");
+        _guard.set("HOME", tmp.to_str().expect("temp dir should be utf-8"));
 
-        assert!(get_socket_dir()
-            .to_string_lossy()
-            .ends_with(".moose"));
+        assert_eq!(get_socket_dir(), tmp.join(".moose"));
     }
 
     #[test]
     fn test_get_socket_dir_xdg_runtime() {
-        let _guard = EnvGuard::new(&["MOOSE_SOCKET_DIR", "XDG_RUNTIME_DIR"]);
+        let _guard = EnvGuard::new(&["MOOSE_SOCKET_DIR", "XDG_RUNTIME_DIR", "HOME"]);
 
         _guard.remove("MOOSE_SOCKET_DIR");
         _guard.set("XDG_RUNTIME_DIR", "/run/user/1000");
@@ -583,28 +584,29 @@ mod tests {
 
     #[test]
     fn test_get_socket_dir_ignores_empty_xdg_runtime() {
-        let _guard = EnvGuard::new(&["MOOSE_SOCKET_DIR", "XDG_RUNTIME_DIR"]);
+        let _guard = EnvGuard::new(&["MOOSE_SOCKET_DIR", "XDG_RUNTIME_DIR", "HOME"]);
+        let tmp = std::env::temp_dir().join(format!("moose-test-home-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).ok();
 
         _guard.set("MOOSE_SOCKET_DIR", "");
         _guard.set("XDG_RUNTIME_DIR", "");
+        _guard.set("HOME", tmp.to_str().expect("temp dir should be utf-8"));
 
-        assert!(get_socket_dir()
-            .to_string_lossy()
-            .ends_with(".moose"));
+        assert_eq!(get_socket_dir(), tmp.join(".moose"));
     }
 
     #[test]
     fn test_get_socket_dir_home_fallback() {
-        let _guard = EnvGuard::new(&["MOOSE_SOCKET_DIR", "XDG_RUNTIME_DIR"]);
+        let _guard = EnvGuard::new(&["MOOSE_SOCKET_DIR", "XDG_RUNTIME_DIR", "HOME"]);
+        let tmp = std::env::temp_dir().join(format!("moose-test-home-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).ok();
 
         _guard.remove("MOOSE_SOCKET_DIR");
         _guard.remove("XDG_RUNTIME_DIR");
+        _guard.set("HOME", tmp.to_str().expect("temp dir should be utf-8"));
 
         let result = get_socket_dir();
-        assert!(result.to_string_lossy().ends_with(".moose"));
-        assert!(
-            result.to_string_lossy().contains("home") || result.to_string_lossy().contains("Users")
-        );
+        assert_eq!(result, tmp.join(".moose"));
     }
 
     // === Transient Error Detection Tests ===
