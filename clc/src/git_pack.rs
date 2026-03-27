@@ -253,6 +253,11 @@ pub fn receive_pack(
 
     checkout_tree(&repo, &tree, project_dir)?;
 
+    // Write the git index so `git status` reports a clean tree.
+    // Without this, the index is empty and git sees all files as
+    // untracked or deleted.
+    write_index_from_tree(&repo, &tree, project_dir)?;
+
     Ok(())
 }
 
@@ -389,6 +394,29 @@ pub fn import_pack(
 }
 
 /// Recursively checkout a tree to the working directory.
+/// Write a git index file from the tree so `git status` sees a clean state.
+fn write_index_from_tree(
+    repo: &gix::Repository,
+    tree: &gix::Tree<'_>,
+    project_dir: &Path,
+) -> Result<(), Error> {
+    let tree_id = tree.id;
+    let index_state = gix::index::State::from_tree(
+        &tree_id,
+        &repo.objects,
+        Default::default(),
+    )
+    .map_err(|e| Error::NonBlocking(format!("build index from tree: {e}")))?;
+
+    let index_path = project_dir.join(".git").join("index");
+    let mut index = gix::index::File::from_state(index_state, index_path);
+    index
+        .write(gix::index::write::Options::default())
+        .map_err(|e| Error::NonBlocking(format!("write index: {e}")))?;
+
+    Ok(())
+}
+
 fn checkout_tree(
     repo: &gix::Repository,
     tree: &gix::Tree<'_>,
