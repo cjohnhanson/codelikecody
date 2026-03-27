@@ -1,6 +1,3 @@
-env:
-  HOME: ./fake-home
-
 assertions:
   - name: "user config exists"
     command: "test -f fake-home/.clc/config.yml"
@@ -10,33 +7,33 @@ assertions:
 
   # Skills merge: union of user + repo
   - name: "prime includes user-level skill"
-    command: "clc prime | grep 'user-skill'"
+    command: "HOME=./fake-home clc prime | grep 'user-skill'"
 
   - name: "prime includes repo-level skill"
-    command: "clc prime | grep 'repo-skill'"
+    command: "HOME=./fake-home clc prime | grep 'repo-skill'"
 
   - name: "almanac list shows both user and repo skills"
-    command: "clc almanac list | grep 'user-skill' && clc almanac list | grep 'repo-skill'"
+    command: "HOME=./fake-home clc almanac list | grep 'user-skill' && HOME=./fake-home clc almanac list | grep 'repo-skill'"
 
   - name: "SessionStart hook context includes both skills"
     command: >
       echo '{"hook_event_name":"SessionStart","session_id":"test","cwd":".","source":"startup"}'
-      | clc hook
+      | HOME=./fake-home clc hook
       | jq -r '.hookSpecificOutput.additionalContext'
       | grep 'user-skill'
       &&
       echo '{"hook_event_name":"SessionStart","session_id":"test","cwd":".","source":"startup"}'
-      | clc hook
+      | HOME=./fake-home clc hook
       | jq -r '.hookSpecificOutput.additionalContext'
       | grep 'repo-skill'
 
   # Tisket merge: shows both personal and repo issues
   - name: "prime includes repo tisket"
-    command: "clc prime | grep -i 'tisket'"
+    command: "HOME=./fake-home clc prime | grep -i 'tisket'"
 
   - name: "prime mentions both personal and repo tisket contexts"
-    command: "clc prime | grep -i 'personal' && clc prime | grep -i 'repo'"
+    command: "HOME=./fake-home clc prime | grep -i 'personal' && HOME=./fake-home clc prime | grep -i 'repo'"
 
   # Repo-level settings apply
   - name: "repo-level config settings still apply"
-    command: "clc config show 2>&1 | grep 'skills:'"
+    command: "HOME=./fake-home clc config show 2>&1 | grep 'skills:'"

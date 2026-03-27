@@ -1,6 +1,3 @@
-env:
-  HOME: ./fake-home
-
 assertions:
   - name: "user config exists at HOME/.clc/config.yml"
     command: "test -f fake-home/.clc/config.yml"
@@ -13,42 +10,42 @@ assertions:
 
   # Skills from user config
   - name: "prime includes skills from user config"
-    command: "clc prime | grep 'personal-skill'"
+    command: "HOME=./fake-home clc prime | grep 'personal-skill'"
 
   - name: "prime includes Almanac section header"
-    command: "clc prime | grep -i 'Almanac'"
+    command: "HOME=./fake-home clc prime | grep -i 'Almanac'"
 
   - name: "prime includes user skill description"
-    command: "clc prime | grep 'A personal skill from user config'"
+    command: "HOME=./fake-home clc prime | grep 'A personal skill from user config'"
 
   - name: "SessionStart hook includes user skills in context"
     command: >
       echo '{"hook_event_name":"SessionStart","session_id":"test","cwd":".","source":"startup"}'
-      | clc hook
+      | HOME=./fake-home clc hook
       | jq -r '.hookSpecificOutput.additionalContext'
       | grep 'personal-skill'
 
   - name: "almanac list shows user-level skill"
-    command: "clc almanac list | grep 'personal-skill'"
+    command: "HOME=./fake-home clc almanac list | grep 'personal-skill'"
 
   - name: "almanac show prints user-level skill content"
-    command: "clc almanac show personal-skill | grep '# Personal Skill'"
+    command: "HOME=./fake-home clc almanac show personal-skill | grep '# Personal Skill'"
 
   # Tisket from user config
   - name: "prime includes tisket section from user config"
-    command: "clc prime | grep -i 'Tisket'"
+    command: "HOME=./fake-home clc prime | grep -i 'Tisket'"
 
   - name: "prime mentions personal tisket issues"
-    command: "clc prime | grep -i 'personal'"
+    command: "HOME=./fake-home clc prime | grep -i 'personal'"
 
   # No phase enforcement without repo config
   - name: "no phase enforcement without repo-level config"
-    command: "! clc status 2>&1 | grep 'phase:'"
+    command: "! HOME=./fake-home clc status 2>&1 | grep 'phase:'"
 
   - name: "UserPromptSubmit hook works with user config only"
     command: >
       echo '{"hook_event_name":"UserPromptSubmit","session_id":"test","cwd":".","prompt":"hello"}'
-      | clc hook
+      | HOME=./fake-home clc hook
       | jq -e '.hookSpecificOutput'
 
 transitions:

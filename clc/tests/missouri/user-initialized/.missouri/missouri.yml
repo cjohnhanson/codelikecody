@@ -1,6 +1,3 @@
-env:
-  HOME: ./fake-home
-
 assertions:
   - name: "user config file was created"
     command: "test -f fake-home/.clc/config.yml"
@@ -18,4 +15,4 @@ assertions:
     command: "! test -f .claude/settings.local.json"
 
   - name: "init --user is idempotent"
-    command: "clc init --user"
+    command: "HOME=./fake-home clc init --user"
