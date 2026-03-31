@@ -428,13 +428,29 @@ mod tests {
     }
 
     #[test]
-    fn workflow_restricted_phase_blocks_src_edit() {
+    fn workflow_restricted_phase_allows_rs_file_edit() {
         let git = feature_branch();
         let wf = tdd_workflow();
-        // tests-unwritten has permissions: deny Edit, allow Edit(tests/**)
+        // tests-unwritten allows .rs edits (Rust inline tests)
         let resp = check_tool_use_workflow(
             "Edit",
             &json!({"file_path": "src/main.rs"}),
+            Some(&git),
+            Some("tests-unwritten"),
+            &wf,
+            test_cwd(),
+        );
+        assert!(matches!(resp, Response::Passthrough));
+    }
+
+    #[test]
+    fn workflow_restricted_phase_blocks_non_rs_edit() {
+        let git = feature_branch();
+        let wf = tdd_workflow();
+        // tests-unwritten blocks non-.rs, non-test edits
+        let resp = check_tool_use_workflow(
+            "Edit",
+            &json!({"file_path": "README.md"}),
             Some(&git),
             Some("tests-unwritten"),
             &wf,

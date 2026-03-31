@@ -79,16 +79,16 @@ impl Workflow {
     pub fn default_tdd() -> Self {
         let test_only = Some(PermissionsDef {
             allow: vec![
-                // Missouri/integration tests in tests/ directories
+                // Missouri/integration tests
                 "Edit(tests/**)".into(),
                 "Write(tests/**)".into(),
                 "NotebookEdit(tests/**)".into(),
-                // Rust inline tests (#[cfg(test)] modules) live in source files
-                "Edit(**/src/**/*.rs)".into(),
-                "Write(**/src/**/*.rs)".into(),
-                // Tisket scratch notes (workers update scratch during work)
-                "Edit(**/.tisket/**)".into(),
-                "Write(**/.tisket/**)".into(),
+                // Rust inline tests live in source files — allow all .rs edits
+                "Edit(**.rs)".into(),
+                "Write(**.rs)".into(),
+                // Tisket scratch notes
+                "Edit(**.tisket/**)".into(),
+                "Write(**.tisket/**)".into(),
             ],
             deny: vec!["Edit".into(), "Write".into(), "NotebookEdit".into()],
         });
