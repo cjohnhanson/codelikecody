@@ -204,17 +204,15 @@ impl Supervisor {
             for i in 0..self.coordinators.len() {
                 let c = &self.coordinators[i];
 
-                // Check if process is alive.
                 if let Some(pid) = c.pid {
+                    // Local coordinator: check process health.
                     if !is_process_alive(pid) {
-                        // Process exited. Check DB for status.
                         let db_status = coord.get_status(&c.scope.id).ok();
                         match db_status {
                             Some(clc_sdk::coordination::AgentStatus::Completed) => {
                                 eprintln!("supervisor: coordinator '{}' completed", c.scope.id);
                             }
                             _ => {
-                                // Crashed or stopped — restart.
                                 all_done = false;
                                 self.restart_coordinator(i);
                             }
@@ -222,7 +220,19 @@ impl Supervisor {
                     } else {
                         all_done = false;
                     }
+                } else if c._workspace.is_some() {
+                    // Docker coordinator: check DB status.
+                    let db_status = coord.get_status(&c.scope.id).ok();
+                    match db_status {
+                        Some(clc_sdk::coordination::AgentStatus::Completed) => {
+                            eprintln!("supervisor: coordinator '{}' completed", c.scope.id);
+                        }
+                        _ => {
+                            all_done = false;
+                        }
+                    }
                 } else {
+                    // Not started yet.
                     all_done = false;
                 }
             }
@@ -619,6 +629,7 @@ impl Supervisor {
 
         match workspace.start() {
             Ok(()) => {
+                let _ = coord.set_status(tisket_id, clc_sdk::coordination::AgentStatus::Running);
                 eprintln!("supervisor: worker '{tisket_id}' started in Docker");
                 self.workers.push(WorkerState {
                     tisket_id: tisket_id.to_string(),

@@ -125,6 +125,9 @@ pub fn init_phase_with_workflow(
 
 /// Validate and perform a phase transition using the given workflow.
 /// The workflow graph determines valid transitions.
+///
+/// When `CLC_API_URL` is set (Docker workers), phase state is read from
+/// and written to the supervisor API. Otherwise uses `.clc/state`.
 pub fn set_with_workflow(
     project_dir: &Path,
     target: &str,
@@ -137,8 +140,22 @@ pub fn set_with_workflow(
         )));
     }
 
-    let raw_state = load_state_raw(project_dir)?;
-    let current_name = raw_state.as_ref().map(|s| s.phase_name.as_str());
+    // Load current phase — from API when in a workspace, from filesystem otherwise.
+    let use_api = std::env::var("CLC_API_URL").ok();
+    let (current_phase, current_attempts, wf_name_owned) = if let Some(ref api_url) = use_api {
+        let agent_id = crate::git::current_branch(project_dir).unwrap_or_default();
+        let name = load_phase_name_from_api(api_url, &agent_id)?;
+        // API doesn't store attempts or workflow name — use defaults.
+        (name, 0u32, None::<String>)
+    } else {
+        let raw_state = load_state_raw(project_dir)?;
+        (
+            raw_state.as_ref().map(|s| s.phase_name.clone()),
+            raw_state.as_ref().map_or(0, |s| s.attempts),
+            raw_state.as_ref().and_then(|s| s.workflow.clone()),
+        )
+    };
+    let current_name = current_phase.as_deref();
 
     match current_name {
         None => {
@@ -177,31 +194,43 @@ pub fn set_with_workflow(
     }
 
     // Attempt gating: only applies to forward transitions from an existing phase.
-    if is_forward && required_attempts > 1 && raw_state.is_some() {
-        let current_attempts = raw_state.as_ref().map_or(0, |s| s.attempts);
+    if is_forward && required_attempts > 1 && current_name.is_some() {
         let next_attempt = current_attempts + 1;
 
         if next_attempt < required_attempts {
-            let wf_name = raw_state.as_ref().and_then(|s| s.workflow.as_deref());
-            write_state_str(
-                project_dir,
-                current_name.unwrap_or(workflow.initial_phase()),
-                next_attempt,
-                wf_name,
-            )?;
-            return Err(Error::NonBlocking(format!(
-                "attempt {next_attempt}/{required_attempts} to advance to '{target}': \
-                 reconsider before trying again"
-            )));
+            if use_api.is_some() {
+                // API mode: can't store attempts, just reject.
+                return Err(Error::NonBlocking(format!(
+                    "attempt {next_attempt}/{required_attempts} to advance to '{target}': \
+                     reconsider before trying again"
+                )));
+            } else {
+                let wf_name = wf_name_owned.as_deref();
+                write_state_str(
+                    project_dir,
+                    current_name.unwrap_or(workflow.initial_phase()),
+                    next_attempt,
+                    wf_name,
+                )?;
+                return Err(Error::NonBlocking(format!(
+                    "attempt {next_attempt}/{required_attempts} to advance to '{target}': \
+                     reconsider before trying again"
+                )));
+            }
         }
     }
 
-    // Transition succeeds — write new phase with attempts reset.
-    let wf_name = raw_state.as_ref().and_then(|s| s.workflow.as_deref());
-    write_state_str(project_dir, target, 0, wf_name)?;
+    // Transition succeeds — write new phase.
+    if let Some(ref api_url) = use_api {
+        let agent_id = crate::git::current_branch(project_dir).unwrap_or_default();
+        init_phase_via_api(api_url, &agent_id, target)?;
+    } else {
+        let wf_name = wf_name_owned.as_deref();
+        write_state_str(project_dir, target, 0, wf_name)?;
+    }
 
     // Record phase transition in coordination database.
-    let has_api = std::env::var("CLC_API_URL").is_ok();
+    let has_api = use_api.is_some();
     let has_db = project_dir.join(".clc").join("coordination.db").exists();
     if has_api || has_db {
         if let Ok(coord) = Coordination::open(project_dir) {
