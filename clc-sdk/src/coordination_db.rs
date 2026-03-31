@@ -863,29 +863,35 @@ fn tool_matches_pattern(tool_name: &str, pattern: &str) -> bool {
     if pattern == tool_name {
         return true;
     }
-    if let Some(prefix) = pattern.strip_suffix('*') {
-        if tool_name.starts_with(prefix) {
-            return true;
-        }
-        // "Bash(cargo *)" should also match "Bash(cargo)" (no args).
-        // Strip trailing space from prefix and check for exact match
-        // with the closing paren.
-        let trimmed = prefix.trim_end();
-        if tool_name == trimmed
-            || (trimmed.ends_with('(')
-                && tool_name.starts_with(trimmed)
-                && tool_name.ends_with(')'))
-        {
-            return true;
-        }
-        // Match "Bash(cargo)" against "Bash(cargo *)" — the tool name
-        // is the command without args, the pattern expects args.
-        if let Some(pat_cmd) = prefix.strip_suffix(' ') {
-            if tool_name == format!("{pat_cmd})") || tool_name.starts_with(pat_cmd) {
-                return true;
+
+    // Handle patterns like "Bash(cargo *)" — wildcard inside parens.
+    // Extract the tool prefix and the argument glob.
+    if let Some(paren) = pattern.find('(') {
+        let pat_tool = &pattern[..paren];
+        let inner = &pattern[paren + 1..pattern.len().saturating_sub(1)]; // strip parens
+
+        if let Some(tool_paren) = tool_name.find('(') {
+            let name_tool = &tool_name[..tool_paren];
+            if pat_tool != name_tool {
+                return false;
             }
+            let name_inner = &tool_name[tool_paren + 1..tool_name.len().saturating_sub(1)];
+
+            // "cargo *" matches "cargo test", "cargo", "cargo build --release"
+            if let Some(prefix) = inner.strip_suffix('*') {
+                let prefix = prefix.trim_end();
+                return name_inner.starts_with(prefix) || name_inner == prefix;
+            }
+            return inner == name_inner;
         }
+        return false;
     }
+
+    // Simple trailing wildcard (no parens).
+    if let Some(prefix) = pattern.strip_suffix('*') {
+        return tool_name.starts_with(prefix);
+    }
+
     false
 }
 
