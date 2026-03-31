@@ -436,7 +436,16 @@ impl DockerEnvironment {
 /// and the API binds to 0.0.0.0 with mTLS protecting it.
 fn build_coordinator_exec_cmd(api_port: u16, start_cmd: &str) -> String {
     format!(
-        "cd /project && export CLC_API_URL=https://host.docker.internal:{api_port} && export CLC_API_CERT=/tmp/workspace-cert.pem && export CLC_API_KEY=/tmp/workspace-key.pem && export CLC_API_CA=/tmp/ca-cert.pem && nohup {start_cmd} > /tmp/agent.log 2>&1 & echo $!"
+        "cd /project && \
+         export GIT_AUTHOR_NAME=clc-worker && \
+         export GIT_AUTHOR_EMAIL=worker@clc.local && \
+         export GIT_COMMITTER_NAME=clc-worker && \
+         export GIT_COMMITTER_EMAIL=worker@clc.local && \
+         export CLC_API_URL=https://host.docker.internal:{api_port} && \
+         export CLC_API_CERT=/tmp/workspace-cert.pem && \
+         export CLC_API_KEY=/tmp/workspace-key.pem && \
+         export CLC_API_CA=/tmp/ca-cert.pem && \
+         nohup {start_cmd} > /tmp/agent.log 2>&1 & echo $!"
     )
 }
 
@@ -444,7 +453,16 @@ fn build_coordinator_exec_cmd(api_port: u16, start_cmd: &str) -> String {
 /// Uses the workspace certs deployed earlier in start() (step 4).
 fn build_worker_exec_cmd(api_port: u16, start_cmd: &str) -> String {
     format!(
-        "cd /project && export CLC_API_URL=https://host.docker.internal:{api_port} && export CLC_API_CERT=/tmp/workspace-cert.pem && export CLC_API_KEY=/tmp/workspace-key.pem && export CLC_API_CA=/tmp/ca-cert.pem && {start_cmd} 2>&1"
+        "cd /project && \
+         export GIT_AUTHOR_NAME=clc-worker && \
+         export GIT_AUTHOR_EMAIL=worker@clc.local && \
+         export GIT_COMMITTER_NAME=clc-worker && \
+         export GIT_COMMITTER_EMAIL=worker@clc.local && \
+         export CLC_API_URL=https://host.docker.internal:{api_port} && \
+         export CLC_API_CERT=/tmp/workspace-cert.pem && \
+         export CLC_API_KEY=/tmp/workspace-key.pem && \
+         export CLC_API_CA=/tmp/ca-cert.pem && \
+         {start_cmd} 2>&1"
     )
 }
 
