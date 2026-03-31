@@ -69,14 +69,19 @@ correctly for the new tree entries.
   went down a rabbit hole. Behavioral, not infrastructure.
 - Landing flow still untested (needs completed worker)
 
-**Current blocker:** Claude doesn't focus on assigned task. Gets confused by
-hook injection context and permission blocks, investigates infra instead of
-writing the simple tests. May need prompt tuning or simpler phase config
-for the test tisket.
+**Session 3 (2026-03-27):**
+- Fixed phase transitions in Docker workers: `set_with_workflow` now routes
+  through API when `CLC_API_URL` is set. Before: `.clc/state` didn't exist
+  in container, so transitions failed silently.
+- Supervisor sets worker status to Running after Docker start. Before:
+  workers stayed Pending, coordinator saw running=0 and could over-dispatch.
+- Docker coordinator health check uses DB status, not PID.
+
+**Current state:** All pieces in place. Not yet verified end-to-end in a
+live run with these fixes applied. The two known infrastructure blockers
+(phase transitions, worker status tracking) are fixed. Next step: rebuild
+Docker image and run `clc up` with tisket 8z9n.
 
 **Test tisket:** `8z9n` — add unit tests for tisket Status methods (labeled clc-up-target)
 
-**~30 commits on qgsj branch** — original URL fix grew into full clc up pipeline:
-coordinator API connectivity, workspace retention, stale agent cleanup,
-worker launcher, landing flow, OAuth token passing, branch creation,
-and replacing the custom pack format with tar of .git directory.
+**~33 commits on qgsj branch** — original URL fix grew into full clc up pipeline.
