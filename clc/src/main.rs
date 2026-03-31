@@ -567,6 +567,14 @@ fn cmd_workspace(action: &cli::WorkspaceAction) -> Result<(), Error> {
             if git::current_branch(&cwd).as_deref() != Some(branch) {
                 crate::gix_ops::create_branch(&cwd, branch)?;
                 crate::gix_ops::checkout_branch(&cwd, branch)?;
+
+                // Set git identity for the worker (required for commits).
+                let git_config = cwd.join(".git").join("config");
+                let mut config_content = std::fs::read_to_string(&git_config).unwrap_or_default();
+                if !config_content.contains("[user]") {
+                    config_content.push_str("\n[user]\n\tname = clc-worker\n\temail = worker@clc.local\n");
+                    let _ = std::fs::write(&git_config, config_content);
+                }
                 // Set initial phase — route through API if available.
                 // Retry briefly: the supervisor API may still be starting.
                 if let Some(url) = &api_url {
