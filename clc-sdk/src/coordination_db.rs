@@ -864,10 +864,29 @@ fn tool_matches_pattern(tool_name: &str, pattern: &str) -> bool {
         return true;
     }
     if let Some(prefix) = pattern.strip_suffix('*') {
-        return tool_name.starts_with(prefix);
+        if tool_name.starts_with(prefix) {
+            return true;
+        }
+        // "Bash(cargo *)" should also match "Bash(cargo)" (no args).
+        // Strip trailing space from prefix and check for exact match
+        // with the closing paren.
+        let trimmed = prefix.trim_end();
+        if tool_name == trimmed
+            || (trimmed.ends_with('(')
+                && tool_name.starts_with(trimmed)
+                && tool_name.ends_with(')'))
+        {
+            return true;
+        }
+        // Match "Bash(cargo)" against "Bash(cargo *)" — the tool name
+        // is the command without args, the pattern expects args.
+        if let Some(pat_cmd) = prefix.strip_suffix(' ') {
+            if tool_name == format!("{pat_cmd})") || tool_name.starts_with(pat_cmd) {
+                return true;
+            }
+        }
     }
-    // Simple contains check for patterns like "Read" matching "Read"
-    pattern == tool_name
+    false
 }
 
 /// Convenience alias for the Postgres-backed variant.
