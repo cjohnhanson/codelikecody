@@ -77,15 +77,18 @@ correctly for the new tree entries.
   workers stayed Pending, coordinator saw running=0 and could over-dispatch.
 - Docker coordinator health check uses DB status, not PID.
 
-**First live run with phase fix:**
-- Phase transitions work! tests-unwritten → tests-written → ... → done
-- Worker wrote tests, committed, advanced through all 9 phases
-- Worker called `clc done` successfully, status set to Completed
-- **Supervisor landing blocked:** `clc workspace export` outputs ~20MB
-  JSON to stdout which blocks when piped through SSH exec (channel buffer fills)
-- Fixed by adding `--output` flag: write to file on container, then
-  read back via `cat` over SSH
+**E2E VERIFIED — full pipeline works:**
+- `clc up` → supervisor → coordinator → worker → tests written → landed on trunk
+- Host main: `34df41a clc: finalize 8z9n-*` + `7c7dd60 test: add unit tests for Status methods`
+- 50 lines of correct tests covering all Status variants × 3 predicate methods
+
+**Fixes applied in session 3:**
+1. Phase transitions route through API in Docker (set_with_workflow)
+2. Worker status set to Running after Docker start
+3. Docker coordinator health check via DB
+4. Landing uses tar+git rev-parse+cat (gix::open hangs in containers)
+5. Baseline grants include Bash(*) — phase guard handles restrictions
 
 **Test tisket:** `8z9n` — add unit tests for tisket Status methods (labeled clc-up-target)
 
-**~34 commits on qgsj branch** — original URL fix grew into full clc up pipeline.
+**~37 commits on qgsj branch** — original URL fix grew into full clc up pipeline.
