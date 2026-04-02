@@ -530,7 +530,7 @@ fn cmd_workspace(action: &cli::WorkspaceAction) -> Result<(), Error> {
             eprintln!("workspace initialized at {}", cwd.display());
             Ok(())
         }
-        cli::WorkspaceAction::Export { branch } => {
+        cli::WorkspaceAction::Export { branch, output } => {
             let pack = git_pack::create_pack(&cwd, branch)?;
             let b64 = crate::ssh_workspace::base64_encode(&pack.pack);
             let refs: Vec<serde_json::Value> = pack
@@ -543,7 +543,13 @@ fn cmd_workspace(action: &cli::WorkspaceAction) -> Result<(), Error> {
                 "refs": refs,
                 "branch": branch,
             });
-            println!("{}", serde_json::to_string(&envelope)?);
+            let json = serde_json::to_string(&envelope)?;
+            if let Some(path) = output {
+                std::fs::write(path, &json)
+                    .map_err(|e| Error::NonBlocking(format!("write export: {e}")))?;
+            } else {
+                println!("{json}");
+            }
             Ok(())
         }
         cli::WorkspaceAction::Start {

@@ -400,11 +400,15 @@ pub enum WorkspaceAction {
         /// Path to write to.
         path: String,
     },
-    /// Export the current branch as a pack (JSON envelope to stdout).
+    /// Export the current branch as a pack (JSON envelope).
     Export {
         /// Branch to export.
         #[arg(long)]
         branch: String,
+        /// Write output to a file instead of stdout. Avoids blocking on
+        /// large repos when piped through SSH.
+        #[arg(long)]
+        output: Option<String>,
     },
     /// Start the agent process with stdio wired to pipes/files.
     Start {

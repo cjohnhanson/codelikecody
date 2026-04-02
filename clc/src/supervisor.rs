@@ -670,13 +670,23 @@ impl Supervisor {
 
             eprintln!("supervisor: landing worker '{id}'");
 
-            // 1. Fetch the git pack from the worker container.
-            let pack_output = match ws.exec(
-                &format!("cd /project && clc workspace export --branch {id} 2>/dev/null"),
+            // 1. Create the tar pack on the container (write to file to avoid
+            //    blocking stdout over SSH for large repos).
+            match ws.exec(
+                &format!("cd /project && clc workspace export --branch {id} --output /tmp/export.json 2>/dev/null"),
             ) {
-                Ok(data) => data,
+                Ok(_) => {}
                 Err(e) => {
                     eprintln!("supervisor: export pack from '{id}' failed: {e}");
+                    continue;
+                }
+            };
+
+            // 2. Read the export JSON back via SSH cat.
+            let pack_output = match ws.exec("cat /tmp/export.json") {
+                Ok(data) => data,
+                Err(e) => {
+                    eprintln!("supervisor: read pack from '{id}' failed: {e}");
                     continue;
                 }
             };
