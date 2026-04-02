@@ -670,64 +670,41 @@ impl Supervisor {
 
             eprintln!("supervisor: landing worker '{id}'");
 
-            // 1. Create the tar pack on the container (write to file to avoid
-            //    blocking stdout over SSH for large repos).
+            // 1. Tar .git/ on the container and get the ref tip.
+            //    Using raw tar + git rev-parse instead of `clc workspace export`
+            //    because gix::open hangs in certain container environments.
             match ws.exec(
-                &format!("cd /project && clc workspace export --branch {id} --output /tmp/export.json 2>/dev/null"),
+                &format!("cd /project && tar czf /tmp/repo-export.tar.gz .git/"),
             ) {
                 Ok(_) => {}
                 Err(e) => {
-                    eprintln!("supervisor: export pack from '{id}' failed: {e}");
+                    eprintln!("supervisor: tar .git from '{id}' failed: {e}");
                     continue;
                 }
             };
 
-            // 2. Read the export JSON back via SSH cat.
-            let pack_output = match ws.exec("cat /tmp/export.json") {
+            let ref_output = match ws.exec(
+                &format!("cd /project && git rev-parse refs/heads/{id}"),
+            ) {
+                Ok(data) => String::from_utf8_lossy(&data).trim().to_string(),
+                Err(e) => {
+                    eprintln!("supervisor: rev-parse '{id}' failed: {e}");
+                    continue;
+                }
+            };
+
+            // 2. Read the tar file via SSH. This reads chunks through the
+            //    channel — cat handles large files because it streams.
+            let pack_data = match ws.exec("cat /tmp/repo-export.tar.gz") {
                 Ok(data) => data,
                 Err(e) => {
-                    eprintln!("supervisor: read pack from '{id}' failed: {e}");
+                    eprintln!("supervisor: read tar from '{id}' failed: {e}");
                     continue;
                 }
             };
 
-            // Parse the base64 pack + refs JSON.
-            let pack_json: serde_json::Value = match serde_json::from_slice(&pack_output) {
-                Ok(v) => v,
-                Err(e) => {
-                    eprintln!("supervisor: parse pack from '{id}' failed: {e}");
-                    continue;
-                }
-            };
-
-            let pack_b64 = match pack_json["pack"].as_str() {
-                Some(s) => s,
-                None => {
-                    eprintln!("supervisor: pack from '{id}' missing 'pack' field");
-                    continue;
-                }
-            };
-
-            let pack_data = match crate::base64_decode(pack_b64) {
-                Ok(d) => d,
-                Err(e) => {
-                    eprintln!("supervisor: decode pack from '{id}' failed: {e}");
-                    continue;
-                }
-            };
-
-            let refs: Vec<(String, String)> = pack_json["refs"]
-                .as_array()
-                .unwrap_or(&Vec::new())
-                .iter()
-                .filter_map(|r| {
-                    let arr = r.as_array()?;
-                    Some((
-                        arr.first()?.as_str()?.to_string(),
-                        arr.get(1)?.as_str()?.to_string(),
-                    ))
-                })
-                .collect();
+            let refs = vec![(ref_output, format!("refs/heads/{id}"))];
+            eprintln!("supervisor: got {} bytes from '{id}'", pack_data.len());
 
             // 2. Import the pack into the host repo.
             if let Err(e) = crate::git_pack::import_pack(&pack_data, &refs, &self.project_dir) {
