@@ -360,6 +360,7 @@ impl Supervisor {
                 system_prompt: String::new(),
                 initial_prompt: String::new(),
                 extra_args: vec![],
+                allowed_tools: vec![],
             },
             tisket_id: scope.id.clone(),
             project_dir: self.project_dir.clone(),

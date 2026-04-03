@@ -1,6 +1,7 @@
 pub use claude_code::protocol;
 
 pub mod agent;
+pub mod agent_spec;
 pub mod coordination;
 #[cfg(any(feature = "postgres", feature = "sqlite"))]
 pub mod coordination_db;

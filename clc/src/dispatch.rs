@@ -131,6 +131,7 @@ pub fn dispatch_with_workspace(
         system_prompt,
         initial_prompt: initial_prompt.clone(),
         extra_args: vec![],
+        allowed_tools: vec![],
     };
 
     match workspace_type {

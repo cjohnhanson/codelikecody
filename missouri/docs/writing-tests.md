@@ -400,6 +400,74 @@ assertions:
     command: "jq empty .claude/settings.local.json"
 ```
 
+## Agent assertions
+
+Agent assertions use an LLM to evaluate state properties that are difficult
+to check with deterministic commands. Instead of a `command:`, specify an
+`agent:` field pointing to a markdown eval file in the config directory.
+
+```yaml
+assertions:
+  - agent: eval-skill-commands
+  - agent: eval-output-quality
+    name: "output meets quality bar"
+```
+
+### Eval files
+
+The eval file lives at `<config_dir>/<name>.md` (e.g.,
+`.missouri/eval-skill-commands.md`) with optional YAML frontmatter for
+agent configuration:
+
+```markdown
+---
+model: haiku
+max_cost_cents: 50
+allowed_tools:
+  - "Bash(npm test*)"
+---
+
+Verify that every CLI command mentioned in this skill file
+exists on PATH and accepts the flags shown. Run each command
+with --help or equivalent. If any command is missing or rejects
+its flags, fail with details about which command and what went wrong.
+```
+
+### Frontmatter fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `model` | string | sonnet | Model to use for the evaluation |
+| `max_cost_cents` | integer | none | Budget cap in cents |
+| `max_turns` | integer | none | Max agentic turns (reserved, not yet enforced) |
+| `allowed_tools` | list | none | Additional tools the agent can use beyond defaults |
+| `extra_args` | list | none | Additional CLI arguments for the agent |
+
+All fields are optional. The markdown body after the frontmatter becomes
+the agent's evaluation prompt.
+
+### How it works
+
+The eval agent receives the markdown body as its prompt, with a preamble
+explaining the working directory and the verdict protocol. The agent
+inspects files, runs read-only commands, and renders a verdict by calling
+`missouri agent pass` or `missouri agent fail <details>`.
+
+By default, eval agents have access to `Read`, `Glob`, `Grep`, and
+`Bash(missouri agent*)`. Additional tools can be granted via the
+`allowed_tools` frontmatter field.
+
+### When to use agent assertions
+
+Use agent assertions for properties that require judgment:
+
+- "Do the error messages in this module follow our style guide?"
+- "Does this skill file reference commands that actually exist?"
+- "Is this generated documentation coherent and complete?"
+
+For deterministic checks (file exists, output matches, exit code), use
+regular command assertions — they're faster, cheaper, and reproducible.
+
 ## Custom comparators
 
 By default, missouri does a recursive file-by-file diff between the actual

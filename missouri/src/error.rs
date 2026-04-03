@@ -27,6 +27,10 @@ pub enum Error {
         source: serde_yml::Error,
     },
 
+    #[error("invalid config: {0}")]
+    #[diagnostic(code(missouri::config::invalid))]
+    InvalidConfig(String),
+
     #[error("transition target not found: {target} (from {from_state})")]
     #[diagnostic(
         code(missouri::graph::missing_target),

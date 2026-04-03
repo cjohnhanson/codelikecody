@@ -128,6 +128,37 @@ missouri report [OPTIONS]
 | `html` | Write `report.html` to the run directory. |
 | `md` | Write `report.md` to the run directory. |
 
+### `missouri agent eval`
+
+Run an agent evaluation. Reads `<config_dir>/<name>.md`, parses YAML
+frontmatter as agent configuration, and launches a Claude agent with the
+markdown body as the evaluation prompt. The agent renders a verdict by
+calling `missouri agent pass` or `missouri agent fail <details>`.
+
+```
+missouri agent eval <NAME> [OPTIONS]
+```
+
+| Argument / Flag | Description |
+|-----------------|-------------|
+| `<NAME>` | Eval name (matches `<config_dir>/<name>.md`). |
+| `-d, --dir <DIR>` | Root directory containing the state. Default: `.` |
+
+Exit codes: `0` pass, `1` fail or no verdict.
+
+### `missouri agent pass`
+
+Record a passing verdict. Called by the evaluation agent during an eval,
+not directly by users.
+
+### `missouri agent fail`
+
+Record a failing verdict with details. Called by the evaluation agent.
+
+```
+missouri agent fail [DETAILS...]
+```
+
 ### `missouri serve`
 
 Serve an HTML report locally.
@@ -284,14 +315,17 @@ An empty config (`{}`) is valid -- this represents a terminal state with no outg
 
 #### Assertion
 
+Either `command` or `agent` must be set (but not both).
+
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `name` | string | auto-generated (`statename:assert[N]`) | Human-readable label. |
-| `command` | string | **required** | Command to execute. |
-| `shell` | bool | `true` | Run via `sh -c`. |
-| `stdout` | string | (none) | Expected stdout (exact match). |
-| `stderr` | string | (none) | Expected stderr (exact match). |
-| `should_fail` | bool | `false` | When true, the assertion passes if the command exits non-zero. Stdout/stderr matching is skipped in this mode. |
+| `name` | string | auto-generated | Human-readable label. |
+| `command` | string | (none) | Command to execute. Required unless `agent` is set. |
+| `agent` | string | (none) | Agent eval name (matches `<config_dir>/<name>.md`). Mutually exclusive with `command`. |
+| `shell` | bool | `true` | Run via `sh -c`. Only applies to command assertions. |
+| `stdout` | string | (none) | Expected stdout (exact match). Only applies to command assertions. |
+| `stderr` | string | (none) | Expected stderr (exact match). Only applies to command assertions. |
+| `should_fail` | bool | `false` | When true, the assertion passes if the command exits non-zero. Only applies to command assertions. |
 | `services` | list of [Service](#service) | `[]` | Background services to run during this assertion. |
 
 ### Comparators

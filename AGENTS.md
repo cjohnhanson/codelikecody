@@ -50,3 +50,17 @@ Skills rot. Commands get renamed, patterns evolve, tools change defaults.
 A skill that was correct last month may not be correct now. When touching
 a skill for any reason, verify its claims still hold. If the fix is
 non-trivial, create a tisket to track it.
+
+## Documentation completeness
+
+When adding or changing user-facing features (new commands, config fields,
+assertion types, API changes), the following must be updated before the
+work is considered done:
+
+- **Bundled docs** (`missouri/docs/`, `tisket/docs/`, etc.) — CLI reference,
+  guides, and conceptual docs shipped with the binary
+- **Product skills** (`skills/`) — skills that teach agents how to use the tools
+- **Development skills** (`.agents/skills/`) — if the change affects how
+  agents develop this project
+
+Documentation is not a follow-up. It ships with the code.

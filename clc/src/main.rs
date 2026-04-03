@@ -544,6 +544,7 @@ fn cmd_workspace(action: &cli::WorkspaceAction) -> Result<(), Error> {
                 system_prompt,
                 initial_prompt: initial_prompt.clone(),
                 extra_args: vec![],
+                allowed_tools: vec![],
             };
 
             let mut cmd = agent

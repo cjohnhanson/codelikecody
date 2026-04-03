@@ -1,3 +1,6 @@
+use std::io::Write;
+use std::process::Stdio;
+
 use camino::{Utf8Path, Utf8PathBuf};
 use clap::Parser;
 use miette::IntoDiagnostic;
@@ -51,6 +54,9 @@ pub enum Command {
     /// Generate documentation from test suites
     #[command(name = "docgen")]
     Doc(DocArgs),
+
+    /// Agent evaluation commands
+    Agent(AgentArgs),
 }
 
 #[derive(Parser)]
@@ -212,6 +218,40 @@ pub struct ServeArgs {
     /// Port to serve on
     #[arg(long, default_value = "8080")]
     pub port: u16,
+}
+
+#[derive(Parser)]
+pub struct AgentArgs {
+    #[command(subcommand)]
+    pub command: AgentCommand,
+}
+
+#[derive(Parser)]
+pub enum AgentCommand {
+    /// Run an agent evaluation
+    Eval(AgentEvalArgs),
+
+    /// Record a passing verdict (called by the agent)
+    Pass,
+
+    /// Record a failing verdict (called by the agent)
+    Fail(AgentFailArgs),
+}
+
+#[derive(Parser)]
+pub struct AgentEvalArgs {
+    /// Name of the eval (matches .missouri/<name>.md)
+    pub name: String,
+
+    /// Root directory containing the state
+    #[arg(short, long, default_value = ".")]
+    pub dir: Utf8PathBuf,
+}
+
+#[derive(Parser)]
+pub struct AgentFailArgs {
+    /// Failure details
+    pub details: Vec<String>,
 }
 
 /// Run missouri with the given arguments. Handles -C directory change.
@@ -459,6 +499,23 @@ pub fn run_command(config_dir: &str, command: Command) -> miette::Result<bool> {
             }
         }
 
+        Command::Agent(agent_args) => match agent_args.command {
+            AgentCommand::Pass => {
+                let cwd = std::env::current_dir().into_diagnostic()?;
+                crate::agent_eval::write_pass(&cwd).into_diagnostic()?;
+                Ok(true)
+            }
+            AgentCommand::Fail(fail_args) => {
+                let cwd = std::env::current_dir().into_diagnostic()?;
+                let details = fail_args.details.join(" ");
+                crate::agent_eval::write_fail(&cwd, &details).into_diagnostic()?;
+                Ok(true)
+            }
+            AgentCommand::Eval(eval_args) => {
+                run_agent_eval(&eval_args, config_dir)
+            }
+        },
+
         Command::Doc(doc_args) => {
             let dir = resolve_dir(&doc_args.dir)?;
 
@@ -492,6 +549,89 @@ pub fn run_command(config_dir: &str, command: Command) -> miette::Result<bool> {
                 }
             }
             Ok(true)
+        }
+    }
+}
+
+/// Run an agent evaluation: launch a Claude agent with the eval prompt, wait
+/// for it to write a verdict sentinel, and exit 0 (pass) or 1 (fail).
+fn run_agent_eval(eval_args: &AgentEvalArgs, config_dir: &str) -> miette::Result<bool> {
+    let dir = resolve_dir(&eval_args.dir)?;
+    let (spec, body) = crate::agent_eval::load_eval(&dir, config_dir, &eval_args.name)
+        .map_err(|e| miette::miette!("{e}"))?;
+
+    // Build the initial prompt: preamble + markdown body from the eval file.
+    let preamble = format!(
+        "Working directory: {dir}\n\n\
+         When evaluation is complete, call `missouri agent pass` or \
+         `missouri agent fail <details>` to record the verdict.\n\n\
+         ---\n\n",
+    );
+    let initial_prompt = format!("{preamble}{body}");
+
+    let defaults = clc_sdk::agent_spec::AgentDefaults {
+        model: "sonnet".to_string(),
+        system_prompt: format!(
+            "You are an evaluation agent for missouri. Your job is to evaluate \
+             the state described in the prompt, then call `missouri agent pass` \
+             or `missouri agent fail <details>`. Do not stop without rendering \
+             a verdict."
+        ),
+        initial_prompt: initial_prompt.clone(),
+        extra_args: vec![],
+        allowed_tools: vec![
+            "Bash(missouri agent*)".to_string(),
+            "Read".to_string(),
+            "Glob".to_string(),
+            "Grep".to_string(),
+        ],
+    };
+
+    let agent_config = spec.to_agent_config(&defaults);
+    let agent = clc_sdk::agent::ClaudeCodeAgent::new();
+    let mut cmd = clc_sdk::agent::Agent::build_start_command(&agent, &agent_config, dir.as_std_path())
+        .map_err(|e| miette::miette!("failed to build agent command: {e}"))?;
+
+    cmd.stdin(Stdio::piped());
+    cmd.stdout(Stdio::null());
+    cmd.stderr(Stdio::inherit());
+
+    eprintln!("eval: {}", eval_args.name);
+    eprintln!("model: {}", agent_config.model);
+
+    let mut child = cmd
+        .spawn()
+        .into_diagnostic()
+        .map_err(|e| miette::miette!("failed to spawn agent: {e}"))?;
+
+    // Send the initial prompt via stream-json stdin protocol.
+    if let Some(mut stdin) = child.stdin.take() {
+        let input = clc_sdk::protocol::InputMessage::user(&initial_prompt);
+        let json = serde_json::to_string(&input).into_diagnostic()?;
+        let _ = writeln!(stdin, "{json}");
+        let _ = stdin.flush();
+        // Drop stdin to signal EOF — the agent reads the prompt and runs.
+        drop(stdin);
+    }
+
+    let status = child.wait().into_diagnostic()?;
+    eprintln!("agent exited with status: {}", status);
+
+    // Read the verdict sentinel.
+    match crate::agent_eval::read_verdict(dir.as_std_path()) {
+        Some(verdict) => {
+            if verdict.passed {
+                eprintln!("verdict: PASS");
+                Ok(true)
+            } else {
+                let details = verdict.details.as_deref().unwrap_or("(no details)");
+                eprintln!("verdict: FAIL — {details}");
+                Ok(false)
+            }
+        }
+        None => {
+            eprintln!("verdict: agent did not write a verdict");
+            Ok(false)
         }
     }
 }

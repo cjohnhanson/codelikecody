@@ -1708,6 +1708,67 @@ fn run_single_assertion(
     graph: &StateGraph,
     sandbox: &dyn Backend,
 ) -> AssertionResult {
+    // Agent assertions are translated into `missouri agent eval <name>` commands.
+    // The eval command exits 0 on pass and 1 on fail, so the existing assertion
+    // infrastructure handles it without special-casing the result.
+    if let Some(agent_name) = &assertion.agent {
+        let assertion_start = std::time::Instant::now();
+        let state = &graph.states[assertion.state.0];
+        let eval_cmd = format!(
+            "missouri agent eval {} --config-dir {} -d {}",
+            shell_escape(agent_name),
+            shell_escape(&graph.config_dir),
+            shell_escape(state.path.as_str()),
+        );
+
+        let system_path =
+            std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin:/usr/bin:/bin".into());
+        let base_path = state_env
+            .get("PATH")
+            .map(|s| s.as_str())
+            .unwrap_or(&system_path);
+        let bin_dir = state.path.join(&graph.config_dir).join("bin");
+        let bin_dir_opt = if bin_dir.exists() {
+            Some(bin_dir.as_path())
+        } else {
+            None
+        };
+        let path_env = build_path_env(bin_dir_opt, graph.project_bin.as_deref(), base_path);
+
+        let result = crate::signal::run_tracked(
+            &mut sandbox.build_shell_command(&eval_cmd, work_dir, state_env, &path_env),
+        );
+
+        return match result {
+            Ok(output) => {
+                let exit_code = output.status.code();
+                let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+                AssertionResult {
+                    name: assertion.name.clone(),
+                    passed: output.status.success(),
+                    exit_code,
+                    stdout_diff: None,
+                    stderr_diff: None,
+                    error: if output.status.success() {
+                        None
+                    } else {
+                        Some(stderr)
+                    },
+                    duration: assertion_start.elapsed(),
+                }
+            }
+            Err(e) => AssertionResult {
+                name: assertion.name.clone(),
+                passed: false,
+                exit_code: None,
+                stdout_diff: None,
+                stderr_diff: None,
+                error: Some(format!("failed to execute agent eval: {e}")),
+                duration: assertion_start.elapsed(),
+            },
+        };
+    }
+
     let assertion_start = std::time::Instant::now();
     let state = &graph.states[assertion.state.0];
     let bin_dir = state.path.join(&graph.config_dir).join("bin");

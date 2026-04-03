@@ -22,6 +22,9 @@ pub struct AgentConfig {
     pub initial_prompt: String,
     /// Extra CLI arguments passed to the agent binary.
     pub extra_args: Vec<String>,
+    /// Tools the agent is allowed to use without permission prompts.
+    /// Empty means no pre-approved tools (default permission mode applies).
+    pub allowed_tools: Vec<String>,
 }
 
 /// Error from agent operations.
@@ -125,6 +128,11 @@ impl Agent for ClaudeCodeAgent {
         cmd.arg("--append-system-prompt")
             .arg(&config.system_prompt);
 
+        if !config.allowed_tools.is_empty() {
+            cmd.arg("--allowedTools");
+            cmd.arg(config.allowed_tools.join(" "));
+        }
+
         for arg in &config.extra_args {
             cmd.arg(arg);
         }
@@ -171,6 +179,7 @@ mod tests {
             system_prompt: "test prompt".into(),
             initial_prompt: "do the thing".into(),
             extra_args: vec![],
+            allowed_tools: vec![],
         };
         let cmd = agent
             .build_start_command(&config, &PathBuf::from("/tmp/work"))
@@ -195,6 +204,7 @@ mod tests {
             system_prompt: "".into(),
             initial_prompt: "".into(),
             extra_args: vec!["--max-turns".into(), "5".into()],
+            allowed_tools: vec![],
         };
         let cmd = agent
             .build_start_command(&config, &PathBuf::from("/tmp"))
@@ -227,6 +237,7 @@ mod tests {
             system_prompt: "".into(),
             initial_prompt: "".into(),
             extra_args: vec![],
+            allowed_tools: vec![],
         };
         let cmd = agent
             .build_start_command(&config, &PathBuf::from("/tmp"))
@@ -248,6 +259,7 @@ mod tests {
             system_prompt: "".into(),
             initial_prompt: "".into(),
             extra_args: vec![],
+            allowed_tools: vec![],
         };
         let cmd = agent
             .build_start_command(&config, &PathBuf::from("/tmp"))
@@ -257,6 +269,43 @@ mod tests {
             cmd.get_program().to_string_lossy(),
             "/usr/local/bin/claude-custom"
         );
+    }
+
+    #[test]
+    fn claude_code_allowed_tools_emitted() {
+        let agent = ClaudeCodeAgent::new();
+        let config = AgentConfig {
+            model: "sonnet".into(),
+            system_prompt: "".into(),
+            initial_prompt: "".into(),
+            extra_args: vec![],
+            allowed_tools: vec!["Read".into(), "Bash(missouri agent*)".into()],
+        };
+        let cmd = agent
+            .build_start_command(&config, &PathBuf::from("/tmp"))
+            .unwrap();
+
+        let args: Vec<_> = cmd.get_args().map(|a| a.to_string_lossy()).collect();
+        assert!(args.contains(&"--allowedTools".into()));
+        assert!(args.contains(&"Read Bash(missouri agent*)".into()));
+    }
+
+    #[test]
+    fn claude_code_no_allowed_tools_when_empty() {
+        let agent = ClaudeCodeAgent::new();
+        let config = AgentConfig {
+            model: "sonnet".into(),
+            system_prompt: "".into(),
+            initial_prompt: "".into(),
+            extra_args: vec![],
+            allowed_tools: vec![],
+        };
+        let cmd = agent
+            .build_start_command(&config, &PathBuf::from("/tmp"))
+            .unwrap();
+
+        let args: Vec<_> = cmd.get_args().map(|a| a.to_string_lossy()).collect();
+        assert!(!args.contains(&"--allowedTools".into()));
     }
 
     #[test]
