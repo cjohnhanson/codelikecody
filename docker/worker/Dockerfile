@@ -41,5 +41,13 @@ RUN mkdir -p /run/sshd && \
 
 COPY --from=builder /tmp/clc /tmp/tisket /tmp/missouri /usr/local/bin/
 
+# Rust toolchain — workers need cargo to build and test.
+# Copy from builder rather than installing from scratch.
+COPY --from=builder /usr/local/cargo /usr/local/cargo
+COPY --from=builder /usr/local/rustup /usr/local/rustup
+ENV CARGO_HOME=/usr/local/cargo
+ENV RUSTUP_HOME=/usr/local/rustup
+ENV PATH="/usr/local/cargo/bin:${PATH}"
+
 ENV HOME=/root
 CMD ["/usr/sbin/sshd", "-D", "-e"]
