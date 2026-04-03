@@ -104,7 +104,7 @@ pub fn run() -> Result<i32, Error> {
         {
             // Check local phase/permission guards first. Only escalate to the
             // supervisor API if the local guard doesn't explicitly allow it.
-            let local = guard::evaluate(&event, git_state.as_ref(), current_phase, cwd);
+            let local = guard::evaluate_with_workflow(&event, git_state.as_ref(), phase_name.as_deref(), &workflow, cwd);
             match local {
                 Response::Passthrough => {
                     // Local guard says passthrough — tool is allowed locally.

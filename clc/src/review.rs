@@ -231,6 +231,7 @@ pub fn spawn_reviewer(
         ),
         initial_prompt: String::new(), // Sent via spawn_agent_process
         extra_args: vec![],
+        allowed_tools: vec![],
     };
 
     let mut cmd = agent
