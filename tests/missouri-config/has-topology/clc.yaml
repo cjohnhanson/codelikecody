@@ -4,15 +4,18 @@ workspaces:
     agent: opus
     isolation: docker
     docker_image: clc-worker:latest
+workflows:
+  standard:
+    agents:
+      - scope-check
+      - test-quality
 coordinators:
   dev:
     workspace: docker-worker
     max_workers: 1
+    workflow: standard
     selector:
       label: backend
       project: v0.1.0
-    reviewers:
-      - scope-check
-      - test-quality
 supervisor:
   poll_interval: 5

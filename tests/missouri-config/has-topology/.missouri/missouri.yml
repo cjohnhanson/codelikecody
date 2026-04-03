@@ -11,6 +11,6 @@ assertions:
     command: "clc up --dry-run 2>/dev/null | grep poll"
     stdout: "poll_interval: 5s\n"
 
-  - name: "resolves coordinator with reviewers"
+  - name: "resolves coordinator with workflow"
     command: "clc up --dry-run 2>/dev/null | grep dev"
-    stdout: "  dev (model=opus, workspace=docker, max_workers=1), label=backend, project=v0.1.0, reviewers=[scope-check, test-quality]\n"
+    stdout: "  dev (model=opus, workspace=docker, max_workers=1), label=backend, project=v0.1.0, workflow=standard\n"

@@ -289,10 +289,16 @@ fn cmd_up(dry_run: bool) -> Result<(), Error> {
         ));
     }
 
-    // Validate reviewers exist and parse correctly.
-    for c in &sup_config.coordinators {
-        if !c.reviewers.is_empty() {
-            reviewer::resolve_all(&project_dir, &c.reviewers)?;
+    // Validate workflow agents resolve to .clc/reviewers/ files.
+    if let Some(ref topo) = topology::load(&project_dir)? {
+        for c in &sup_config.coordinators {
+            if let Some(ref wf_name) = c.workflow {
+                if let Some(wf) = topo.workflows.get(wf_name) {
+                    for agent_name in &wf.agents {
+                        reviewer::resolve(&project_dir, agent_name)?;
+                    }
+                }
+            }
         }
     }
 
@@ -312,8 +318,8 @@ fn cmd_up(dry_run: bool) -> Result<(), Error> {
             if let Some(ref project) = c.project {
                 print!(", project={project}");
             }
-            if !c.reviewers.is_empty() {
-                print!(", reviewers=[{}]", c.reviewers.join(", "));
+            if let Some(ref wf) = c.workflow {
+                print!(", workflow={wf}");
             }
             println!();
         }
@@ -374,7 +380,7 @@ fn cmd_coordinator_run(
         docker_image: docker_image.map(str::to_string),
         auto_grant: auto_grant.to_vec(),
         always_escalate: always_escalate.to_vec(),
-        reviewers: Vec::new(),
+        workflow: None,
     };
 
     // Validate grant-config file if provided.

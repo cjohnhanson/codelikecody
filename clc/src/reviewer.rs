@@ -60,6 +60,7 @@ pub fn resolve(project_dir: &Path, name: &str) -> Result<Reviewer, Error> {
 
 /// Resolve all reviewers for a coordinator scope. Returns errors for
 /// any that can't be found or parsed.
+#[allow(dead_code)] // Used by future workflow runtime.
 pub fn resolve_all(
     project_dir: &Path,
     names: &[String],

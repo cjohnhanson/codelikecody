@@ -6,16 +6,19 @@ workspaces:
     agent: opus
     isolation: docker
     docker_image: clc-worker:latest
+workflows:
+  standard:
+    agents:
+      - scope-check
+      - test-quality
 coordinators:
   dev:
     workspace: docker-worker
     max_workers: 1
+    workflow: standard
     selector:
       label: backend
       project: v0.1.0
-    reviewers:
-      - scope-check
-      - test-quality
 supervisor:
   poll_interval: 5
 YAML
@@ -27,7 +30,6 @@ mkdir -p .clc/reviewers
 cat > .clc/reviewers/scope-check.md << 'MD'
 ---
 model: opus
-max_turns: 3
 ---
 
 Check that the diff matches the tisket scope.
@@ -35,7 +37,6 @@ MD
 cat > .clc/reviewers/test-quality.md << 'MD'
 ---
 model: opus
-max_turns: 5
 ---
 
 Check that tests are meaningful.

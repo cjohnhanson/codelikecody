@@ -60,10 +60,10 @@ pub struct CoordinatorSpec {
     pub auto_grant: Vec<String>,
     #[serde(default)]
     pub always_escalate: Vec<String>,
-    /// Named reviewers invoked at the review gate. Each name resolves to
-    /// `.clc/reviewers/<name>.md` — an AgentSpec frontmatter + review prompt.
+    /// Named workflow from the `workflows` map. Determines phase graph,
+    /// permissions, and which agents run at review gates.
     #[serde(default)]
-    pub reviewers: Vec<String>,
+    pub workflow: Option<String>,
 }
 
 fn default_max_workers() -> usize {
@@ -108,12 +108,24 @@ impl Default for SupervisorSpec {
     }
 }
 
+/// A workflow definition in the topology. Carries the phase graph and
+/// named agents that run at review gates.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WorkflowSpec {
+    /// Named agents used during review phases. Each name resolves to
+    /// `.clc/reviewers/<name>.md` — an AgentSpec frontmatter + review prompt.
+    #[serde(default)]
+    pub agents: Vec<String>,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TopologyConfig {
     #[serde(default)]
     pub workspaces: HashMap<String, WorkspaceSpec>,
     #[serde(default)]
     pub coordinators: HashMap<String, CoordinatorSpec>,
+    #[serde(default)]
+    pub workflows: HashMap<String, WorkflowSpec>,
     #[serde(default)]
     pub inboxes: HashMap<String, InboxSpec>,
     #[serde(default)]
@@ -132,6 +144,13 @@ impl TopologyConfig {
                     "coordinator '{name}' references unknown workspace '{}'",
                     coordinator.workspace
                 )));
+            }
+            if let Some(ref wf) = coordinator.workflow {
+                if !self.workflows.contains_key(wf) {
+                    return Err(Error::NonBlocking(format!(
+                        "coordinator '{name}' references unknown workflow '{wf}'"
+                    )));
+                }
             }
         }
 
@@ -202,7 +221,7 @@ impl TopologyConfig {
                 docker_image,
                 auto_grant: coord.auto_grant.clone(),
                 always_escalate: coord.always_escalate.clone(),
-                reviewers: coord.reviewers.clone(),
+                workflow: coord.workflow.clone(),
             });
         }
 
@@ -747,30 +766,29 @@ coordinators:
     }
 
     #[test]
-    fn to_supervisor_config_passes_through_reviewers() {
+    fn to_supervisor_config_passes_through_workflow() {
         let yaml = "
 workspaces:
   w:
     type: worker
     agent: opus
+workflows:
+  standard:
+    agents:
+      - scope-check
+      - code-quality
 coordinators:
   dev:
     workspace: w
-    reviewers:
-      - scope-check
-      - test-quality
-      - code-quality
+    workflow: standard
 ";
         let topo = parse(yaml);
         let sup = topo.to_supervisor_config();
-        assert_eq!(
-            sup.coordinators[0].reviewers,
-            vec!["scope-check", "test-quality", "code-quality"]
-        );
+        assert_eq!(sup.coordinators[0].workflow.as_deref(), Some("standard"));
     }
 
     #[test]
-    fn to_supervisor_config_empty_reviewers_default() {
+    fn to_supervisor_config_no_workflow_default() {
         let yaml = "
 workspaces:
   w:
@@ -782,6 +800,45 @@ coordinators:
 ";
         let topo = parse(yaml);
         let sup = topo.to_supervisor_config();
-        assert!(sup.coordinators[0].reviewers.is_empty());
+        assert!(sup.coordinators[0].workflow.is_none());
+    }
+
+    #[test]
+    fn validate_rejects_unknown_workflow() {
+        let yaml = "
+workspaces:
+  w:
+    type: worker
+    agent: opus
+coordinators:
+  c:
+    workspace: w
+    workflow: nonexistent
+";
+        let topo = parse(yaml);
+        let result = topo.validate();
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("nonexistent"), "expected workflow name in error: {err}");
+    }
+
+    #[test]
+    fn validate_accepts_valid_workflow_reference() {
+        let yaml = "
+workspaces:
+  w:
+    type: worker
+    agent: opus
+workflows:
+  my-flow:
+    agents:
+      - scope-check
+coordinators:
+  c:
+    workspace: w
+    workflow: my-flow
+";
+        let topo = parse(yaml);
+        assert!(topo.validate().is_ok());
     }
 }

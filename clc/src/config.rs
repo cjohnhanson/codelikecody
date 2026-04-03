@@ -140,10 +140,10 @@ pub struct CoordinatorScope {
     #[serde(default)]
     pub always_escalate: Vec<String>,
 
-    /// Named reviewers for the review gate. Each name resolves to
-    /// `.clc/reviewers/<name>.md`.
+    /// Named workflow. Determines phase graph, permissions, and which
+    /// agents run at review gates.
     #[serde(default)]
-    pub reviewers: Vec<String>,
+    pub workflow: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
