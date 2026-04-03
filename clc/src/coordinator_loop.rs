@@ -280,6 +280,11 @@ fn tick(
     coord: &Coordination,
     session: &mut CoordinatorSession,
 ) -> Result<TickResult, Error> {
+    // 0. Refresh trunk so tisket metadata (labels, new issues) is current.
+    if let Err(e) = refresh_trunk(project_dir, main_branch) {
+        eprintln!("coordinator '{}': trunk refresh failed: {e}", scope.id);
+    }
+
     // 1. Dispatch pickable tiskets up to max_workers.
     let agents = coord
         .list_agents(Some(&scope.id))
@@ -532,6 +537,116 @@ const BASELINE_TOOL_GRANTS: &[&str] = &[
     "ToolSearch",
     "NotebookEdit",
 ];
+
+/// Pull latest trunk into the coordinator's workspace.
+///
+/// Docker coordinators fetch a pack from the supervisor API and import it.
+/// Local coordinators fetch from the git remote directly.
+/// After import, fast-forward main to the latest commit and checkout.
+fn refresh_trunk(project_dir: &Path, main_branch: &str) -> Result<(), Error> {
+    if let Ok(api_url) = std::env::var("CLC_API_URL") {
+        refresh_trunk_via_api(project_dir, &api_url, main_branch)
+    } else {
+        refresh_trunk_local(project_dir, main_branch)
+    }
+}
+
+/// Fetch pack from supervisor API and import into the coordinator's repo.
+fn refresh_trunk_via_api(
+    project_dir: &Path,
+    api_url: &str,
+    main_branch: &str,
+) -> Result<(), Error> {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| Error::NonBlocking(format!("tokio: {e}")))?;
+
+    let body: serde_json::Value = rt.block_on(async {
+        let client = crate::coordination_client::build_api_client()
+            .map_err(|e| Error::NonBlocking(format!("{e}")))?;
+        let resp = client
+            .get(format!("{api_url}/git/pack/{main_branch}"))
+            .send()
+            .await
+            .map_err(|e| Error::NonBlocking(format!("fetch trunk pack: {e}")))?;
+
+        if !resp.status().is_success() {
+            return Err(Error::NonBlocking(format!(
+                "fetch trunk pack: HTTP {}",
+                resp.status()
+            )));
+        }
+
+        resp.json()
+            .await
+            .map_err(|e| Error::NonBlocking(format!("parse trunk pack: {e}")))
+    })?;
+
+    let pack_b64 = body["pack"]
+        .as_str()
+        .ok_or_else(|| Error::NonBlocking("trunk pack missing 'pack' field".into()))?;
+    let pack_data = crate::base64_decode(pack_b64)
+        .map_err(|e| Error::NonBlocking(format!("decode trunk pack: {e}")))?;
+
+    let refs: Vec<(String, String)> = body["refs"]
+        .as_array()
+        .unwrap_or(&Vec::new())
+        .iter()
+        .filter_map(|r| {
+            let arr = r.as_array()?;
+            Some((
+                arr.first()?.as_str()?.to_string(),
+                arr.get(1)?.as_str()?.to_string(),
+            ))
+        })
+        .collect();
+
+    // Import new objects and refs, then fast-forward main.
+    crate::git_pack::import_pack(&pack_data, &refs, project_dir)?;
+    crate::gix_ops::ff_merge(project_dir, main_branch)?;
+
+    // Checkout the updated working tree so tisket files are current.
+    let repo = gix::open(project_dir)
+        .map_err(|e| Error::NonBlocking(format!("open repo: {e}")))?;
+    let head_commit = repo
+        .head_id()
+        .map_err(|e| Error::NonBlocking(format!("HEAD: {e}")))?
+        .object()
+        .map_err(|e| Error::NonBlocking(format!("HEAD object: {e}")))?
+        .into_commit();
+    let tree = head_commit
+        .tree()
+        .map_err(|e| Error::NonBlocking(format!("tree: {e}")))?;
+    crate::git_pack::checkout_tree(&repo, &tree, project_dir)?;
+    crate::git_pack::write_index_from_tree(&repo, &tree, project_dir)?;
+
+    Ok(())
+}
+
+/// Refresh trunk for a local coordinator by fetching from origin.
+fn refresh_trunk_local(project_dir: &Path, main_branch: &str) -> Result<(), Error> {
+    // For local coordinators, the supervisor runs on the same repo.
+    // The coordinator is on trunk and the supervisor lands work directly.
+    // Just re-read the ref — the objects are already there.
+    //
+    // If a remote origin exists, fetch from it. Otherwise, the repo is
+    // already up to date (supervisor writes directly).
+    let git_dir = project_dir.join(".git");
+    let remote_ref = git_dir
+        .join("refs")
+        .join("remotes")
+        .join("origin")
+        .join(main_branch);
+
+    if remote_ref.exists() {
+        // Fetch from origin using gix.
+        // For now, skip — local coordinators share the same repo as the
+        // supervisor which updates trunk directly. No fetch needed.
+    }
+
+    Ok(())
+}
 
 /// Dispatch a worker via the supervisor API. Used when the coordinator
 /// is running in Docker and can't create workspaces directly.

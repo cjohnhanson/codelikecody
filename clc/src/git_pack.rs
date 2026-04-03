@@ -159,7 +159,7 @@ pub fn import_pack(
 }
 
 /// Write a git index from the tree so `git status` reports a clean tree.
-fn write_index_from_tree(
+pub fn write_index_from_tree(
     repo: &gix::Repository,
     tree: &gix::Tree<'_>,
     project_dir: &Path,
@@ -182,7 +182,7 @@ fn write_index_from_tree(
 }
 
 /// Recursively checkout a tree to the working directory.
-fn checkout_tree(
+pub fn checkout_tree(
     repo: &gix::Repository,
     tree: &gix::Tree<'_>,
     base_dir: &Path,
