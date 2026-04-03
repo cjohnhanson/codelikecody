@@ -1,12 +1,12 @@
 ---
 title: "AgentSpec: declarative agent config in clc-sdk with missouri agent eval"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: [agent, missouri, clc-sdk]
 depends_on: []
 created: 2026-04-03T13:18:52Z
-updated: "2026-04-03T13:19:00Z"
+updated: "2026-04-03T15:07:23Z"
 ---
 
 ## Summary
@@ -46,5 +46,3 @@ assertions:
 - Tiskets: agent field specifying the agent config for the assigned worker
 - CoordinatorScope: replace standalone model field with embedded AgentSpec
 - clc dispatch: read agent spec from tisket instead of --model flag
-
-## Scratch Notes
