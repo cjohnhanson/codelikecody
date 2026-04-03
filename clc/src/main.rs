@@ -275,10 +275,16 @@ fn cmd_up() -> Result<(), Error> {
     let project_dir = std::env::current_dir()?;
     let cfg = config::load(&project_dir).unwrap_or_default();
 
-    if cfg.supervisor.coordinators.is_empty() {
+    // Prefer clc.yaml (topology format) over clc.yml supervisor block.
+    let sup_config = if let Some(topo) = topology::load(&project_dir)? {
+        topo.to_supervisor_config()
+    } else {
+        cfg.supervisor.clone()
+    };
+
+    if sup_config.coordinators.is_empty() {
         return Err(Error::NonBlocking(
-            "no coordinator scopes configured in clc.yml — add [[supervisor.coordinators]] sections"
-                .into(),
+            "no coordinators configured — add coordinators to clc.yaml or clc.yml".into(),
         ));
     }
 
@@ -286,7 +292,7 @@ fn cmd_up() -> Result<(), Error> {
         &project_dir,
         &cfg.main_branch,
         &cfg.admin_branch,
-        &cfg.supervisor,
+        &sup_config,
     );
     sup.run()
 }

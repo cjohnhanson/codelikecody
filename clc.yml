@@ -1,12 +1,2 @@
 main_branch: main
 admin_branch: clc-admin
-
-supervisor:
-  poll_interval: 10
-  coordinators:
-    - id: coord-encapsulate
-      label: clc-up-target
-      max_workers: 1
-      model: opus
-      workspace: docker
-      docker_image: clc-worker:latest

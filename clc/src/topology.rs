@@ -3,6 +3,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::config;
 use crate::error::Error;
 
 const TOPOLOGY_FILENAME: &str = "clc.yaml";
@@ -14,11 +15,30 @@ pub enum WorkspaceType {
     Reviewer,
 }
 
+/// How the workspace is isolated.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IsolationType {
+    Worktree,
+    Docker,
+}
+
+impl Default for IsolationType {
+    fn default() -> Self {
+        Self::Worktree
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkspaceSpec {
     #[serde(rename = "type")]
     pub workspace_type: WorkspaceType,
     pub agent: String,
+    #[serde(default)]
+    pub isolation: IsolationType,
+    /// Docker image (only used when isolation = docker).
+    #[serde(default)]
+    pub docker_image: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -34,6 +54,16 @@ pub struct CoordinatorSpec {
     pub workspace: String,
     #[serde(default)]
     pub selector: SelectorSpec,
+    #[serde(default = "default_max_workers")]
+    pub max_workers: usize,
+    #[serde(default)]
+    pub auto_grant: Vec<String>,
+    #[serde(default)]
+    pub always_escalate: Vec<String>,
+}
+
+fn default_max_workers() -> usize {
+    3
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,6 +86,24 @@ pub struct AdminConfig {
     pub coordinators: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SupervisorSpec {
+    #[serde(default = "default_poll_interval")]
+    pub poll_interval: u64,
+}
+
+fn default_poll_interval() -> u64 {
+    10
+}
+
+impl Default for SupervisorSpec {
+    fn default() -> Self {
+        Self {
+            poll_interval: default_poll_interval(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TopologyConfig {
     #[serde(default)]
@@ -67,6 +115,8 @@ pub struct TopologyConfig {
     #[serde(default)]
     pub outboxes: HashMap<String, OutboxSpec>,
     pub admin: Option<AdminConfig>,
+    #[serde(default)]
+    pub supervisor: SupervisorSpec,
 }
 
 impl TopologyConfig {
@@ -106,6 +156,55 @@ impl TopologyConfig {
         }
 
         Ok(())
+    }
+
+    /// Convert topology into the supervisor config the runtime consumes.
+    /// Each coordinator becomes a `CoordinatorScope` with fields resolved
+    /// from its referenced workspace.
+    pub fn to_supervisor_config(&self) -> config::SupervisorConfig {
+        let mut coordinators = Vec::new();
+
+        // Sort by name for deterministic ordering.
+        let mut names: Vec<&String> = self.coordinators.keys().collect();
+        names.sort();
+
+        for name in names {
+            let coord = &self.coordinators[name];
+            let ws = self.workspaces.get(&coord.workspace);
+
+            let (model, workspace_type, docker_image) = match ws {
+                Some(ws) => {
+                    let wt = match ws.isolation {
+                        IsolationType::Docker => config::WorkspaceType::Docker,
+                        IsolationType::Worktree => config::WorkspaceType::Worktree,
+                    };
+                    (ws.agent.clone(), wt, ws.docker_image.clone())
+                }
+                None => (
+                    "opus".to_string(),
+                    config::WorkspaceType::Worktree,
+                    None,
+                ),
+            };
+
+            coordinators.push(config::CoordinatorScope {
+                id: name.clone(),
+                project: coord.selector.project.clone(),
+                label: coord.selector.label.clone(),
+                exclude_label: coord.selector.exclude_label.clone(),
+                max_workers: coord.max_workers,
+                model,
+                workspace: workspace_type,
+                docker_image,
+                auto_grant: coord.auto_grant.clone(),
+                always_escalate: coord.always_escalate.clone(),
+            });
+        }
+
+        config::SupervisorConfig {
+            poll_interval: self.supervisor.poll_interval,
+            coordinators,
+        }
     }
 }
 
@@ -546,5 +645,99 @@ admin:
         assert_eq!(result.inboxes.len(), 1);
         assert_eq!(result.outboxes.len(), 1);
         assert!(result.admin.is_some());
+    }
+
+    // --- Conversion tests ---
+
+    #[test]
+    fn to_supervisor_config_maps_coordinator_and_workspace() {
+        let yaml = "
+workspaces:
+  docker-worker:
+    type: worker
+    agent: opus
+    isolation: docker
+    docker_image: clc-worker:latest
+coordinators:
+  dev:
+    workspace: docker-worker
+    max_workers: 2
+    selector:
+      label: backend
+      project: v0.1.0
+supervisor:
+  poll_interval: 5
+";
+        let topo = parse(yaml);
+        let sup = topo.to_supervisor_config();
+
+        assert_eq!(sup.poll_interval, 5);
+        assert_eq!(sup.coordinators.len(), 1);
+
+        let c = &sup.coordinators[0];
+        assert_eq!(c.id, "dev");
+        assert_eq!(c.model, "opus");
+        assert_eq!(c.max_workers, 2);
+        assert_eq!(c.label.as_deref(), Some("backend"));
+        assert_eq!(c.project.as_deref(), Some("v0.1.0"));
+        assert!(matches!(c.workspace, config::WorkspaceType::Docker));
+        assert_eq!(c.docker_image.as_deref(), Some("clc-worker:latest"));
+    }
+
+    #[test]
+    fn to_supervisor_config_worktree_default() {
+        let yaml = "
+workspaces:
+  local:
+    type: worker
+    agent: sonnet
+coordinators:
+  main:
+    workspace: local
+";
+        let topo = parse(yaml);
+        let sup = topo.to_supervisor_config();
+        let c = &sup.coordinators[0];
+
+        assert_eq!(c.model, "sonnet");
+        assert!(matches!(c.workspace, config::WorkspaceType::Worktree));
+        assert!(c.docker_image.is_none());
+        assert_eq!(c.max_workers, 3); // default
+    }
+
+    #[test]
+    fn to_supervisor_config_multiple_coordinators_sorted() {
+        let yaml = "
+workspaces:
+  w:
+    type: worker
+    agent: haiku
+coordinators:
+  zebra:
+    workspace: w
+  alpha:
+    workspace: w
+";
+        let topo = parse(yaml);
+        let sup = topo.to_supervisor_config();
+
+        assert_eq!(sup.coordinators[0].id, "alpha");
+        assert_eq!(sup.coordinators[1].id, "zebra");
+    }
+
+    #[test]
+    fn to_supervisor_config_default_poll_interval() {
+        let yaml = "
+workspaces:
+  w:
+    type: worker
+    agent: opus
+coordinators:
+  c:
+    workspace: w
+";
+        let topo = parse(yaml);
+        let sup = topo.to_supervisor_config();
+        assert_eq!(sup.poll_interval, 10);
     }
 }

@@ -141,7 +141,7 @@ pub struct CoordinatorScope {
     pub always_escalate: Vec<String>,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SupervisorConfig {
     #[serde(default = "default_poll_interval")]
     pub poll_interval: u64,
