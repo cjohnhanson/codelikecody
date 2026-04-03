@@ -3,10 +3,10 @@ title: "integrate.rs merge/land logic has zero tests — complex git graph opera
 status: todo
 priority:
 assignee:
-labels: [clc, testing, blocking]
+labels: [clc, testing, blocking, standard]
 depends_on: []
-created: "2026-03-23T03:12:04Z"
-updated: "2026-03-23T03:12:04Z"
+created: 2026-03-23T03:12:04Z
+updated: "2026-04-03T18:33:27Z"
 ---
 
 ## Problem

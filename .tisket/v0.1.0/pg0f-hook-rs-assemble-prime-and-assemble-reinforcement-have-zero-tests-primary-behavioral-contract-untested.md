@@ -3,10 +3,10 @@ title: "hook.rs assemble_prime and assemble_reinforcement have zero tests — pr
 status: todo
 priority:
 assignee:
-labels: [clc, testing, blocking]
+labels: [clc, testing, blocking, standard]
 depends_on: []
-created: "2026-03-23T03:12:04Z"
-updated: "2026-03-23T03:12:04Z"
+created: 2026-03-23T03:12:04Z
+updated: "2026-04-03T18:33:27Z"
 ---
 
 ## Problem

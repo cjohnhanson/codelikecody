@@ -3,10 +3,10 @@ title: "clc-web and clc-api HTTP types defined independently — priority field 
 status: todo
 priority:
 assignee:
-labels: [clc-web, clc-api, architecture]
+labels: [clc-web, clc-api, architecture, standard]
 depends_on: []
-created: "2026-03-23T03:11:40Z"
-updated: "2026-03-23T03:11:40Z"
+created: 2026-03-23T03:11:40Z
+updated: "2026-04-03T18:33:27Z"
 ---
 
 ## Problem

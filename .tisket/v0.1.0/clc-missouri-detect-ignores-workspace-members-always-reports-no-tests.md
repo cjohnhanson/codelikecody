@@ -3,10 +3,10 @@ title: "clc missouri detect() ignores workspace members — always reports no te
 status: todo
 priority: 3
 assignee:
-labels: []
+labels: [clc, missouri, auto]
 depends_on: []
-created: "2026-03-19T03:27:51Z"
-updated: "2026-03-19T03:27:51Z"
+created: 2026-03-19T03:27:51Z
+updated: "2026-04-03T18:33:12Z"
 ---
 
 `clc/src/missouri.rs` `detect()` (line ~87) looks for a single `tests/missouri/` directory at the project root. It never reads `missouri.yml` for workspace members. Projects using workspace mode — like this one, with four members (`clc/tests/missouri`, `clc-api/tests/missouri`, `tisket/tests/missouri`, `missouri/tests/missouri`) — always get "missouri: no tests" in hook context injection.

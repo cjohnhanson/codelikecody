@@ -1,12 +1,12 @@
 ---
 title: "fix: hook reinforcement text pollutes Bash command output — workers retry commands that succeeded"
-status: discovery
+status: todo
 priority: 2
 assignee:
-labels: [clc, hooks, worker-ergonomics]
+labels: [clc, hooks, worker-ergonomics, auto]
 depends_on: []
-created: "2026-03-26T23:48:00Z"
-updated: "2026-03-26T23:48:00Z"
+created: 2026-03-26T23:48:00Z
+updated: "2026-04-03T18:33:43Z"
 ---
 
 ## Problem

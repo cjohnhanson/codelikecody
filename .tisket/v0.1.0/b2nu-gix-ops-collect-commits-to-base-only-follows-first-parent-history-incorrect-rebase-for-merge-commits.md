@@ -3,10 +3,10 @@ title: "gix_ops::collect_commits_to_base only follows first-parent history — i
 status: todo
 priority:
 assignee:
-labels: [clc, correctness, blocking]
+labels: [clc, correctness, blocking, standard]
 depends_on: []
-created: "2026-03-23T03:11:53Z"
-updated: "2026-03-23T03:11:53Z"
+created: 2026-03-23T03:11:53Z
+updated: "2026-04-03T18:33:27Z"
 ---
 
 ## Problem

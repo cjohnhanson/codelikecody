@@ -3,10 +3,10 @@ title: "writing-docs-eval, writing-sentence-level, structured-thinking missing u
 status: todo
 priority:
 assignee:
-labels: [skills, metadata]
+labels: [skills, metadata, auto]
 depends_on: []
-created: "2026-03-23T03:12:25Z"
-updated: "2026-03-23T03:12:25Z"
+created: 2026-03-23T03:12:25Z
+updated: "2026-04-03T18:32:46Z"
 ---
 
 ## Problem

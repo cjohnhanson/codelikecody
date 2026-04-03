@@ -3,10 +3,10 @@ title: "missouri report::disable_echo has no RAII guard — terminal left unusab
 status: todo
 priority:
 assignee:
-labels: [missouri, correctness]
+labels: [missouri, correctness, auto]
 depends_on: []
-created: "2026-03-23T03:11:53Z"
-updated: "2026-03-23T03:11:53Z"
+created: 2026-03-23T03:11:53Z
+updated: "2026-04-03T18:32:46Z"
 ---
 
 ## Problem

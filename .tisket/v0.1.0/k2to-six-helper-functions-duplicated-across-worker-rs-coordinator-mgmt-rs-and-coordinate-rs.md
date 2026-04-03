@@ -3,10 +3,10 @@ title: "six helper functions duplicated across worker.rs, coordinator_mgmt.rs, a
 status: todo
 priority:
 assignee:
-labels: [clc, duplication]
+labels: [clc, duplication, auto]
 depends_on: []
-created: "2026-03-23T03:11:53Z"
-updated: "2026-03-23T03:11:53Z"
+created: 2026-03-23T03:11:53Z
+updated: "2026-04-03T18:32:47Z"
 ---
 
 ## Problem

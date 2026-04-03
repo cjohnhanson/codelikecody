@@ -3,10 +3,10 @@ title: "clc-web api::search query params not URL-encoded — broken requests wit
 status: todo
 priority:
 assignee:
-labels: [clc-web, correctness, blocking]
+labels: [clc-web, correctness, blocking, auto]
 depends_on: []
-created: "2026-03-23T03:12:16Z"
-updated: "2026-03-23T03:12:16Z"
+created: 2026-03-23T03:12:16Z
+updated: "2026-04-03T18:32:47Z"
 ---
 
 ## Problem

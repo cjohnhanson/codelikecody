@@ -3,10 +3,10 @@ title: "tisket has zero tests across 2420 lines — parse/serialize round-trip n
 status: todo
 priority:
 assignee:
-labels: [tisket, testing]
+labels: [tisket, testing, standard]
 depends_on: []
-created: "2026-03-23T03:12:04Z"
-updated: "2026-03-23T03:12:04Z"
+created: 2026-03-23T03:12:04Z
+updated: "2026-04-03T18:33:27Z"
 ---
 
 ## Problem

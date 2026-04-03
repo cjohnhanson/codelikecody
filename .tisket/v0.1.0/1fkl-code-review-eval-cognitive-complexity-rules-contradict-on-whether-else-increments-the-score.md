@@ -3,10 +3,10 @@ title: "code-review-eval cognitive complexity rules contradict on whether else i
 status: todo
 priority:
 assignee:
-labels: [skills, accuracy]
+labels: [skills, accuracy, auto]
 depends_on: []
-created: "2026-03-23T03:12:25Z"
-updated: "2026-03-23T03:12:25Z"
+created: 2026-03-23T03:12:25Z
+updated: "2026-04-03T18:32:46Z"
 ---
 
 ## Problem

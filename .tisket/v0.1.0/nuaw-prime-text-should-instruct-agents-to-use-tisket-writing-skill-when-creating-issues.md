@@ -1,12 +1,12 @@
 ---
 title: "feat: prime text should instruct agents to use tisket-writing skill when creating issues"
-status: discovery
+status: todo
 priority: 3
 assignee:
-labels: [clc, hooks, skills]
+labels: [clc, agent-behavior, auto]
 depends_on: []
-created: "2026-03-26T23:49:59Z"
-updated: "2026-03-26T23:49:59Z"
+created: 2026-03-26T23:49:59Z
+updated: "2026-04-03T18:33:32Z"
 ---
 
 ## Problem

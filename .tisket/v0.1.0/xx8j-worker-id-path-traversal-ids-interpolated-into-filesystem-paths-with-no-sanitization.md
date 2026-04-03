@@ -3,10 +3,10 @@ title: "worker ID path traversal — IDs interpolated into filesystem paths with
 status: todo
 priority:
 assignee:
-labels: [clc, security]
+labels: [clc, security, auto]
 depends_on: []
-created: "2026-03-23T03:12:04Z"
-updated: "2026-03-23T03:12:04Z"
+created: 2026-03-23T03:12:04Z
+updated: "2026-04-03T18:32:47Z"
 ---
 
 ## Problem

@@ -3,10 +3,10 @@ title: "missouri tests use unsafe env var mutation without synchronization under
 status: todo
 priority:
 assignee:
-labels: [missouri, correctness, blocking]
+labels: [missouri, correctness, blocking, auto]
 depends_on: []
-created: "2026-03-23T03:11:53Z"
-updated: "2026-03-23T03:11:53Z"
+created: 2026-03-23T03:11:53Z
+updated: "2026-04-03T18:32:47Z"
 ---
 
 ## Problem

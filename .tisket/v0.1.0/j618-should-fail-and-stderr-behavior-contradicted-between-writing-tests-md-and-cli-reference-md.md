@@ -3,10 +3,10 @@ title: "should_fail and stderr behavior contradicted between writing-tests.md an
 status: todo
 priority:
 assignee:
-labels: [missouri, docs, accuracy]
+labels: [missouri, docs, accuracy, auto]
 depends_on: []
-created: "2026-03-23T03:12:16Z"
-updated: "2026-03-23T03:12:16Z"
+created: 2026-03-23T03:12:16Z
+updated: "2026-04-03T18:32:46Z"
 ---
 
 ## Problem

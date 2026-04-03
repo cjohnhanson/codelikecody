@@ -1,12 +1,12 @@
 ---
 title: "SQLiteBackend: replace filesystem communication with SQLite-backed CoordinationBackend"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: [clc, architecture]
 depends_on: []
 created: 2026-03-23T00:27:05Z
-updated: "2026-03-23T00:27:14Z"
+updated: "2026-04-03T18:32:21Z"
 ---
 
 ## Scratch Notes
