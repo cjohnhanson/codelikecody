@@ -49,6 +49,7 @@ impl CoordinatorSession {
                 system_prompt: coordinator_system_prompt(),
                 initial_prompt: String::new(),
                 extra_args: vec![],
+                allowed_tools: vec![],
             };
             self.agent
                 .build_start_command(&config, &self.project_dir)

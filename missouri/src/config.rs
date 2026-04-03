@@ -164,13 +164,23 @@ pub struct EnvComparatorConfig {
 }
 
 /// A side-effect-free assertion command to verify state properties.
+///
+/// Either `command` or `agent` must be set (but not both). Command-based
+/// assertions run a shell command; agent-based assertions launch an agent
+/// eval from a markdown file in the config directory.
 #[derive(Debug, Deserialize)]
 pub struct AssertionConfig {
     /// Optional human-readable label.
     pub name: Option<String>,
 
-    /// Command to execute.
-    pub command: String,
+    /// Command to execute. Required unless `agent` is set.
+    #[serde(default)]
+    pub command: Option<String>,
+
+    /// Agent eval name (matches `<config_dir>/<name>.md`).
+    /// Mutually exclusive with `command`.
+    #[serde(default)]
+    pub agent: Option<String>,
 
     /// Whether to run via `sh -c` (default: true).
     #[serde(default = "default_true")]
@@ -374,20 +384,41 @@ assertions:
 
         let a0 = &config.assertions[0];
         assert_eq!(a0.name.as_deref(), Some("check output"));
-        assert_eq!(a0.command, "echo hello");
+        assert_eq!(a0.command.as_deref(), Some("echo hello"));
         assert_eq!(a0.stdout.as_deref(), Some("hello\n"));
         assert!(a0.stderr.is_none());
         assert!(a0.shell);
 
         let a1 = &config.assertions[1];
         assert!(a1.name.is_none());
-        assert_eq!(a1.command, "validate-data");
+        assert_eq!(a1.command.as_deref(), Some("validate-data"));
         assert!(a1.stdout.is_none());
         assert!(a1.stderr.is_none());
 
         let a2 = &config.assertions[2];
         assert!(!a2.shell);
         assert_eq!(a2.stderr.as_deref(), Some("warning: none\n"));
+    }
+
+    #[test]
+    fn parse_assertion_agent() {
+        let yaml = r#"
+assertions:
+  - agent: eval-skill-commands
+  - agent: eval-output-quality
+    name: "output quality check"
+"#;
+        let config = parse_config(yaml).unwrap();
+        assert_eq!(config.assertions.len(), 2);
+
+        let a0 = &config.assertions[0];
+        assert_eq!(a0.agent.as_deref(), Some("eval-skill-commands"));
+        assert!(a0.command.is_none());
+        assert!(a0.name.is_none());
+
+        let a1 = &config.assertions[1];
+        assert_eq!(a1.agent.as_deref(), Some("eval-output-quality"));
+        assert_eq!(a1.name.as_deref(), Some("output quality check"));
     }
 
     #[test]

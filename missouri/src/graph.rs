@@ -85,6 +85,9 @@ pub struct Assertion {
     pub should_fail: bool,
     /// Background services to run during this assertion.
     pub services: Vec<crate::config::ServiceConfig>,
+    /// Agent eval name. When set, the assertion launches an agent eval
+    /// instead of running a command.
+    pub agent: Option<String>,
 }
 
 /// A resolved setup command from project-level config.
@@ -287,19 +290,42 @@ impl StateGraph {
         for (i, cfg) in configs.iter().enumerate() {
             let state_id = StateId(i);
             for (a_idx, a) in cfg.assertions.iter().enumerate() {
+                // Validate: must have exactly one of command or agent.
+                if a.command.is_none() && a.agent.is_none() {
+                    return Err(Error::InvalidConfig(format!(
+                        "assertion '{}' in state '{}' has neither command nor agent",
+                        a.name.as_deref().unwrap_or(&format!("assert[{a_idx}]")),
+                        states[i].name,
+                    )));
+                }
+                if a.command.is_some() && a.agent.is_some() {
+                    return Err(Error::InvalidConfig(format!(
+                        "assertion '{}' in state '{}' has both command and agent",
+                        a.name.as_deref().unwrap_or(&format!("assert[{a_idx}]")),
+                        states[i].name,
+                    )));
+                }
+
                 let name = a
                     .name
                     .clone()
-                    .unwrap_or_else(|| format!("{}:assert[{}]", states[i].name, a_idx));
+                    .unwrap_or_else(|| {
+                        if let Some(agent) = &a.agent {
+                            format!("{}:eval[{}]", states[i].name, agent)
+                        } else {
+                            format!("{}:assert[{}]", states[i].name, a_idx)
+                        }
+                    });
                 assertions.push(Assertion {
                     name,
-                    command: a.command.clone(),
+                    command: a.command.clone().unwrap_or_default(),
                     shell: a.shell,
                     state: state_id,
                     expected_stdout: a.stdout.clone(),
                     expected_stderr: a.stderr.clone(),
                     should_fail: a.should_fail,
                     services: a.services.clone(),
+                    agent: a.agent.clone(),
                 });
             }
         }
@@ -1485,5 +1511,73 @@ transitions:
 
         let graph = StateGraph::discover(root, ".missouri").unwrap();
         assert!(graph.transitions[0].doc.is_none());
+    }
+
+    #[test]
+    fn discover_agent_assertion() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        make_state(
+            root,
+            "a",
+            r#"
+assertions:
+  - agent: eval-skill-commands
+  - agent: eval-output-quality
+    name: "output quality"
+"#,
+        );
+
+        let graph = StateGraph::discover(root, ".missouri").unwrap();
+        assert_eq!(graph.assertions.len(), 2);
+
+        assert_eq!(graph.assertions[0].agent.as_deref(), Some("eval-skill-commands"));
+        assert_eq!(graph.assertions[0].name, "a:eval[eval-skill-commands]");
+        assert!(graph.assertions[0].command.is_empty());
+
+        assert_eq!(graph.assertions[1].agent.as_deref(), Some("eval-output-quality"));
+        assert_eq!(graph.assertions[1].name, "output quality");
+    }
+
+    #[test]
+    fn discover_assertion_neither_command_nor_agent_errors() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        make_state(
+            root,
+            "a",
+            r#"
+assertions:
+  - name: "broken"
+"#,
+        );
+
+        let result = StateGraph::discover(root, ".missouri");
+        assert!(result.is_err());
+        let err = format!("{}", result.unwrap_err());
+        assert!(err.contains("neither command nor agent"), "got: {err}");
+    }
+
+    #[test]
+    fn discover_assertion_both_command_and_agent_errors() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        make_state(
+            root,
+            "a",
+            r#"
+assertions:
+  - command: "echo hi"
+    agent: eval-foo
+"#,
+        );
+
+        let result = StateGraph::discover(root, ".missouri");
+        assert!(result.is_err());
+        let err = format!("{}", result.unwrap_err());
+        assert!(err.contains("both command and agent"), "got: {err}");
     }
 }

@@ -1013,6 +1013,7 @@ dependencies = [
  "sea-orm",
  "serde",
  "serde_json",
+ "serde_yml",
  "tempfile",
  "tokio",
 ]
@@ -4244,6 +4245,7 @@ dependencies = [
  "camino",
  "chrono",
  "clap",
+ "clc-sdk",
  "ctrlc",
  "dotenvy",
  "futures-util",

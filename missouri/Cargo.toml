@@ -11,6 +11,7 @@ futures-util = "0.3"
 tokio = { version = "1", features = ["rt-multi-thread"] }
 ctrlc = "3.4"
 clap = { version = "4", features = ["derive", "env", "unicode", "wrap_help"] }
+clc-sdk = { path = "../clc-sdk" }
 dotenvy = "0.15"
 ignore = "0.4"
 libc = "0.2"
