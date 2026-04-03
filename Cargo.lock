@@ -981,11 +981,13 @@ dependencies = [
  "serde_yml",
  "sha1",
  "sigpipe",
+ "tar",
  "tempfile",
  "thiserror 2.0.18",
  "tisket",
  "tokio",
  "toml 0.8.23",
+ "walkdir",
  "zettel",
 ]
 
