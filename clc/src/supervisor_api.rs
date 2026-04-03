@@ -58,6 +58,8 @@ pub async fn start(
         .route("/agents/{id}/grants", post(create_grant).get(list_grants))
         // Dispatch (coordinator requests supervisor to create a worker)
         .route("/dispatch", post(dispatch_worker))
+        // Pickable tiskets (coordinator asks supervisor for fresh list)
+        .route("/pickable", get(pickable_tiskets))
         // Escalations
         .route("/escalations", get(list_escalations))
         // Health
@@ -384,8 +386,8 @@ async fn pending_permissions(
 
 /// Dispatch a worker on behalf of a coordinator.
 /// The coordinator (possibly in Docker) asks the supervisor to create
-/// and start the workspace. Supervisor registers the worker and will
-/// handle the actual workspace creation asynchronously.
+/// and start the workspace. Supervisor registers the worker, seeds
+/// baseline tool grants, and sets the initial phase.
 async fn dispatch_worker(
     State(state): State<Arc<ApiState>>,
     Json(req): Json<DispatchRequest>,
@@ -407,6 +409,26 @@ async fn dispatch_worker(
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     }
 
+    // Seed baseline tool grants so the worker can function.
+    for pattern in BASELINE_TOOL_GRANTS {
+        let _ = state
+            .db
+            .grant_permission(
+                "dispatch",
+                &req.tisket_id,
+                pattern,
+                "supervisor",
+                "baseline grant at dispatch",
+            )
+            .await;
+    }
+
+    // Set initial phase so the phase guard knows where the worker is.
+    let _ = state
+        .db
+        .set_phase(&req.tisket_id, "tests-unwritten", 0)
+        .await;
+
     Ok((
         StatusCode::CREATED,
         Json(serde_json::json!({
@@ -416,6 +438,105 @@ async fn dispatch_worker(
             "status": "pending",
         })),
     ))
+}
+
+/// Baseline tool grants seeded at dispatch. The phase guard (workflow
+/// permissions) constrains what edits are allowed in each phase — these
+/// grants cover the mechanical tools every worker needs.
+const BASELINE_TOOL_GRANTS: &[&str] = &[
+    "Read",
+    "Write",
+    "Edit",
+    "MultiEdit",
+    "Grep",
+    "Glob",
+    "WebFetch",
+    "WebSearch",
+    "Bash",
+    "Bash(*)",
+    "Agent",
+    "Skill",
+    "ToolSearch",
+    "NotebookEdit",
+];
+
+#[derive(Deserialize)]
+struct PickableQuery {
+    label: Option<String>,
+    exclude_label: Option<String>,
+    project: Option<String>,
+    coordinator_id: Option<String>,
+}
+
+/// Return pickable tisket IDs from the supervisor's always-current trunk.
+/// Coordinators call this instead of reading stale tisket files locally.
+async fn pickable_tiskets(
+    State(state): State<Arc<ApiState>>,
+    Query(query): Query<PickableQuery>,
+) -> Result<Json<Vec<String>>, StatusCode> {
+    // Already-dispatched agents for this coordinator.
+    let dispatched: Vec<String> = if let Some(ref cid) = query.coordinator_id {
+        state
+            .db
+            .list_agents(Some(cid))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    // Tisket repo operations are synchronous — run on a blocking thread.
+    let project_dir = state.project_dir.clone();
+    let pickable = tokio::task::spawn_blocking(move || {
+        let utf8_dir = camino::Utf8Path::new(
+            project_dir
+                .to_str()
+                .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?,
+        );
+
+        let repo =
+            tisket::Repo::open(utf8_dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        let issues = repo
+            .list_issues(query.project.as_deref(), None, None, false, &[])
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        let result: Vec<String> = issues
+            .into_iter()
+            .filter(|i| i.frontmatter.status.is_pickable())
+            .filter(|i| {
+                i.frontmatter.depends_on.iter().all(|dep_id| {
+                    repo.find_issue(dep_id)
+                        .map(|dep| dep.closed)
+                        .unwrap_or(false)
+                })
+            })
+            .filter(|i| {
+                query
+                    .label
+                    .as_deref()
+                    .is_none_or(|l| i.frontmatter.labels.iter().any(|il| il == l))
+            })
+            .filter(|i| {
+                query
+                    .exclude_label
+                    .as_deref()
+                    .is_none_or(|l| !i.frontmatter.labels.iter().any(|il| il == l))
+            })
+            .map(|i| i.id)
+            .filter(|id| !dispatched.contains(id))
+            .collect();
+
+        Ok::<_, StatusCode>(result)
+    })
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .map_err(|e| e)?;
+
+    Ok(Json(pickable))
 }
 
 async fn list_escalations(
@@ -931,5 +1052,74 @@ mod tests {
         assert_eq!(body["id"].as_str(), Some("feat-456"));
         assert_eq!(body["status"].as_str(), Some("Pending"));
         assert_eq!(body["parent_id"].as_str(), Some("coord-test"));
+    }
+
+    #[test]
+    fn dispatch_seeds_baseline_grants() {
+        let (base_url, _handle) = start_test_api();
+
+        blocking_post(
+            &base_url,
+            "/agents",
+            &serde_json::json!({ "id": "coord-test" }),
+        );
+
+        blocking_post(
+            &base_url,
+            "/dispatch",
+            &serde_json::json!({
+                "tisket_id": "grant-test",
+                "model": "opus",
+                "coordinator_id": "coord-test"
+            }),
+        );
+
+        // Verify Read is granted via tool-check.
+        let (status, body) = blocking_post(
+            &base_url,
+            "/agents/grant-test/tool-check",
+            &serde_json::json!({ "tool_name": "Read" }),
+        );
+        assert_eq!(status, 200);
+        assert_eq!(body["allowed"].as_bool(), Some(true), "Read should be granted: {body}");
+    }
+
+    #[test]
+    fn dispatch_sets_initial_phase() {
+        let (base_url, _handle) = start_test_api();
+
+        blocking_post(
+            &base_url,
+            "/agents",
+            &serde_json::json!({ "id": "coord-test" }),
+        );
+
+        blocking_post(
+            &base_url,
+            "/dispatch",
+            &serde_json::json!({
+                "tisket_id": "phase-test",
+                "model": "opus",
+                "coordinator_id": "coord-test"
+            }),
+        );
+
+        // Verify phase was set.
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let body: serde_json::Value = rt.block_on(async {
+            reqwest::Client::new()
+                .get(format!("{base_url}/agents/phase-test/phase"))
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap()
+        });
+
+        assert_eq!(body["phase"].as_str(), Some("tests-unwritten"));
     }
 }

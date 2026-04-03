@@ -690,6 +690,69 @@ fn find_undispatched(
     scope: &CoordinatorScope,
     coord: &Coordination,
 ) -> Result<Vec<String>, Error> {
+    // Docker coordinators ask the supervisor for pickable tiskets —
+    // the supervisor has the latest trunk, no stale git pack needed.
+    if let Ok(api_url) = std::env::var("CLC_API_URL") {
+        return find_undispatched_via_api(&api_url, scope);
+    }
+
+    // Local coordinators read tiskets directly from the host repo.
+    find_undispatched_local(project_dir, scope, coord)
+}
+
+/// Ask the supervisor API for pickable tiskets matching this coordinator's selector.
+fn find_undispatched_via_api(
+    api_url: &str,
+    scope: &CoordinatorScope,
+) -> Result<Vec<String>, Error> {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| Error::NonBlocking(format!("tokio: {e}")))?;
+
+    rt.block_on(async {
+        let client = crate::coordination_client::build_api_client()
+            .map_err(|e| Error::NonBlocking(format!("{e}")))?;
+
+        let mut url = format!("{api_url}/pickable?coordinator_id={}", scope.id);
+        if let Some(ref label) = scope.label {
+            url.push_str(&format!("&label={label}"));
+        }
+        if let Some(ref exclude) = scope.exclude_label {
+            url.push_str(&format!("&exclude_label={exclude}"));
+        }
+        if let Some(ref project) = scope.project {
+            url.push_str(&format!("&project={project}"));
+        }
+
+        let resp = client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| Error::NonBlocking(format!("pickable API: {e}")))?;
+
+        if !resp.status().is_success() {
+            return Err(Error::NonBlocking(format!(
+                "pickable API: HTTP {}",
+                resp.status()
+            )));
+        }
+
+        let ids: Vec<String> = resp
+            .json()
+            .await
+            .map_err(|e| Error::NonBlocking(format!("parse pickable: {e}")))?;
+
+        Ok(ids)
+    })
+}
+
+/// Read tiskets directly from the local repo (for host coordinators).
+fn find_undispatched_local(
+    project_dir: &Path,
+    scope: &CoordinatorScope,
+    coord: &Coordination,
+) -> Result<Vec<String>, Error> {
     let utf8_dir = Utf8Path::new(
         project_dir
             .to_str()
