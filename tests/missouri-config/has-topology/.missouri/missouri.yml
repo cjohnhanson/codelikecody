@@ -1,0 +1,16 @@
+doc: |
+  Project with clc.yaml topology config. Verifies the supervisor reads
+  and resolves the topology correctly.
+
+assertions:
+  - name: "reads clc.yaml"
+    command: "clc up --dry-run 2>/dev/null | head -1"
+    stdout: "config: clc.yaml\n"
+
+  - name: "resolves poll interval"
+    command: "clc up --dry-run 2>/dev/null | grep poll"
+    stdout: "poll_interval: 5s\n"
+
+  - name: "resolves coordinator from workspace"
+    command: "clc up --dry-run 2>/dev/null | grep dev"
+    stdout: "  dev (model=opus, workspace=docker, max_workers=1), label=backend, project=v0.1.0\n"

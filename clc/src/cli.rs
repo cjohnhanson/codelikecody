@@ -73,7 +73,11 @@ pub enum Command {
         command: ::tisket::cli::Command,
     },
     /// Start the supervisor: spawn coordinators, monitor health, surface escalations.
-    Up,
+    Up {
+        /// Validate config and print what would run, then exit.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Run a coordinator process (started by the supervisor, not by humans).
     #[command(name = "coordinator-run")]
     CoordinatorRun {

@@ -1,0 +1,8 @@
+setup:
+  - name: "build clc"
+    command: "cargo build --quiet --bin clc --manifest-path ../../Cargo.toml"
+  - name: "symlink clc into bin"
+    command: "ln -sf $(cd ../.. && pwd)/target/debug/clc .missouri/bin/clc"
+
+env:
+  NO_COLOR: "1"

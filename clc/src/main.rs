@@ -81,7 +81,7 @@ fn main() {
             action: Some(cli::StatusAction::Set { ref phase }),
         } => cmd_status_set(phase),
         cli::Command::Admin => cmd_admin(),
-        cli::Command::Up => cmd_up(),
+        cli::Command::Up { dry_run } => cmd_up(dry_run),
         cli::Command::CoordinatorRun {
             ref id,
             max_workers,
@@ -271,21 +271,42 @@ fn cmd_status_set(target: &str) -> Result<(), Error> {
     phase::set(&cwd, target, cfg.required_attempts)
 }
 
-fn cmd_up() -> Result<(), Error> {
+fn cmd_up(dry_run: bool) -> Result<(), Error> {
     let project_dir = std::env::current_dir()?;
     let cfg = config::load(&project_dir).unwrap_or_default();
 
     // Prefer clc.yaml (topology format) over clc.yml supervisor block.
-    let sup_config = if let Some(topo) = topology::load(&project_dir)? {
-        topo.to_supervisor_config()
+    let (sup_config, config_source) = if let Some(topo) = topology::load(&project_dir)? {
+        (topo.to_supervisor_config(), "clc.yaml")
     } else {
-        cfg.supervisor.clone()
+        (cfg.supervisor.clone(), "clc.yml")
     };
 
     if sup_config.coordinators.is_empty() {
         return Err(Error::NonBlocking(
             "no coordinators configured — add coordinators to clc.yaml or clc.yml".into(),
         ));
+    }
+
+    if dry_run {
+        println!("config: {config_source}");
+        println!("poll_interval: {}s", sup_config.poll_interval);
+        println!("coordinators: {}", sup_config.coordinators.len());
+        for c in &sup_config.coordinators {
+            let ws = match c.workspace {
+                config::WorkspaceType::Docker => "docker",
+                config::WorkspaceType::Worktree => "worktree",
+            };
+            print!("  {} (model={}, workspace={}, max_workers={})", c.id, c.model, ws, c.max_workers);
+            if let Some(ref label) = c.label {
+                print!(", label={label}");
+            }
+            if let Some(ref project) = c.project {
+                print!(", project={project}");
+            }
+            println!();
+        }
+        return Ok(());
     }
 
     let mut sup = supervisor::Supervisor::new(

@@ -1,0 +1,12 @@
+doc: |
+  Empty project — no clc.yaml or clc.yml. clc up --dry-run should fail.
+
+transitions:
+  - name: "write topology config"
+    command: "write-topology"
+    target: ../has-topology
+
+assertions:
+  - name: "clc up fails with no config"
+    command: "clc up --dry-run"
+    should_fail: true

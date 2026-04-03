@@ -1,0 +1,22 @@
+#!/bin/sh
+cat > clc.yaml << 'YAML'
+workspaces:
+  docker-worker:
+    type: worker
+    agent: opus
+    isolation: docker
+    docker_image: clc-worker:latest
+coordinators:
+  dev:
+    workspace: docker-worker
+    max_workers: 1
+    selector:
+      label: backend
+      project: v0.1.0
+supervisor:
+  poll_interval: 5
+YAML
+cat > clc.yml << 'YAML'
+main_branch: main
+admin_branch: clc-admin
+YAML
