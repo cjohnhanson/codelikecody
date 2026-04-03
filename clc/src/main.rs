@@ -26,6 +26,7 @@ mod missouri;
 mod permissions;
 mod phase;
 mod pickup;
+mod reviewer;
 mod skills;
 mod supervisor;
 mod ssh_session;
@@ -288,6 +289,13 @@ fn cmd_up(dry_run: bool) -> Result<(), Error> {
         ));
     }
 
+    // Validate reviewers exist and parse correctly.
+    for c in &sup_config.coordinators {
+        if !c.reviewers.is_empty() {
+            reviewer::resolve_all(&project_dir, &c.reviewers)?;
+        }
+    }
+
     if dry_run {
         println!("config: {config_source}");
         println!("poll_interval: {}s", sup_config.poll_interval);
@@ -303,6 +311,9 @@ fn cmd_up(dry_run: bool) -> Result<(), Error> {
             }
             if let Some(ref project) = c.project {
                 print!(", project={project}");
+            }
+            if !c.reviewers.is_empty() {
+                print!(", reviewers=[{}]", c.reviewers.join(", "));
             }
             println!();
         }
@@ -363,6 +374,7 @@ fn cmd_coordinator_run(
         docker_image: docker_image.map(str::to_string),
         auto_grant: auto_grant.to_vec(),
         always_escalate: always_escalate.to_vec(),
+        reviewers: Vec::new(),
     };
 
     // Validate grant-config file if provided.

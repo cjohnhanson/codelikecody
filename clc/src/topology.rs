@@ -60,6 +60,10 @@ pub struct CoordinatorSpec {
     pub auto_grant: Vec<String>,
     #[serde(default)]
     pub always_escalate: Vec<String>,
+    /// Named reviewers invoked at the review gate. Each name resolves to
+    /// `.clc/reviewers/<name>.md` — an AgentSpec frontmatter + review prompt.
+    #[serde(default)]
+    pub reviewers: Vec<String>,
 }
 
 fn default_max_workers() -> usize {
@@ -198,6 +202,7 @@ impl TopologyConfig {
                 docker_image,
                 auto_grant: coord.auto_grant.clone(),
                 always_escalate: coord.always_escalate.clone(),
+                reviewers: coord.reviewers.clone(),
             });
         }
 
@@ -739,5 +744,44 @@ coordinators:
         let topo = parse(yaml);
         let sup = topo.to_supervisor_config();
         assert_eq!(sup.poll_interval, 10);
+    }
+
+    #[test]
+    fn to_supervisor_config_passes_through_reviewers() {
+        let yaml = "
+workspaces:
+  w:
+    type: worker
+    agent: opus
+coordinators:
+  dev:
+    workspace: w
+    reviewers:
+      - scope-check
+      - test-quality
+      - code-quality
+";
+        let topo = parse(yaml);
+        let sup = topo.to_supervisor_config();
+        assert_eq!(
+            sup.coordinators[0].reviewers,
+            vec!["scope-check", "test-quality", "code-quality"]
+        );
+    }
+
+    #[test]
+    fn to_supervisor_config_empty_reviewers_default() {
+        let yaml = "
+workspaces:
+  w:
+    type: worker
+    agent: opus
+coordinators:
+  c:
+    workspace: w
+";
+        let topo = parse(yaml);
+        let sup = topo.to_supervisor_config();
+        assert!(sup.coordinators[0].reviewers.is_empty());
     }
 }

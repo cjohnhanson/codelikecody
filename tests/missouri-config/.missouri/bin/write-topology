@@ -13,6 +13,9 @@ coordinators:
     selector:
       label: backend
       project: v0.1.0
+    reviewers:
+      - scope-check
+      - test-quality
 supervisor:
   poll_interval: 5
 YAML
@@ -20,3 +23,20 @@ cat > clc.yml << 'YAML'
 main_branch: main
 admin_branch: clc-admin
 YAML
+mkdir -p .clc/reviewers
+cat > .clc/reviewers/scope-check.md << 'MD'
+---
+model: opus
+max_turns: 3
+---
+
+Check that the diff matches the tisket scope.
+MD
+cat > .clc/reviewers/test-quality.md << 'MD'
+---
+model: opus
+max_turns: 5
+---
+
+Check that tests are meaningful.
+MD

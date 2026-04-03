@@ -11,5 +11,8 @@ coordinators:
     selector:
       label: backend
       project: v0.1.0
+    reviewers:
+      - scope-check
+      - test-quality
 supervisor:
   poll_interval: 5

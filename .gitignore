@@ -3,7 +3,8 @@
 .worktrees/
 .claude/*
 !.claude/skills
-.clc/
+.clc/*
+!.clc/reviewers/
 docs/book/
 result
 almanac/tests/missouri/.missouri/bin/almanac

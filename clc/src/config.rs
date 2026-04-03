@@ -139,6 +139,11 @@ pub struct CoordinatorScope {
 
     #[serde(default)]
     pub always_escalate: Vec<String>,
+
+    /// Named reviewers for the review gate. Each name resolves to
+    /// `.clc/reviewers/<name>.md`.
+    #[serde(default)]
+    pub reviewers: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
