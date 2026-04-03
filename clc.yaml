@@ -1,17 +1,50 @@
 workspaces:
-  docker-worker:
+  docker:
     type: worker
     agent: opus
     isolation: docker
     docker_image: clc-worker:latest
 
+workflows:
+  tdd:
+    agents:
+      - scope-check
+      - code-review
+      - test-review
+  tdd-light:
+    agents:
+      - scope-check
+  tdd-secure:
+    agents:
+      - scope-check
+      - code-review
+      - test-review
+      - security-review
+  docs:
+    agents:
+      - scope-check
+      - docs-review
+  frontend:
+    agents:
+      - scope-check
+      - code-review
+      - design-review
+
 coordinators:
-  dev:
-    workspace: docker-worker
-    max_workers: 1
+  auto:
+    workspace: docker
+    workflow: tdd-light
+    max_workers: 3
     selector:
-      label: clc-up-target
+      label: auto
       project: v0.1.0
+  standard:
+    workspace: docker
+    workflow: tdd
+    max_workers: 2
+    selector:
+      project: v0.1.0
+      exclude_label: auto
 
 supervisor:
   poll_interval: 10

@@ -1,14 +1,17 @@
 ---
 model: opus
-max_turns: 3
-max_cost_cents: 50
 ---
 
-Review the diff against the tisket description. Check:
+Load the tisket-writing skill for evaluation criteria:
 
-1. Does the change address what the tisket asked for?
-2. Is there scope creep — code changes unrelated to the tisket?
-3. Are there any files modified that shouldn't have been touched?
+    almanac show tisket-writing
 
-If the work matches the tisket scope, pass. If there's significant scope
-creep or the core ask wasn't addressed, fail with specifics.
+Review the diff against the tisket description. Apply the INVEST criteria
+from the skill to evaluate whether the delivered work matches the spec.
+
+- Does the change address what the tisket asked for?
+- Is there scope creep — code changes unrelated to the tisket?
+- Were the acceptance criteria met?
+
+Pass if the work matches the tisket scope. Fail with specifics if there's
+significant scope creep or the core ask wasn't addressed.
