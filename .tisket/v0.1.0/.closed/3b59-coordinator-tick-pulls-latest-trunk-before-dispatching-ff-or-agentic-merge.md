@@ -1,12 +1,12 @@
 ---
 title: "coordinator tick pulls latest trunk before dispatching — ff or agentic merge"
-status: in_progress
+status: done
 priority: 1
 assignee:
 labels: [clc, clc-up-target, standard]
 depends_on: []
 created: 2026-04-03T18:39:14Z
-updated: "2026-04-03T18:40:31Z"
+updated: "2026-04-03T18:44:25Z"
 ---
 
 ## Problem
@@ -52,5 +52,3 @@ the tick loop.
 - Conflicts fall back to agentic merge (Claude session in the coordinator)
 - At least one test verifies that a tisket added after coordinator startup
   is picked up on the next tick
-
-## Scratch Notes
