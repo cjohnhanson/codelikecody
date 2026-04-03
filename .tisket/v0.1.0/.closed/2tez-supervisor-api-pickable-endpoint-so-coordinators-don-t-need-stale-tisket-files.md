@@ -1,12 +1,12 @@
 ---
 title: "supervisor API: /pickable endpoint so coordinators don't need stale tisket files"
-status: in_progress
+status: done
 priority: 2
 assignee:
 labels: [clc, auto]
 depends_on: []
 created: 2026-04-03T19:28:09Z
-updated: "2026-04-03T19:45:47Z"
+updated: "2026-04-03T20:02:32Z"
 ---
 
 ## Problem
@@ -40,5 +40,3 @@ The coordinator's `find_undispatched` calls this endpoint when
 - Filtering matches the existing `find_undispatched` logic (label, exclude_label, project, depends_on, is_pickable)
 - Response excludes tiskets already dispatched by this coordinator
 - At least one supervisor API test verifies the endpoint
-
-## Scratch Notes
