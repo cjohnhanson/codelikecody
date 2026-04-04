@@ -7,8 +7,6 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use russh::client;
-use russh::keys::key;
-
 use crate::ssh_workspace::SSHTarget;
 
 /// An active SSH connection to a workspace.
@@ -28,7 +26,7 @@ impl client::Handler for SessionHandler {
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &key::PublicKey,
+        _server_public_key: &russh::keys::PublicKey,
     ) -> Result<bool, Self::Error> {
         Ok(true)
     }
@@ -43,25 +41,17 @@ impl client::Handler for SessionHandler {
         _session: &mut client::Session,
     ) -> Result<(), Self::Error> {
         let local_port = self.local_port;
-        eprintln!("reverse tunnel: forwarding to localhost:{local_port}");
+        eprintln!("reverse tunnel: incoming connection, forwarding to localhost:{local_port}");
         tokio::spawn(async move {
-            let tcp = match tokio::net::TcpStream::connect(format!("127.0.0.1:{local_port}")).await {
-                Ok(tcp) => tcp,
-                Err(e) => {
-                    eprintln!("reverse tunnel: failed to connect to localhost:{local_port}: {e}");
-                    return;
+            match tokio::net::TcpStream::connect(format!("127.0.0.1:{local_port}")).await {
+                Ok(mut tcp) => {
+                    let mut stream = channel.into_stream();
+                    let _ = tokio::io::copy_bidirectional(&mut tcp, &mut stream).await;
                 }
-            };
-            // Split both streams and copy each direction independently.
-            // Using tokio::io::split instead of copy_bidirectional works
-            // around russh #178 where ChannelStream's AsyncRead can
-            // misbehave during bidirectional use.
-            let (mut tcp_read, mut tcp_write) = tcp.into_split();
-            let stream = channel.into_stream();
-            let (mut ch_read, mut ch_write) = tokio::io::split(stream);
-            let c2s = tokio::io::copy(&mut ch_read, &mut tcp_write);
-            let s2c = tokio::io::copy(&mut tcp_read, &mut ch_write);
-            let _ = tokio::try_join!(c2s, s2c);
+                Err(e) => {
+                    eprintln!("reverse tunnel: failed to connect to local port {local_port}: {e}");
+                }
+            }
         });
         Ok(())
     }
@@ -83,11 +73,15 @@ impl SSHSession {
             client::connect(config, (target.host.as_str(), target.port), handler).await?;
 
         // Load private key.
-        let key_pair = russh::keys::load_secret_key(private_key_path, None)?;
+        let private_key = russh::keys::load_secret_key(private_key_path, None)?;
+        let key_with_hash = russh::keys::key::PrivateKeyWithHashAlg::new(
+            Arc::new(private_key),
+            None,
+        )?;
 
         // Authenticate.
         let auth_result = session
-            .authenticate_publickey(&target.user, Arc::new(key_pair))
+            .authenticate_publickey(&target.user, key_with_hash)
             .await?;
 
         if !auth_result {
