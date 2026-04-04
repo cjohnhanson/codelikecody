@@ -102,6 +102,7 @@ fn main() {
             ref depends_on,
             ref grant_config,
             ref tisket,
+            ref workflow,
         } => cmd_coordinator_run(
             id,
             max_workers,
@@ -119,6 +120,7 @@ fn main() {
             depends_on.as_deref(),
             grant_config.as_deref(),
             tisket.as_deref(),
+            workflow.as_deref(),
         ),
         cli::Command::Home => cmd_home(),
         cli::Command::Merge { ref id } => cmd_merge(id),
@@ -383,6 +385,7 @@ fn cmd_coordinator_run(
     depends_on: Option<&str>,
     grant_config: Option<&str>,
     tisket: Option<&str>,
+    workflow: Option<&str>,
 ) -> Result<(), Error> {
     let project_dir = std::env::current_dir()?;
     let cfg = config::load(&project_dir).unwrap_or_default();
@@ -409,7 +412,7 @@ fn cmd_coordinator_run(
         docker_image: docker_image.map(str::to_string),
         auto_grant: auto_grant.to_vec(),
         always_escalate: always_escalate.to_vec(),
-        workflow: None,
+        workflow: workflow.map(str::to_string),
     };
 
     // Validate grant-config file if provided.

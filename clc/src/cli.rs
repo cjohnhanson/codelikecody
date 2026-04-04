@@ -129,6 +129,9 @@ pub enum Command {
         /// Filter dry-run to a specific tisket ID.
         #[arg(long)]
         tisket: Option<String>,
+        /// Named workflow (determines phase graph, permissions, review agents).
+        #[arg(long)]
+        workflow: Option<String>,
     },
     /// Dispatch a worker: pickup tisket + spawn detached claude process.
     Dispatch {

@@ -372,6 +372,10 @@ impl Supervisor {
             start_cmd.push("--always-escalate".to_string());
             start_cmd.push(pattern.clone());
         }
+        if let Some(ref workflow) = scope.workflow {
+            start_cmd.push("--workflow".to_string());
+            start_cmd.push(workflow.clone());
+        }
         // Coordinator in Docker dispatches workers via API, not local process.
         start_cmd.push("--workspace".to_string());
         start_cmd.push("docker".to_string());
@@ -476,6 +480,9 @@ impl Supervisor {
         }
         for pattern in &scope.always_escalate {
             cmd.arg("--always-escalate").arg(pattern);
+        }
+        if let Some(ref workflow) = scope.workflow {
+            cmd.arg("--workflow").arg(workflow);
         }
     }
 
