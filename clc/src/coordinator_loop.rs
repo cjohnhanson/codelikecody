@@ -557,7 +557,8 @@ fn refresh_trunk_via_api(
     api_url: &str,
     main_branch: &str,
 ) -> Result<(), Error> {
-    let rt = tokio::runtime::Builder::new_current_thread()
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
         .enable_all()
         .build()
         .map_err(|e| Error::NonBlocking(format!("tokio: {e}")))?;
@@ -656,7 +657,8 @@ fn dispatch_via_api(
     model: &str,
     coordinator_id: &str,
 ) -> Result<(), Error> {
-    let rt = tokio::runtime::Builder::new_current_thread()
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
         .enable_all()
         .build()
         .map_err(|e| Error::NonBlocking(format!("tokio: {e}")))?;
@@ -705,7 +707,8 @@ fn find_undispatched_via_api(
     api_url: &str,
     scope: &CoordinatorScope,
 ) -> Result<Vec<String>, Error> {
-    let rt = tokio::runtime::Builder::new_current_thread()
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
         .enable_all()
         .build()
         .map_err(|e| Error::NonBlocking(format!("tokio: {e}")))?;

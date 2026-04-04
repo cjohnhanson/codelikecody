@@ -43,7 +43,7 @@ impl client::Handler for SessionHandler {
         _session: &mut client::Session,
     ) -> Result<(), Self::Error> {
         let local_port = self.local_port;
-        eprintln!("reverse tunnel: incoming connection, forwarding to localhost:{local_port}");
+        eprintln!("reverse tunnel: forwarding to localhost:{local_port}");
         tokio::spawn(async move {
             match tokio::net::TcpStream::connect(format!("127.0.0.1:{local_port}")).await {
                 Ok(mut tcp) => {
@@ -51,7 +51,7 @@ impl client::Handler for SessionHandler {
                     let _ = tokio::io::copy_bidirectional(&mut tcp, &mut stream).await;
                 }
                 Err(e) => {
-                    eprintln!("reverse tunnel: failed to connect to local port {local_port}: {e}");
+                    eprintln!("reverse tunnel: failed to connect to localhost:{local_port}: {e}");
                 }
             }
         });
