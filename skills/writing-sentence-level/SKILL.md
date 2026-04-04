@@ -216,6 +216,28 @@ sandboxed temp directories. Missouri runs tests in them."
 (Second sentence starts with new info and ends with old info. The
 reader has to hold the new info in memory while waiting for context.)
 
+### Undefined definite references
+
+A definite noun phrase ("the guard," "the registry," "the scrubber")
+presupposes the reader already knows what it refers to. When writing,
+the referent may be in the LLM's context window but absent from the
+document. The reader encounters "the guard" and has to guess what
+guard.
+
+The test: for every "the [noun]" that isn't a common English word
+(the server, the file), check whether that noun was introduced earlier
+in the document. If not, either introduce it first or use an
+indefinite form ("a guard that...") at first mention.
+
+This is distinct from the old-new principle. Old-new is about sentence
+ordering within a paragraph. This is about document-level
+presupposition: does the reader have the knowledge this reference
+assumes?
+
+Common failure pattern: the writer has been discussing a concept in
+conversation or in other files, uses "the X" as if the reader was
+present for that context, and the reader wasn't.
+
 ### Paragraph structure
 
 Each paragraph should have:
