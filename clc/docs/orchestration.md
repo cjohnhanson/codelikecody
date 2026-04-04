@@ -6,9 +6,14 @@ type: guide
 
 # Multi-Agent Orchestration
 
-A single agent works one tisket at a time: pick up, write tests, implement, done. That's fine for interactive use. But if you have a backlog of scoped tiskets, you can dispatch multiple agents to work in parallel — each in its own worktree, each constrained by the phase system, each producing a mergeable branch.
+Multiple agents can work in parallel, each in its own workspace,
+constrained by the phase system.
 
-The model is a coordinator-worker hierarchy. The coordinator runs on trunk, scans for pickable tiskets, dispatches workers, monitors their progress, and lands completed branches. Workers are individual agent sessions, each isolated in a worktree. The coordinator doesn't write code — it manages the agents that do.
+The hierarchy has three levels. The supervisor (`clc up`) spawns
+coordinators. Coordinators run on trunk, scan for pickable tiskets
+matching their selector, dispatch workers, handle permission requests,
+and land completed branches. Workers are individual agent sessions in
+isolated workspaces.
 
 You can also dispatch workers manually without a coordinator, which is useful for one-off tasks or debugging.
 

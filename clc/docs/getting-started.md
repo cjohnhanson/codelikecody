@@ -6,7 +6,8 @@ type: tutorial
 
 # Getting Started
 
-By the end of this, you'll have clc managing a real project: an agent that can't edit source files until tests exist, can't stop until work is done, and produces reviewable branches that merge cleanly.
+This tutorial walks through the full cycle: initialize clc on a project,
+create an issue, pick it up, work through the phase system, and merge.
 
 ## Prerequisites
 
@@ -294,12 +295,6 @@ clc merge <issue-id>
 ```
 
 This fast-forward merges the feature branch into trunk, deletes the branch, and removes the worktree. The closed tisket is now on trunk. The work is done.
-
-## What you just did
-
-You created an issue, picked it up, wrote a test before implementation (because the hooks wouldn't let you do it the other way), implemented the feature, and merged a clean branch. The phase system enforced the workflow mechanically — not through prompts or instructions, but through tool-call interception.
-
-In practice, an agent does this autonomously. The agent receives a tisket, enters the worktree, and the hook system constrains its behavior at each phase. The agent doesn't need to know the rules — the guard enforces them.
 
 ## Next
 
