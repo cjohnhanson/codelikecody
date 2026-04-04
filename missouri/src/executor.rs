@@ -3263,4 +3263,134 @@ transitions:
         // .missouri/ not copied
         assert!(!work_dir.join(".missouri").exists());
     }
+
+    /// Helper: build a minimal state graph with a single state containing assertions.
+    fn make_assertion_graph(tmp: &Utf8Path, assertions_yaml: &str) -> StateGraph {
+        let state_dir = tmp.join("s");
+        let missouri_dir = state_dir.join(".missouri");
+        fs::create_dir_all(&missouri_dir).unwrap();
+        fs::write(
+            missouri_dir.join("missouri.yml"),
+            format!("assertions:\n{assertions_yaml}"),
+        )
+        .unwrap();
+        StateGraph::discover(tmp, ".missouri").unwrap()
+    }
+
+    #[test]
+    fn should_fail_with_matching_stderr_passes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        let graph = make_assertion_graph(
+            root,
+            r#"  - name: "fails with correct stderr"
+    command: "sh -c 'echo wrong-stderr >&2; exit 1'"
+    should_fail: true
+    stderr: "wrong-stderr\n"
+"#,
+        );
+
+        let assertion = &graph.assertions[0];
+        let state_env = std::collections::BTreeMap::new();
+        let work_dir = &graph.states[0].path;
+        let backend = BareBackend;
+
+        let result = run_single_assertion(assertion, work_dir, &state_env, &graph, &backend);
+        assert!(
+            result.passed,
+            "should_fail assertion with matching stderr should pass, got error: {:?}",
+            result.error
+        );
+        assert!(
+            result.stderr_diff.is_none(),
+            "stderr should match, but got diff: {:?}",
+            result.stderr_diff
+        );
+    }
+
+    #[test]
+    fn should_fail_with_mismatched_stderr_fails() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        let graph = make_assertion_graph(
+            root,
+            r#"  - name: "fails with wrong stderr"
+    command: "sh -c 'echo actual-error >&2; exit 1'"
+    should_fail: true
+    stderr: "expected-error\n"
+"#,
+        );
+
+        let assertion = &graph.assertions[0];
+        let state_env = std::collections::BTreeMap::new();
+        let work_dir = &graph.states[0].path;
+        let backend = BareBackend;
+
+        let result = run_single_assertion(assertion, work_dir, &state_env, &graph, &backend);
+        assert!(
+            !result.passed,
+            "should_fail assertion with mismatched stderr should fail"
+        );
+        assert!(
+            result.stderr_diff.is_some(),
+            "should report stderr diff when stderr doesn't match"
+        );
+    }
+
+    #[test]
+    fn should_fail_with_mismatched_stdout_fails() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        let graph = make_assertion_graph(
+            root,
+            r#"  - name: "fails with wrong stdout"
+    command: "sh -c 'echo actual-output; exit 1'"
+    should_fail: true
+    stdout: "expected-output\n"
+"#,
+        );
+
+        let assertion = &graph.assertions[0];
+        let state_env = std::collections::BTreeMap::new();
+        let work_dir = &graph.states[0].path;
+        let backend = BareBackend;
+
+        let result = run_single_assertion(assertion, work_dir, &state_env, &graph, &backend);
+        assert!(
+            !result.passed,
+            "should_fail assertion with mismatched stdout should fail"
+        );
+        assert!(
+            result.stdout_diff.is_some(),
+            "should report stdout diff when stdout doesn't match"
+        );
+    }
+
+    #[test]
+    fn should_fail_without_output_expectations_still_passes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+
+        let graph = make_assertion_graph(
+            root,
+            r#"  - name: "fails without output checks"
+    command: "sh -c 'echo noise >&2; exit 1'"
+    should_fail: true
+"#,
+        );
+
+        let assertion = &graph.assertions[0];
+        let state_env = std::collections::BTreeMap::new();
+        let work_dir = &graph.states[0].path;
+        let backend = BareBackend;
+
+        let result = run_single_assertion(assertion, work_dir, &state_env, &graph, &backend);
+        assert!(
+            result.passed,
+            "should_fail without stdout/stderr expectations should still pass"
+        );
+    }
 }

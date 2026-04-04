@@ -23,3 +23,21 @@ An agent writing tests from writing-tests.md will add `stderr` assertions alongs
 ## Why It Matters
 
 Tests that appear to verify error messages are actually verifying nothing. Silent false-passes erode confidence in the test suite.
+
+## Scratch Notes
+
+### Decision
+The fix should make the executor check stderr/stdout even when should_fail is true (match writing-tests.md behavior). cli-reference.md and the executor need to be updated.
+
+### Key files
+- `missouri/src/executor.rs:1866-1887` — should_fail early return skips stdout/stderr comparison
+- `missouri/src/graph.rs:78-91` — Assertion struct
+- `missouri/docs/writing-tests.md:367-372` — shows should_fail + stderr (desired behavior)
+- `missouri/docs/cli-reference.md:295-328` — documents should_fail (needs update)
+
+### Test plan
+- Unit tests in executor.rs testing run_single_assertion with should_fail + stderr/stdout
+- Missouri integration test with should_fail + stderr matching
+
+### Status
+- Phase: tests-unwritten → writing tests now
