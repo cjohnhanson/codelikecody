@@ -1875,19 +1875,8 @@ fn run_single_assertion(
                 duration: assertion_start.elapsed(),
             };
         }
-        // Command failed as expected — pass (no stdout/stderr comparison for should_fail)
-        return AssertionResult {
-            name: assertion.name.clone(),
-            passed: true,
-            exit_code,
-            stdout_diff: None,
-            stderr_diff: None,
-            error: None,
-            duration: assertion_start.elapsed(),
-        };
-    }
-
-    if !output.status.success() {
+        // Command failed as expected — fall through to stdout/stderr comparison
+    } else if !output.status.success() {
         return AssertionResult {
             name: assertion.name.clone(),
             passed: false,
