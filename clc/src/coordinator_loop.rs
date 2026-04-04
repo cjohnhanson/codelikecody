@@ -551,14 +551,19 @@ fn refresh_trunk(project_dir: &Path, main_branch: &str) -> Result<(), Error> {
     }
 }
 
-/// Fetch pack from supervisor API and import into the coordinator's repo.
+/// Fetch incremental pack from supervisor API and import new objects.
 fn refresh_trunk_via_api(
     project_dir: &Path,
     api_url: &str,
     main_branch: &str,
 ) -> Result<(), Error> {
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(1)
+    // Send local HEAD so the server only returns new objects.
+    let have_oid = gix::open(project_dir)
+        .ok()
+        .and_then(|repo| repo.head_id().ok().map(|id| id.to_string()))
+        .unwrap_or_default();
+
+    let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|e| Error::NonBlocking(format!("tokio: {e}")))?;
@@ -567,28 +572,33 @@ fn refresh_trunk_via_api(
         let client = crate::coordination_client::build_api_client()
             .map_err(|e| Error::NonBlocking(format!("{e}")))?;
         let resp = client
-            .get(format!("{api_url}/git/pack/{main_branch}"))
+            .get(format!("{api_url}/git/sync/{main_branch}?have={have_oid}"))
             .send()
             .await
-            .map_err(|e| Error::NonBlocking(format!("fetch trunk pack: {e}")))?;
+            .map_err(|e| Error::NonBlocking(format!("fetch trunk sync: {e}")))?;
 
         if !resp.status().is_success() {
             return Err(Error::NonBlocking(format!(
-                "fetch trunk pack: HTTP {}",
+                "fetch trunk sync: HTTP {}",
                 resp.status()
             )));
         }
 
         resp.json()
             .await
-            .map_err(|e| Error::NonBlocking(format!("parse trunk pack: {e}")))
+            .map_err(|e| Error::NonBlocking(format!("parse trunk sync: {e}")))
     })?;
+
+    // Nothing new — skip import.
+    if body["up_to_date"].as_bool() == Some(true) {
+        return Ok(());
+    }
 
     let pack_b64 = body["pack"]
         .as_str()
-        .ok_or_else(|| Error::NonBlocking("trunk pack missing 'pack' field".into()))?;
+        .ok_or_else(|| Error::NonBlocking("trunk sync missing 'pack' field".into()))?;
     let pack_data = crate::base64_decode(pack_b64)
-        .map_err(|e| Error::NonBlocking(format!("decode trunk pack: {e}")))?;
+        .map_err(|e| Error::NonBlocking(format!("decode trunk sync: {e}")))?;
 
     let refs: Vec<(String, String)> = body["refs"]
         .as_array()
