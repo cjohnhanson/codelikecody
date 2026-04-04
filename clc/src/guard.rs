@@ -460,6 +460,24 @@ mod tests {
     }
 
     #[test]
+    fn workflow_no_phase_falls_back_to_initial_and_blocks_non_rs() {
+        let git = feature_branch();
+        let wf = tdd_workflow();
+        let resp = check_tool_use_workflow(
+            "Edit",
+            &json!({"file_path": "README.md"}),
+            Some(&git),
+            None, // No phase — should fall back to tests-unwritten
+            &wf,
+            test_cwd(),
+        );
+        assert!(
+            matches!(resp, Response::Block { .. }),
+            "Edit README.md with no phase should be blocked (falls back to tests-unwritten)"
+        );
+    }
+
+    #[test]
     fn workflow_restricted_phase_allows_test_edit() {
         let git = feature_branch();
         let wf = tdd_workflow();
