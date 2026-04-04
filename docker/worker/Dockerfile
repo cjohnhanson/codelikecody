@@ -37,6 +37,7 @@ RUN mkdir -p /run/sshd && \
     sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config && \
     sed -i 's/#PubkeyAuthentication yes/PubkeyAuthentication yes/' /etc/ssh/sshd_config && \
     sed -i 's/#GatewayPorts no/GatewayPorts yes/' /etc/ssh/sshd_config && \
+    sed -i 's/#PermitUserEnvironment no/PermitUserEnvironment yes/' /etc/ssh/sshd_config && \
     mkdir -p /root/.ssh && chmod 700 /root/.ssh
 
 COPY --from=builder /tmp/clc /tmp/tisket /tmp/missouri /usr/local/bin/
@@ -49,11 +50,11 @@ ENV CARGO_HOME=/usr/local/cargo
 ENV RUSTUP_HOME=/usr/local/rustup
 ENV PATH="/usr/local/cargo/bin:${PATH}"
 
-# Make ENV vars available to SSH sessions. sshd exec doesn't inherit
-# Docker ENV — login shells source /etc/profile.d/*.
-RUN echo 'export CARGO_HOME=/usr/local/cargo' > /etc/profile.d/cargo.sh && \
-    echo 'export RUSTUP_HOME=/usr/local/rustup' >> /etc/profile.d/cargo.sh && \
-    echo 'export PATH="/usr/local/cargo/bin:$PATH"' >> /etc/profile.d/cargo.sh
+# Make ENV vars available to SSH sessions via PermitUserEnvironment.
+# sshd reads ~/.ssh/environment and injects vars into every session.
+RUN echo 'CARGO_HOME=/usr/local/cargo' > /root/.ssh/environment && \
+    echo 'RUSTUP_HOME=/usr/local/rustup' >> /root/.ssh/environment && \
+    echo 'PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' >> /root/.ssh/environment
 
 ENV HOME=/root
 CMD ["/usr/sbin/sshd", "-D", "-e"]
