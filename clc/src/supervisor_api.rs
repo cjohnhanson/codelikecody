@@ -76,10 +76,15 @@ pub async fn start(
         let bound_addr = addr;
 
         tokio::spawn(async move {
-            axum_server::bind_rustls(addr, rustls_config)
+            eprintln!("API server: starting TLS accept loop");
+            match axum_server::bind_rustls(addr, rustls_config)
                 .serve(app.into_make_service())
                 .await
-                .ok();
+            {
+                Ok(()) => eprintln!("API server: serve() returned Ok — server stopped"),
+                Err(e) => eprintln!("API server: serve() returned Err — {e}"),
+            }
+            eprintln!("API server: accept loop exited!");
         });
 
         Ok(bound_addr)
