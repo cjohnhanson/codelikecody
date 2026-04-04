@@ -1,6 +1,6 @@
 # ✌️ codelikecody
 
-Code like Cody. Opinionated workflow enforcement for coding agents.
+Code like Cody (that's me). Opinionated workflow enforcement for coding agents.
 
 codelikecody is a set of CLI tools that enforce discipline on autonomous
 coding agents. Two principles drive the design: agents should prove their
