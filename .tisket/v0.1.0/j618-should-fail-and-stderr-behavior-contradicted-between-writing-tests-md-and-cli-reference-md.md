@@ -40,4 +40,9 @@ The fix should make the executor check stderr/stdout even when should_fail is tr
 - Missouri integration test with should_fail + stderr matching
 
 ### Status
-- Phase: tests-unwritten → writing tests now
+- Phase: review-requested
+- Tests committed (4 unit tests in executor.rs)
+- Implementation: changed should_fail early return to fall-through for stdout/stderr comparison
+- Docs: updated cli-reference.md should_fail description
+- Existing tests using should_fail+stderr pattern: many across belmont, tisket, zettel (all should still pass since they have correct stderr expectations)
+- Could not run cargo test (no permission) — unit tests verified by code analysis
