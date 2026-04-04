@@ -277,9 +277,9 @@ impl Workspace for SSHWorkspace {
         // mTLS certs were deployed in step 4 above (workspace-cert.pem etc.).
         // Both coordinator and worker exec commands reference those paths.
         let exec_cmd = if self.config.start_command.is_some() {
-            build_coordinator_exec_cmd(self.config.api_port, &start_cmd)
+            build_coordinator_exec_cmd(self.tunnel_port, &start_cmd)
         } else {
-            build_worker_exec_cmd(self.config.api_port, &start_cmd)
+            build_worker_exec_cmd(self.tunnel_port, &start_cmd)
         };
         let pid_output = self.rt.block_on(async {
             session
@@ -434,14 +434,14 @@ impl DockerEnvironment {
 /// SSH tunnel is unreliable because russh tears down the forwarding listener when
 /// all channels close. host.docker.internal works on Docker Desktop (macOS/Windows)
 /// and the API binds to 0.0.0.0 with mTLS protecting it.
-fn build_coordinator_exec_cmd(api_port: u16, start_cmd: &str) -> String {
+fn build_coordinator_exec_cmd(tunnel_port: u16, start_cmd: &str) -> String {
     format!(
         "cd /project && \
          export GIT_AUTHOR_NAME=clc-worker && \
          export GIT_AUTHOR_EMAIL=worker@clc.local && \
          export GIT_COMMITTER_NAME=clc-worker && \
          export GIT_COMMITTER_EMAIL=worker@clc.local && \
-         export CLC_API_URL=https://host.docker.internal:{api_port} && \
+         export CLC_API_URL=https://localhost:{tunnel_port} && \
          export CLC_API_CERT=/tmp/workspace-cert.pem && \
          export CLC_API_KEY=/tmp/workspace-key.pem && \
          export CLC_API_CA=/tmp/ca-cert.pem && \
@@ -450,15 +450,15 @@ fn build_coordinator_exec_cmd(api_port: u16, start_cmd: &str) -> String {
 }
 
 /// Build the shell command that starts a worker inside a Docker workspace.
-/// Uses the workspace certs deployed earlier in start() (step 4).
-fn build_worker_exec_cmd(api_port: u16, start_cmd: &str) -> String {
+/// Uses the reverse SSH tunnel to reach the supervisor API.
+fn build_worker_exec_cmd(tunnel_port: u16, start_cmd: &str) -> String {
     format!(
         "cd /project && \
          export GIT_AUTHOR_NAME=clc-worker && \
          export GIT_AUTHOR_EMAIL=worker@clc.local && \
          export GIT_COMMITTER_NAME=clc-worker && \
          export GIT_COMMITTER_EMAIL=worker@clc.local && \
-         export CLC_API_URL=https://host.docker.internal:{api_port} && \
+         export CLC_API_URL=https://localhost:{tunnel_port} && \
          export CLC_API_CERT=/tmp/workspace-cert.pem && \
          export CLC_API_KEY=/tmp/workspace-key.pem && \
          export CLC_API_CA=/tmp/ca-cert.pem && \
@@ -582,21 +582,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn coordinator_exec_cmd_uses_host_docker_internal() {
+    fn coordinator_exec_cmd_uses_localhost_tunnel() {
         let cmd = build_coordinator_exec_cmd(
-            19100,
+            19200,
             "clc coordinator-run --id coord-test --max-workers 1 --model opus",
         );
 
         assert!(
-            cmd.contains("CLC_API_URL=https://host.docker.internal:19100"),
-            "expected host.docker.internal URL, got: {cmd}"
+            cmd.contains("CLC_API_URL=https://localhost:19200"),
+            "expected localhost tunnel URL, got: {cmd}"
         );
     }
 
     #[test]
     fn coordinator_exec_cmd_sets_mtls_env_vars() {
-        let cmd = build_coordinator_exec_cmd(19100, "clc coordinator-run");
+        let cmd = build_coordinator_exec_cmd(19200, "clc coordinator-run");
 
         assert!(cmd.contains("CLC_API_CERT=/tmp/workspace-cert.pem"));
         assert!(cmd.contains("CLC_API_KEY=/tmp/workspace-key.pem"));
@@ -605,7 +605,7 @@ mod tests {
 
     #[test]
     fn coordinator_exec_cmd_backgrounds_process() {
-        let cmd = build_coordinator_exec_cmd(19100, "clc coordinator-run");
+        let cmd = build_coordinator_exec_cmd(19200, "clc coordinator-run");
 
         assert!(cmd.contains("nohup"));
         assert!(cmd.contains("> /tmp/agent.log 2>&1 &"));
@@ -614,14 +614,14 @@ mod tests {
 
     #[test]
     fn coordinator_exec_cmd_cds_to_project() {
-        let cmd = build_coordinator_exec_cmd(19100, "clc coordinator-run");
+        let cmd = build_coordinator_exec_cmd(19200, "clc coordinator-run");
         assert!(cmd.starts_with("cd /project &&"));
     }
 
     #[test]
-    fn worker_exec_cmd_sets_mtls_env_vars() {
-        let cmd = build_worker_exec_cmd(19100, "clc workspace start --branch test");
-        assert!(cmd.contains("CLC_API_URL=https://host.docker.internal:19100"));
+    fn worker_exec_cmd_uses_localhost_tunnel() {
+        let cmd = build_worker_exec_cmd(19201, "clc workspace start --branch test");
+        assert!(cmd.contains("CLC_API_URL=https://localhost:19201"));
         assert!(cmd.contains("CLC_API_CERT=/tmp/workspace-cert.pem"));
         assert!(cmd.contains("CLC_API_KEY=/tmp/workspace-key.pem"));
         assert!(cmd.contains("CLC_API_CA=/tmp/ca-cert.pem"));
@@ -629,7 +629,7 @@ mod tests {
 
     #[test]
     fn worker_exec_cmd_does_not_background() {
-        let cmd = build_worker_exec_cmd(19100, "clc workspace start");
+        let cmd = build_worker_exec_cmd(19200, "clc workspace start");
         assert!(!cmd.contains("nohup"));
         assert!(!cmd.contains("echo $!"));
     }
