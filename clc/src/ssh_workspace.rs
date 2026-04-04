@@ -436,7 +436,8 @@ impl DockerEnvironment {
 /// and the API binds to 0.0.0.0 with mTLS protecting it.
 fn build_coordinator_exec_cmd(tunnel_port: u16, start_cmd: &str) -> String {
     format!(
-        "cd /project && \
+        ". /etc/profile 2>/dev/null; \
+         cd /project && \
          export GIT_AUTHOR_NAME=clc-worker && \
          export GIT_AUTHOR_EMAIL=worker@clc.local && \
          export GIT_COMMITTER_NAME=clc-worker && \
@@ -453,7 +454,8 @@ fn build_coordinator_exec_cmd(tunnel_port: u16, start_cmd: &str) -> String {
 /// Uses the reverse SSH tunnel to reach the supervisor API.
 fn build_worker_exec_cmd(tunnel_port: u16, start_cmd: &str) -> String {
     format!(
-        "cd /project && \
+        ". /etc/profile 2>/dev/null; \
+         cd /project && \
          export GIT_AUTHOR_NAME=clc-worker && \
          export GIT_AUTHOR_EMAIL=worker@clc.local && \
          export GIT_COMMITTER_NAME=clc-worker && \

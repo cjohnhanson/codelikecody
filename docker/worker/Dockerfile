@@ -49,5 +49,11 @@ ENV CARGO_HOME=/usr/local/cargo
 ENV RUSTUP_HOME=/usr/local/rustup
 ENV PATH="/usr/local/cargo/bin:${PATH}"
 
+# Make ENV vars available to SSH sessions. sshd exec doesn't inherit
+# Docker ENV — login shells source /etc/profile.d/*.
+RUN echo 'export CARGO_HOME=/usr/local/cargo' > /etc/profile.d/cargo.sh && \
+    echo 'export RUSTUP_HOME=/usr/local/rustup' >> /etc/profile.d/cargo.sh && \
+    echo 'export PATH="/usr/local/cargo/bin:$PATH"' >> /etc/profile.d/cargo.sh
+
 ENV HOME=/root
 CMD ["/usr/sbin/sshd", "-D", "-e"]
