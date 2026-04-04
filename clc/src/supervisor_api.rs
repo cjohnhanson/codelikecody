@@ -48,6 +48,7 @@ pub async fn start(
         .route("/agents/{id}/output", get(get_output))
         // Git pack for a branch (supervisor creates from local repo)
         .route("/git/pack/{branch}", get(get_git_pack))
+        .route("/git/sync/{branch}", get(get_git_sync))
         // Worker stdin (write a message to the worker's stdin pipe)
         .route("/agents/{id}/stdin", post(write_stdin))
         // Fetch workspace pack for landing
@@ -771,6 +772,32 @@ async fn get_git_pack(
         "refs": refs,
         "branch": branch,
     })))
+}
+
+/// Incremental git sync: only objects new since the client's HEAD.
+async fn get_git_sync(
+    State(state): State<Arc<ApiState>>,
+    Path(branch): Path<String>,
+    Query(query): Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let have = query.get("have").cloned().unwrap_or_default();
+    let project_dir = state.project_dir.clone();
+    let result = tokio::task::spawn_blocking({
+        let branch = branch.clone();
+        move || crate::git_pack::create_incremental_pack(&project_dir, &branch, &have)
+    })
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    match result {
+        None => Ok(Json(serde_json::json!({"up_to_date": true, "branch": branch}))),
+        Some(pack_data) => {
+            let b64 = crate::ssh_workspace::base64_encode(&pack_data.pack);
+            let refs: Vec<serde_json::Value> = pack_data.refs.iter()
+                .map(|(oid, name)| serde_json::json!([oid, name])).collect();
+            Ok(Json(serde_json::json!({"up_to_date": false, "pack": b64, "refs": refs, "branch": branch})))
+        }
+    }
 }
 
 /// Fetch a git pack from a workspace for landing.

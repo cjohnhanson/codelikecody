@@ -55,6 +55,58 @@ pub fn create_pack(project_dir: &Path, branch: &str) -> Result<PackData, Error> 
     })
 }
 
+/// Incremental pack: only objects between `have_oid` and branch tip.
+pub fn create_incremental_pack(project_dir: &Path, branch: &str, have_oid: &str) -> Result<Option<PackData>, Error> {
+    let repo = gix::open(project_dir).map_err(|e| Error::NonBlocking(format!("open: {e}")))?;
+    let branch_ref = format!("refs/heads/{branch}");
+    let reference = repo.find_reference(&branch_ref).map_err(|e| Error::NonBlocking(format!("ref: {e}")))?;
+    let tip_id = reference.target().try_id().ok_or_else(|| Error::NonBlocking("not direct".into()))?.to_owned();
+    let tip_hex = tip_id.to_string();
+    if tip_hex == have_oid { return Ok(None); }
+    let have_id = gix::ObjectId::from_hex(have_oid.as_bytes()).map_err(|e| Error::NonBlocking(format!("parse: {e}")))?;
+    let mut new_objs: std::collections::HashSet<gix::ObjectId> = std::collections::HashSet::new();
+    let mut queue = vec![tip_id]; let mut visited = std::collections::HashSet::new();
+    while let Some(oid) = queue.pop() {
+        if oid == have_id || !visited.insert(oid) { continue; }
+        new_objs.insert(oid);
+        if let Ok(obj) = repo.find_object(oid) {
+            if obj.kind == gix::object::Kind::Commit {
+                let c = obj.into_commit();
+                if let Ok(t) = c.tree() { incr_tree(&repo, t.id, &mut new_objs); }
+                for p in c.parent_ids() { queue.push(p.detach()); }
+            }
+        }
+    }
+    if new_objs.is_empty() { return Ok(None); }
+    let git_dir = project_dir.join(".git");
+    let buf = Vec::new();
+    let enc = flate2::write::GzEncoder::new(buf, flate2::Compression::fast());
+    let mut tar = tar::Builder::new(enc);
+    for oid in &new_objs {
+        let hex = oid.to_string(); let (d, f) = hex.split_at(2);
+        let p = git_dir.join("objects").join(d).join(f);
+        if p.exists() { tar.append_path_with_name(&p, format!(".git/objects/{d}/{f}")).map_err(|e| Error::NonBlocking(format!("tar: {e}")))?; }
+    }
+    let enc = tar.into_inner().map_err(|e| Error::NonBlocking(format!("tar: {e}")))?;
+    let compressed = enc.finish().map_err(|e| Error::NonBlocking(format!("gz: {e}")))?;
+    Ok(Some(PackData { pack: compressed, refs: vec![(tip_hex, branch_ref)] }))
+}
+
+fn incr_tree(repo: &gix::Repository, id: gix::ObjectId, s: &mut std::collections::HashSet<gix::ObjectId>) {
+    if !s.insert(id) { return; }
+    if let Ok(obj) = repo.find_object(id) {
+        if obj.kind == gix::object::Kind::Tree {
+            let tree = obj.into_tree();
+            for e in tree.iter() {
+                if let Ok(e) = e {
+                    let cid: gix::ObjectId = e.oid().into();
+                    if e.mode().is_tree() { incr_tree(repo, cid, s); } else { s.insert(cid); }
+                }
+            }
+        }
+    }
+}
+
 /// Receive a tar archive and set up a working repo at `project_dir`.
 /// Extracts .git/, then checks out the tree and writes the index.
 pub fn receive_pack(
