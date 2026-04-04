@@ -22,13 +22,55 @@ Every failure. Every warning. Every time. Work is not complete until
 the build is clean and tests pass. If something broke from a merge,
 fix it — the merge made it yours.
 
-## Stale binary
+## Deploying code changes
 
-After landing worker changes, the system binary on PATH may be stale.
-Always `cargo build --workspace` before manual testing or launching
-new coordinators/workers. Workers dispatched via `clc dispatch` use
-whatever `tisket`/`clc`/`missouri` is on PATH — if that's from a
-prior build, new features won't be available.
+Three separate binaries must stay in sync. Each is updated differently,
+and using a stale one causes silent failures (wrong behavior, missing
+CLI flags, old Docker images).
+
+### 1. Workspace binary (cargo build)
+
+`cargo build --workspace` builds to `./target/debug/`. Use this for
+local testing. This is the fastest path — seconds, not minutes.
+
+### 2. System binary (nix)
+
+`clc`/`tisket`/`missouri` on PATH come from nix. Updated by:
+
+    cd ~/Projects/co.d
+    git add -A && git commit -m "update"
+    nix flake update codelikecody
+    hms
+
+Takes ~2 minutes. Required when: `clc up` is run from the terminal
+(the supervisor uses the system binary), or any manual CLI usage.
+
+### 3. Docker image (depot)
+
+Worker and coordinator containers run binaries baked into the Docker
+image. Updated by:
+
+    depot build --platform linux/arm64 -t clc-worker:latest --load -f docker/worker/Dockerfile .
+
+Takes ~10 minutes. The build context MUST be the repo root (`.`), not
+`docker/worker/`. The `-f` flag points to the Dockerfile. Required
+when: any code change affects behavior inside containers (CLI flags,
+API endpoints, phase logic, guard rules).
+
+### The full sequence after landing changes
+
+After merging to main, if the change affects runtime behavior:
+
+1. `git push` — remote has the code
+2. `cargo build --workspace` — local binary for testing
+3. `depot build ...` — Docker image for containers
+4. `cd ~/Projects/co.d && nix flake update codelikecody && hms` — system binary
+5. Only then: `clc up`
+
+Steps 3 and 4 can run in parallel. Skipping any step means that
+binary is stale. The most common failure: Docker image built from
+commit N, system binary from commit N+1 (or vice versa). The
+coordinator inside Docker rejects flags the supervisor sends.
 
 ## Skills
 
