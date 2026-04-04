@@ -5,8 +5,8 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use russh::client;
+use russh::keys::{key::PrivateKeyWithHashAlg, load_secret_key};
 use crate::ssh_workspace::SSHTarget;
 
 /// An active SSH connection to a workspace.
@@ -20,18 +20,17 @@ struct SessionHandler {
     local_port: u16,
 }
 
-#[async_trait]
 impl client::Handler for SessionHandler {
     type Error = russh::Error;
 
-    async fn check_server_key(
+    fn check_server_key(
         &mut self,
-        _server_public_key: &russh::keys::key::PublicKey,
-    ) -> Result<bool, Self::Error> {
-        Ok(true)
+        _server_public_key: &russh::keys::PublicKey,
+    ) -> impl std::future::Future<Output = Result<bool, Self::Error>> + Send {
+        async { Ok(true) }
     }
 
-    async fn server_channel_open_forwarded_tcpip(
+    fn server_channel_open_forwarded_tcpip(
         &mut self,
         channel: russh::Channel<russh::client::Msg>,
         _connected_address: &str,
@@ -39,28 +38,28 @@ impl client::Handler for SessionHandler {
         _originator_address: &str,
         _originator_port: u32,
         _session: &mut client::Session,
-    ) -> Result<(), Self::Error> {
+    ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
         let local_port = self.local_port;
-        eprintln!("reverse tunnel: incoming connection, forwarding to localhost:{local_port}");
-        tokio::spawn(async move {
-            match tokio::net::TcpStream::connect(format!("127.0.0.1:{local_port}")).await {
-                Ok(mut tcp) => {
-                    let mut stream = channel.into_stream();
-                    let _ = tokio::io::copy_bidirectional(&mut tcp, &mut stream).await;
+        async move {
+            eprintln!("reverse tunnel: forwarding to localhost:{local_port}");
+            tokio::spawn(async move {
+                match tokio::net::TcpStream::connect(format!("127.0.0.1:{local_port}")).await {
+                    Ok(mut tcp) => {
+                        let mut stream = channel.into_stream();
+                        let _ = tokio::io::copy_bidirectional(&mut tcp, &mut stream).await;
+                    }
+                    Err(e) => {
+                        eprintln!("reverse tunnel: failed to connect to localhost:{local_port}: {e}");
+                    }
                 }
-                Err(e) => {
-                    eprintln!("reverse tunnel: failed to connect to local port {local_port}: {e}");
-                }
-            }
-        });
-        Ok(())
+            });
+            Ok(())
+        }
     }
 }
 
 impl SSHSession {
     /// Connect to an SSH target using key-based auth.
-    /// Connect to an SSH target. `local_port` is the host port that
-    /// reverse-tunneled connections are forwarded to (0 to disable).
     pub async fn connect(
         target: &SSHTarget,
         private_key_path: &Path,
@@ -73,14 +72,18 @@ impl SSHSession {
             client::connect(config, (target.host.as_str(), target.port), handler).await?;
 
         // Load private key.
-        let key_pair = russh::keys::load_secret_key(private_key_path, None)?;
+        let key_pair = load_secret_key(private_key_path, None)?;
+        let key = PrivateKeyWithHashAlg::new(
+            Arc::new(key_pair),
+            session.best_supported_rsa_hash().await?.flatten(),
+        );
 
         // Authenticate.
         let auth_result = session
-            .authenticate_publickey(&target.user, Arc::new(key_pair))
+            .authenticate_publickey(&target.user, key)
             .await?;
 
-        if !auth_result {
+        if !matches!(auth_result, russh::client::AuthResult::Success) {
             return Err("SSH authentication failed".into());
         }
 
@@ -184,8 +187,6 @@ impl SSHSession {
 
     /// Start a long-running command. Returns immediately.
     #[allow(dead_code)]
-    /// Uses setsid to detach from the SSH session so the process survives
-    /// channel close.
     pub async fn exec_detached(
         &mut self,
         command: &str,
@@ -197,7 +198,6 @@ impl SSHSession {
         channel
             .exec(true, detached_cmd.into_bytes())
             .await?;
-        // Wait briefly for the process to start, then close channel.
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         Ok(())
     }

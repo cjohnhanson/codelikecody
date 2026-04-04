@@ -397,8 +397,8 @@ fn json_to_message(v: &serde_json::Value) -> Option<Message> {
 /// Build a reqwest client with mTLS if CLC_API_CERT, CLC_API_KEY, and
 /// CLC_API_CA env vars are set. Otherwise returns a plain client.
 pub fn build_api_client() -> Result<reqwest::Client, Box<dyn std::error::Error>> {
-    let _cert_path = std::env::var("CLC_API_CERT").ok();
-    let _key_path = std::env::var("CLC_API_KEY").ok();
+    let cert_path = std::env::var("CLC_API_CERT").ok();
+    let key_path = std::env::var("CLC_API_KEY").ok();
     let ca_path = std::env::var("CLC_API_CA").ok();
 
     // Support both file paths and inline PEM content.
@@ -419,24 +419,28 @@ pub fn build_api_client() -> Result<reqwest::Client, Box<dyn std::error::Error>>
         }
     }
 
-    // Use CA cert for server verification. Client identity is handled by
-    // bearer token (CLC_AGENT_TOKEN), not mTLS client certs — client cert
-    // exchange hangs through SSH tunnels.
-    if let Some(ca) = ca_path {
-        let ca_pem = read_pem(&ca, "CA")?;
-        let ca_cert = reqwest::Certificate::from_pem(&ca_pem)
-            .map_err(|e| format!("parse CA cert: {e}"))?;
+    match (cert_path, key_path, ca_path) {
+        (Some(cert), Some(key), Some(ca)) => {
+            let cert_pem = read_pem(&cert, "cert")?;
+            let key_pem = read_pem(&key, "key")?;
+            let ca_pem = read_pem(&ca, "CA")?;
 
-        reqwest::Client::builder()
+            let identity = reqwest::Identity::from_pem(&[cert_pem, key_pem].concat())
+                .map_err(|e| format!("parse identity: {e}"))?;
+            let ca_cert = reqwest::Certificate::from_pem(&ca_pem)
+                .map_err(|e| format!("parse CA cert: {e}"))?;
+
+            reqwest::Client::builder()
+                .default_headers(default_headers)
+                .identity(identity)
+                .add_root_certificate(ca_cert)
+                .danger_accept_invalid_certs(false)
+                .build()
+                .map_err(|e| format!("build client: {e}").into())
+        }
+        _ => reqwest::Client::builder()
             .default_headers(default_headers)
-            .add_root_certificate(ca_cert)
-            .danger_accept_invalid_certs(false)
             .build()
-            .map_err(|e| format!("build client: {e}").into())
-    } else {
-        reqwest::Client::builder()
-            .default_headers(default_headers)
-            .build()
-            .map_err(|e| format!("build client: {e}").into())
+            .map_err(|e| format!("build client: {e}").into()),
     }
 }

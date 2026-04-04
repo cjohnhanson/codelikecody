@@ -121,9 +121,7 @@ impl EphemeralCA {
         let mut root_store = rustls::RootCertStore::empty();
         root_store.add(ca_cert_der)?;
 
-        let client_verifier = WebPkiClientVerifier::builder(Arc::new(root_store))
-            .allow_unauthenticated()
-            .build()?;
+        let client_verifier = WebPkiClientVerifier::builder(Arc::new(root_store)).build()?;
 
         // Server cert (self-signed, used for the TLS handshake).
         let mut server_params = CertificateParams::new(vec![
