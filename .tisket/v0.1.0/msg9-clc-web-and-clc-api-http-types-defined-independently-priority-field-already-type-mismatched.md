@@ -21,3 +21,29 @@ The clc-web frontend and clc-api backend should share a single set of HTTP types
 ## Why It Matters
 
 Undetected type mismatches between frontend and backend produce silent data loss or runtime errors that only surface when a user hits the affected code path. The divergence will widen with every new feature.
+
+## Scratch Notes
+
+### Divergences found
+**EditIssueRequest:**
+- clc-api has `priority: Option<u8>`, clc-web has no priority field (and uses `Option<String>` elsewhere)
+- clc-api has `assignee`, `due_date`, `labels`, `depends_on`, `append` — clc-web has none of these
+**CreateIssueRequest:**
+- clc-api has `assignee`, `due_date`, `depends_on`, `status` — clc-web missing all
+- Both have `priority: Option<String>` (consistent here)
+
+### Plan
+1. Write failing tests in clc-api that demonstrate the contract mismatch (priority as String, not u8)
+2. Create shared HTTP types (new crate or in clc-api with feature flag)
+3. Both crates import from shared source
+
+### Architecture decision
+clc-web is WASM (leptos CSR + gloo-net), can't depend on clc-api (tokio/axum).
+Need a lightweight shared types crate with only serde dependency.
+Will create `clc-http-types` or add to clc-api behind a feature.
+Simplest: put shared types in clc-api with no heavy deps, or new crate.
+
+### Test approach
+Write tests in clc-api showing:
+1. `EditIssueRequest` priority field rejects string values (currently `u8`) — should accept strings
+2. Round-trip: JSON with all fields from web client deserializes correctly in api
