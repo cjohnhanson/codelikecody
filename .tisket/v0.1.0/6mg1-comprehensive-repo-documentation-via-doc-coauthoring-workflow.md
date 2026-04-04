@@ -1,12 +1,12 @@
 ---
 title: "comprehensive repo documentation via doc-coauthoring workflow"
-status: todo
+status: in_progress
 priority: 1
 assignee:
 labels: [docs]
 depends_on: []
-created: "2026-04-03T23:44:14Z"
-updated: "2026-04-03T23:49:00Z"
+created: 2026-04-03T23:44:14Z
+updated: "2026-04-04T11:28:32Z"
 ---
 
 ## Problem
@@ -91,3 +91,5 @@ Diataxis types for each piece:
   reading only docs (not code)
 - No documentation references stale APIs, removed features, or
   aspirational behavior that doesn't exist yet
+
+## Scratch Notes
