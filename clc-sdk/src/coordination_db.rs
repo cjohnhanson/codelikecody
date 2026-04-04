@@ -754,20 +754,17 @@ impl DbBackend {
         Ok(())
     }
 
-    /// Get the phase for an agent.
+    /// Get the phase for an agent. Returns None if no phase_state entry exists.
     pub async fn get_phase(
         &self,
         agent_id: &str,
-    ) -> Result<(String, i32, Option<String>), CoordinationError> {
+    ) -> Result<Option<(String, i32, Option<String>)>, CoordinationError> {
         let model = phase_entity::Entity::find_by_id(agent_id.to_string())
             .one(&self.db)
             .await
             .map_err(|e| CoordinationError::Storage(e.to_string()))?;
 
-        match model {
-            Some(m) => Ok((m.phase, m.attempts, m.workflow)),
-            None => Ok(("tests-unwritten".to_string(), 0, None)),
-        }
+        Ok(model.map(|m| (m.phase, m.attempts, m.workflow)))
     }
 
     /// Set the phase for an agent (with optional workflow name).

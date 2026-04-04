@@ -683,11 +683,14 @@ async fn get_phase(
     State(state): State<Arc<ApiState>>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    let (phase, attempts, workflow) = state
+    let entry = state
         .db
         .get_phase(&id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let (phase, attempts, workflow) = entry
+        .unwrap_or(("tests-unwritten".to_string(), 0, None));
 
     Ok(Json(serde_json::json!({
         "agent_id": id,
@@ -697,17 +700,52 @@ async fn get_phase(
     })))
 }
 
-/// Set phase in the DB (not filesystem).
+/// Set phase in the DB with server-side transition validation.
+/// First write (no existing entry) is always accepted — this is the
+/// initial phase set by dispatch or init_phase_via_api. Subsequent
+/// writes are validated against the workflow graph.
 async fn set_phase(
     State(state): State<Arc<ApiState>>,
     Path(id): Path<String>,
     Json(req): Json<SetPhaseRequest>,
-) -> Result<StatusCode, StatusCode> {
+) -> Result<StatusCode, (StatusCode, Json<serde_json::Value>)> {
+    let existing = state
+        .db
+        .get_phase(&id)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "db"}))))?;
+
+    // Validate transitions for existing entries only.
+    if let Some((current_phase, _, workflow_name)) = &existing {
+        if current_phase != &req.phase {
+            let cfg = crate::config::load(&state.project_dir).unwrap_or_default();
+            let wf = workflow_name
+                .as_deref()
+                .and_then(|name| cfg.workflows.get(name))
+                .and_then(|def| crate::workflow::Workflow::new(def).ok())
+                .unwrap_or_else(crate::workflow::Workflow::default_tdd);
+
+            if !wf.has_phase(&req.phase) {
+                return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({
+                    "error": format!("unknown phase '{}'", req.phase),
+                }))));
+            }
+            if !wf.is_valid_transition(current_phase, &req.phase) {
+                return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({
+                    "error": format!("invalid transition from '{}' to '{}'", current_phase, req.phase),
+                }))));
+            }
+        }
+    }
+
+    let wf_to_store = req.workflow.as_deref()
+        .or(existing.as_ref().and_then(|(_, _, wf)| wf.as_deref()));
+
     state
         .db
-        .set_phase_with_workflow(&id, &req.phase, 0, req.workflow.as_deref())
+        .set_phase_with_workflow(&id, &req.phase, 0, wf_to_store)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "db"}))))?;
 
     Ok(StatusCode::OK)
 }

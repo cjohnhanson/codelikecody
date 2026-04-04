@@ -461,6 +461,9 @@ mod tests {
         let agent = "test-name-roundtrip";
         let (base_url, _handle) = start_test_api(agent);
 
+        // Walk through valid transitions to reach implementing.
+        api_set_phase(&base_url, agent, "tests-written");
+        api_set_phase(&base_url, agent, "red");
         api_set_phase(&base_url, agent, "implementing");
         let name = load_phase_name_from_api(&base_url, agent).unwrap();
         assert_eq!(name.as_deref(), Some("implementing"));
