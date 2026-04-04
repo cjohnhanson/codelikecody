@@ -5,9 +5,10 @@ description: >
   framing, testable acceptance criteria, and vertical slicing for
   decomposition. Adapts to issue type: features get job stories and
   acceptance criteria, bugs get reproduction steps, spikes get time-boxed
-  questions, discovery issues get problem statements. Use when creating
-  tisket issues, scoping work, decomposing epics, or when the user
-  invokes /tisket-writing. Not for project management or sprint planning.
+  questions, discovery issues get problem statements, epics track child
+  issues via depends_on. Use when creating tisket issues, scoping work,
+  decomposing epics, or when the user invokes /tisket-writing. Not for
+  project management or sprint planning.
 user-invocable: true
 ---
 
@@ -601,6 +602,26 @@ Don't split if:
 
 Use judgment. The goal is issues that are small enough to complete
 in one session but large enough to deliver real value.
+
+## Epics
+
+An epic is a regular issue that depends on every child issue. Tisket
+has no special epic type. The convention:
+
+- Title prefix: `epic: <name>`
+- Label: `epic`
+- Status: `discovery` (until all children are scoped)
+- `depends_on`: lists every child issue
+
+The epic's body has a problem statement, scope description, and a
+manually maintained list of child issues with brief descriptions.
+Because `depends_on` blocks pickup, the epic is naturally the last
+thing closed.
+
+When decomposing work that's too large for a single issue, create
+the epic first, then create child issues and add them as
+dependencies. The epic tracks the overall goal; children track
+individual deliverables.
 
 ## The "Done When" Section
 

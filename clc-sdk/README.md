@@ -1,5 +1,12 @@
 # clc-sdk
 
-Traits that clc's workspace and tool systems build on.
+Traits for workspace lifecycle, agent integration, and coordination.
 
-`Workspace` defines the process lifecycle for a coding agent session. `ClcTool` provides agent-facing detection of whether code is running inside a clc-managed context.
+The `Workspace` trait abstracts over isolation backends. Git worktrees
+and Docker containers implement it today; the trait is the extension
+point for other backends. `ClcTool` defines how tools report status and
+phase-aware directives to the workflow engine. `Agent` abstracts over
+coding agent processes (currently Claude Code, designed for others).
+
+Also provides coordination primitives (inbox/outbox message queues,
+agent specs) and re-exports protocol types from the `claude-code` crate.
