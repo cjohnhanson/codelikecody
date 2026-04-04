@@ -1,4 +1,4 @@
-# belmont
+# 🧛 belmont
 
 > _What is a man? A miserable little pile of secrets._ Insecure
 > 'best-effort' secret management for supplying credentials to LLM agents.

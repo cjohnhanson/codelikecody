@@ -1,4 +1,4 @@
-# clc
+# ✌️ clc
 
 Code like Cody. Opinionated workflow enforcement for coding agents.
 

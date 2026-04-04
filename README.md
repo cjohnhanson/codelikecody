@@ -1,4 +1,4 @@
-# codelikecody
+# ✌️ codelikecody
 
 Code like Cody. Opinionated workflow enforcement for coding agents.
 
@@ -14,7 +14,7 @@ Each tool is a standalone CLI. `clc` bundles them into a single binary
 (`clc tisket`, `clc missouri`, etc.) and adds workflow orchestration
 on top, but they work independently.
 
-### missouri
+### 🔀 missouri
 
 > Show-me state. Model-based testing where system behavior is represented
 > as finite state automata.
@@ -27,7 +27,7 @@ mocking. The expected state is the directory.
 
 `missouri docs getting-started` · [docs](missouri/docs/)
 
-### tisket
+### 🧺 tisket
 
 > 🎶 _A tisket, a tasket_ 🎶 A plaintext git-tracked CLI-first project
 > management system for people that use coding agents.
@@ -39,7 +39,7 @@ operations. No external service, no API tokens, works offline.
 
 `tisket docs getting-started` · [docs](tisket/docs/)
 
-### belmont
+### 🧛 belmont
 
 > _What is a man? A miserable little pile of secrets._ Insecure
 > 'best-effort' secret management for supplying credentials to LLM agents.
@@ -59,7 +59,7 @@ I do not use this in my own professional work.
 
 `belmont --help` · [source](belmont/)
 
-### almanac
+### 📖 almanac
 
 > An almanac (historically spelled almanack) is a regularly published
 > listing of a set of current information about one or multiple subjects.
@@ -73,7 +73,7 @@ load only the skills relevant to the current task.
 
 `almanac docs` · [docs](almanac/docs/)
 
-### zettel
+### 🗃️ zettel
 
 > Zettelkasten for repos. Atomic notes, linked ideas, plain markdown
 > in git.
@@ -85,7 +85,7 @@ and promote them.
 
 `zettel docs getting-started` · [docs](zettel/docs/)
 
-### moose
+### 🫎 moose
 
 > Predominantly a browser, the moose's diet consists of both terrestrial
 > and aquatic vegetation, depending on the season, with branches, twigs
@@ -98,7 +98,7 @@ session recording.
 
 `moose --help` · [source](moose/)
 
-### clc
+### ✌️ clc
 
 The workflow engine that ties everything together. Picks up tisket issues,
 creates isolated workspaces, enforces a phase system that gates what agents
