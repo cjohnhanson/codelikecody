@@ -1,12 +1,12 @@
 ---
 title: "missouri report::disable_echo has no RAII guard — terminal left unusable on panic"
-status: todo
+status: done
 priority:
 assignee:
 labels: [missouri, correctness, auto]
 depends_on: []
 created: 2026-03-23T03:11:53Z
-updated: "2026-04-03T18:32:46Z"
+updated: "2026-04-04T14:14:01Z"
 ---
 
 ## Problem
