@@ -589,7 +589,7 @@ fn cmd_workspace(action: &cli::WorkspaceAction) -> Result<(), Error> {
                         if attempt > 0 {
                             std::thread::sleep(std::time::Duration::from_secs(2));
                         }
-                        if crate::phase::init_phase_via_api(url, branch, "tests-unwritten").is_ok() {
+                        if crate::phase::init_phase_via_api(url, branch, "tests-unwritten", None).is_ok() {
                             set = true;
                             break;
                         }

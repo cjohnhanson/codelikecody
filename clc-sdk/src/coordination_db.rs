@@ -121,6 +121,7 @@ mod phase_entity {
         pub agent_id: String,
         pub phase: String,
         pub attempts: i32,
+        pub workflow: Option<String>,
         pub updated_at: DateTimeUtc,
     }
 
@@ -230,6 +231,7 @@ const POSTGRES_DDL: &[&str] = &[
         agent_id TEXT PRIMARY KEY,
         phase TEXT NOT NULL DEFAULT 'tests-unwritten',
         attempts INTEGER NOT NULL DEFAULT 0,
+        workflow TEXT,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )",
 ];
@@ -280,6 +282,7 @@ const SQLITE_DDL: &[&str] = &[
         agent_id TEXT PRIMARY KEY,
         phase TEXT NOT NULL DEFAULT 'tests-unwritten',
         attempts INTEGER NOT NULL DEFAULT 0,
+        workflow TEXT,
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     )",
 ];
@@ -755,28 +758,38 @@ impl DbBackend {
     pub async fn get_phase(
         &self,
         agent_id: &str,
-    ) -> Result<(String, i32), CoordinationError> {
+    ) -> Result<(String, i32, Option<String>), CoordinationError> {
         let model = phase_entity::Entity::find_by_id(agent_id.to_string())
             .one(&self.db)
             .await
             .map_err(|e| CoordinationError::Storage(e.to_string()))?;
 
         match model {
-            Some(m) => Ok((m.phase, m.attempts)),
-            None => Ok(("tests-unwritten".to_string(), 0)),
+            Some(m) => Ok((m.phase, m.attempts, m.workflow)),
+            None => Ok(("tests-unwritten".to_string(), 0, None)),
         }
     }
 
-    /// Set the phase for an agent.
+    /// Set the phase for an agent (with optional workflow name).
     pub async fn set_phase(
         &self,
         agent_id: &str,
         phase: &str,
         attempts: i32,
     ) -> Result<(), CoordinationError> {
+        self.set_phase_with_workflow(agent_id, phase, attempts, None).await
+    }
+
+    /// Set the phase and workflow name for an agent.
+    pub async fn set_phase_with_workflow(
+        &self,
+        agent_id: &str,
+        phase: &str,
+        attempts: i32,
+        workflow: Option<&str>,
+    ) -> Result<(), CoordinationError> {
         let now = chrono::Utc::now();
 
-        // Upsert: try update, then insert if not found.
         let existing = phase_entity::Entity::find_by_id(agent_id.to_string())
             .one(&self.db)
             .await
@@ -786,6 +799,9 @@ impl DbBackend {
             let mut active: phase_entity::ActiveModel = model.into();
             active.phase = Set(phase.to_string());
             active.attempts = Set(attempts);
+            if let Some(wf) = workflow {
+                active.workflow = Set(Some(wf.to_string()));
+            }
             active.updated_at = Set(now);
             active
                 .update(&self.db)
@@ -796,6 +812,7 @@ impl DbBackend {
                 agent_id: Set(agent_id.to_string()),
                 phase: Set(phase.to_string()),
                 attempts: Set(attempts),
+                workflow: Set(workflow.map(str::to_string)),
                 updated_at: Set(now),
             };
             model

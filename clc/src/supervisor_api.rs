@@ -126,6 +126,8 @@ struct SendMessageRequest {
 #[derive(Deserialize)]
 struct SetPhaseRequest {
     phase: String,
+    #[serde(default)]
+    workflow: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -681,7 +683,7 @@ async fn get_phase(
     State(state): State<Arc<ApiState>>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    let (phase, attempts) = state
+    let (phase, attempts, workflow) = state
         .db
         .get_phase(&id)
         .await
@@ -691,6 +693,7 @@ async fn get_phase(
         "agent_id": id,
         "phase": phase,
         "attempts": attempts,
+        "workflow": workflow,
     })))
 }
 
@@ -702,7 +705,7 @@ async fn set_phase(
 ) -> Result<StatusCode, StatusCode> {
     state
         .db
-        .set_phase(&id, &req.phase, 0)
+        .set_phase_with_workflow(&id, &req.phase, 0, req.workflow.as_deref())
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 

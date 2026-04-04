@@ -17,16 +17,72 @@ pub fn load_name(project_dir: &Path) -> Result<Option<String>, Error> {
     Ok(state.map(|s| s.phase_name))
 }
 
-/// Load the workflow name from state. Returns None if no workflow is stored.
+/// Load the workflow name from state.
+/// Uses supervisor API when CLC_API_URL is set, falls back to `.clc/state`.
 pub fn load_workflow_name(project_dir: &Path) -> Result<Option<String>, Error> {
+    if let Ok(api_url) = std::env::var("CLC_API_URL") {
+        let agent_id = crate::git::current_branch(project_dir).unwrap_or_default();
+        return load_workflow_name_from_api(&api_url, &agent_id);
+    }
     let state = load_state_raw(project_dir)?;
     Ok(state.and_then(|s| s.workflow))
 }
 
-/// Load the current attempts count from `.clc/state`.
+/// Load the current attempts count.
+/// Uses supervisor API when CLC_API_URL is set, falls back to `.clc/state`.
 pub fn load_attempts(project_dir: &Path) -> Result<u32, Error> {
+    if let Ok(api_url) = std::env::var("CLC_API_URL") {
+        let agent_id = crate::git::current_branch(project_dir).unwrap_or_default();
+        return load_attempts_from_api(&api_url, &agent_id);
+    }
     let state = load_state_raw(project_dir)?;
     Ok(state.map_or(0, |s| s.attempts))
+}
+
+fn load_workflow_name_from_api(api_url: &str, agent_id: &str) -> Result<Option<String>, Error> {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| Error::NonBlocking(format!("tokio: {e}")))?;
+    let result: Result<serde_json::Value, Error> = rt.block_on(async {
+        let client = crate::coordination_client::build_api_client()
+            .map_err(|e| Error::NonBlocking(format!("{e}")))?;
+        client
+            .get(format!("{api_url}/agents/{agent_id}/phase"))
+            .send()
+            .await
+            .map_err(|e| Error::NonBlocking(format!("{e}")))?
+            .json()
+            .await
+            .map_err(|e| Error::NonBlocking(format!("{e}")))
+    });
+    match result {
+        Ok(resp) => Ok(resp["workflow"].as_str().map(str::to_string)),
+        Err(_) => Ok(None),
+    }
+}
+
+fn load_attempts_from_api(api_url: &str, agent_id: &str) -> Result<u32, Error> {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| Error::NonBlocking(format!("tokio: {e}")))?;
+    let result: Result<serde_json::Value, Error> = rt.block_on(async {
+        let client = crate::coordination_client::build_api_client()
+            .map_err(|e| Error::NonBlocking(format!("{e}")))?;
+        client
+            .get(format!("{api_url}/agents/{agent_id}/phase"))
+            .send()
+            .await
+            .map_err(|e| Error::NonBlocking(format!("{e}")))?
+            .json()
+            .await
+            .map_err(|e| Error::NonBlocking(format!("{e}")))
+    });
+    match result {
+        Ok(resp) => Ok(resp["attempts"].as_u64().unwrap_or(0) as u32),
+        Err(_) => Ok(0),
+    }
 }
 
 fn load_phase_name_from_api(api_url: &str, agent_id: &str) -> Result<Option<String>, Error> {
@@ -117,7 +173,7 @@ pub fn init_phase_with_workflow(
 ) -> Result<(), Error> {
     if let Ok(api_url) = std::env::var("CLC_API_URL") {
         let agent_id = crate::git::current_branch(project_dir).unwrap_or_default();
-        return init_phase_via_api(&api_url, &agent_id, target);
+        return init_phase_via_api(&api_url, &agent_id, target, workflow_name);
     }
 
     write_state_str(project_dir, target, 0, workflow_name)
@@ -220,10 +276,10 @@ pub fn set_with_workflow(
         }
     }
 
-    // Transition succeeds — write new phase.
+    // Transition succeeds — write new phase (preserving workflow name).
     if let Some(ref api_url) = use_api {
         let agent_id = crate::git::current_branch(project_dir).unwrap_or_default();
-        init_phase_via_api(api_url, &agent_id, target)?;
+        init_phase_via_api(api_url, &agent_id, target, wf_name_owned.as_deref())?;
     } else {
         let wf_name = wf_name_owned.as_deref();
         write_state_str(project_dir, target, 0, wf_name)?;
@@ -309,7 +365,12 @@ fn write_state_str(
 }
 
 /// Initialize phase via the supervisor API. No transition validation.
-pub fn init_phase_via_api(api_url: &str, agent_id: &str, target: &str) -> Result<(), Error> {
+pub fn init_phase_via_api(
+    api_url: &str,
+    agent_id: &str,
+    target: &str,
+    workflow: Option<&str>,
+) -> Result<(), Error> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -318,9 +379,13 @@ pub fn init_phase_via_api(api_url: &str, agent_id: &str, target: &str) -> Result
     rt.block_on(async {
         let client = crate::coordination_client::build_api_client()
             .map_err(|e| Error::NonBlocking(format!("{e}")))?;
+        let mut body = serde_json::json!({ "phase": target });
+        if let Some(wf) = workflow {
+            body["workflow"] = serde_json::json!(wf);
+        }
         let status = client
             .put(format!("{api_url}/agents/{agent_id}/phase"))
-            .json(&serde_json::json!({ "phase": target }))
+            .json(&body)
             .send()
             .await
             .map_err(|e| Error::NonBlocking(format!("{e}")))?
@@ -406,9 +471,60 @@ mod tests {
         let agent = "test-init-phase";
         let (base_url, _handle) = start_test_api(agent);
 
-        init_phase_via_api(&base_url, agent, "outline").unwrap();
+        init_phase_via_api(&base_url, agent, "outline", Some("docs")).unwrap();
         let name = load_phase_name_from_api(&base_url, agent).unwrap();
         assert_eq!(name.as_deref(), Some("outline"));
+    }
+
+    #[test]
+    fn init_phase_via_api_stores_workflow_name() {
+        let agent = "test-workflow-store";
+        let (base_url, _handle) = start_test_api(agent);
+
+        init_phase_via_api(&base_url, agent, "tests-unwritten", Some("tdd")).unwrap();
+
+        // Verify workflow name is returned by the API.
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let body: serde_json::Value = rt.block_on(async {
+            reqwest::Client::new()
+                .get(format!("{base_url}/agents/{agent}/phase"))
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap()
+        });
+        assert_eq!(body["phase"].as_str(), Some("tests-unwritten"));
+        assert_eq!(body["workflow"].as_str(), Some("tdd"));
+    }
+
+    #[test]
+    fn init_phase_via_api_without_workflow_returns_null() {
+        let agent = "test-no-workflow";
+        let (base_url, _handle) = start_test_api(agent);
+
+        init_phase_via_api(&base_url, agent, "tests-unwritten", None).unwrap();
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let body: serde_json::Value = rt.block_on(async {
+            reqwest::Client::new()
+                .get(format!("{base_url}/agents/{agent}/phase"))
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap()
+        });
+        assert_eq!(body["phase"].as_str(), Some("tests-unwritten"));
+        assert!(body["workflow"].is_null(), "workflow should be null when not set");
     }
 
     // --- Workflow-based transition tests ---
