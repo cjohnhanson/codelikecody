@@ -38,10 +38,11 @@ Run a command with secrets injected:
 belmont run -- curl -H "Authorization: Bearer $API_KEY" https://api.example.com
 ```
 
-Belmont resolves each secret from its backend, sets the environment
-variables, executes the command, and replaces any secret values in
-stdout/stderr with `belmont://NAME` before the output reaches the
-agent.
+Belmont resolves each secret from its backend, sets them as
+environment variables on the child process, executes the command in
+a PTY, and replaces any secret values in the PTY output with
+`belmont://NAME` before the output reaches the agent. The actual
+secret strings never appear in output sent to the inference API.
 
 ## Backends
 
