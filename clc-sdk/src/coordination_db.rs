@@ -767,18 +767,8 @@ impl DbBackend {
         Ok(model.map(|m| (m.phase, m.attempts, m.workflow)))
     }
 
-    /// Set the phase for an agent (with optional workflow name).
-    pub async fn set_phase(
-        &self,
-        agent_id: &str,
-        phase: &str,
-        attempts: i32,
-    ) -> Result<(), CoordinationError> {
-        self.set_phase_with_workflow(agent_id, phase, attempts, None).await
-    }
-
     /// Set the phase and workflow name for an agent.
-    pub async fn set_phase_with_workflow(
+    pub async fn set_phase(
         &self,
         agent_id: &str,
         phase: &str,

@@ -307,7 +307,7 @@ fn tick(
             // If CLC_API_URL is set, this coordinator is in Docker —
             // delegate dispatch to the supervisor via API.
             if let Ok(api_url) = std::env::var("CLC_API_URL") {
-                match dispatch_via_api(&api_url, id, &scope.model, &scope.id) {
+                match dispatch_via_api(&api_url, id, &scope.model, &scope.id, scope.workflow.as_deref()) {
                     Ok(()) => {}
                     Err(e) => eprintln!("coordinator '{}': API dispatch failed for '{id}': {e}", scope.id),
                 }
@@ -666,6 +666,7 @@ fn dispatch_via_api(
     tisket_id: &str,
     model: &str,
     coordinator_id: &str,
+    workflow: Option<&str>,
 ) -> Result<(), Error> {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(1)
@@ -682,6 +683,7 @@ fn dispatch_via_api(
                 "tisket_id": tisket_id,
                 "model": model,
                 "coordinator_id": coordinator_id,
+                "workflow": workflow,
             }))
             .send()
             .await

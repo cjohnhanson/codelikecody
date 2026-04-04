@@ -434,7 +434,7 @@ async fn dispatch_worker(
     // Set initial phase so the phase guard knows where the worker is.
     let _ = state
         .db
-        .set_phase(&req.tisket_id, "tests-unwritten", 0)
+        .set_phase(&req.tisket_id, "tests-unwritten", 0, req.workflow.as_deref())
         .await;
 
     Ok((
@@ -632,6 +632,8 @@ struct DispatchRequest {
     tisket_id: String,
     model: String,
     coordinator_id: String,
+    #[serde(default)]
+    workflow: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -743,7 +745,7 @@ async fn set_phase(
 
     state
         .db
-        .set_phase_with_workflow(&id, &req.phase, 0, wf_to_store)
+        .set_phase(&id, &req.phase, 0, wf_to_store)
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "db"}))))?;
 
