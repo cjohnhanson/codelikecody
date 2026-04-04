@@ -26,7 +26,7 @@ impl client::Handler for SessionHandler {
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &russh::keys::PublicKey,
+        _server_public_key: &russh::keys::key::PublicKey,
     ) -> Result<bool, Self::Error> {
         Ok(true)
     }
@@ -73,15 +73,11 @@ impl SSHSession {
             client::connect(config, (target.host.as_str(), target.port), handler).await?;
 
         // Load private key.
-        let private_key = russh::keys::load_secret_key(private_key_path, None)?;
-        let key_with_hash = russh::keys::key::PrivateKeyWithHashAlg::new(
-            Arc::new(private_key),
-            None,
-        )?;
+        let key_pair = russh::keys::load_secret_key(private_key_path, None)?;
 
         // Authenticate.
         let auth_result = session
-            .authenticate_publickey(&target.user, key_with_hash)
+            .authenticate_publickey(&target.user, Arc::new(key_pair))
             .await?;
 
         if !auth_result {
