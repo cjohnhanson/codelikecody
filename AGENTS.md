@@ -72,11 +72,6 @@ project-agnostic. Do not put project-specific configuration into source
 code. Things unique to a particular project's setup belong in that
 project's configuration files:
 
-- **Dockerfile** — project-specific toolchains, dependencies, system
-  packages. Not every clc project uses Rust; the Docker image is where
-  project-specific tooling lives.
-- **clc.yaml** — project-specific topology, coordinators, workflows,
-  selectors. The binary reads this; it doesn't hardcode it.
-- **/etc/profile.d/** in Docker images — environment setup for SSH
-  sessions. Docker ENV vars aren't inherited by sshd exec; profile
-  scripts bridge that gap per-project.
+- **Docker image** — toolchains, dependencies, system packages
+- **clc.yaml** — topology, coordinators, workflows, selectors
+- **Environment configuration** — PATH, env vars, shell setup
