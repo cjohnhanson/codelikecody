@@ -671,6 +671,23 @@ impl Supervisor {
 
             eprintln!("supervisor: landing worker '{id}'");
 
+            // Verify the worker has meaningful commits (not just pickup + finalize).
+            let commit_check = ws.exec(
+                &format!("cd /project && git log --oneline main..HEAD --no-merges | grep -cv 'clc: pickup\\|clc: finalize'"),
+            );
+            let meaningful_commits = commit_check
+                .ok()
+                .and_then(|out| String::from_utf8(out).ok())
+                .and_then(|s| s.trim().parse::<u32>().ok())
+                .unwrap_or(0);
+
+            if meaningful_commits == 0 {
+                eprintln!("supervisor: rejecting landing for '{id}' — no meaningful commits");
+                let _ = coord.set_status(id, clc_sdk::coordination::AgentStatus::Failed);
+                continue;
+            }
+            eprintln!("supervisor: '{id}' has {meaningful_commits} meaningful commit(s)");
+
             // 1. Tar .git/ on the container and get the ref tip.
             //    Using raw tar + git rev-parse instead of `clc workspace export`
             //    because gix::open hangs in certain container environments.
