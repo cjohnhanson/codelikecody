@@ -53,9 +53,9 @@ The threat model is narrow: prevent the most common LLM agent exfiltration
 patterns, like an agent cat'ing a `.env` file or echoing an environment
 variable while troubleshooting. An agent that actively tries to extract
 secrets through side channels (subshell env inspection, localhost echo
-servers) can probably succeed. This is a solo-developed codebase. I am
-not a security researcher. Do not use this for anything security-critical.
-I do not use this in my own professional work.
+servers) can probably succeed. **This is a solo-developed codebase. I am not a security researcher.
+Do not use this for anything security-critical. I do not use this in
+my own professional work.**
 
 `belmont --help` · [belmont/](belmont/)
 
