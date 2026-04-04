@@ -13,22 +13,15 @@ this command against this filesystem, the filesystem should look like that."
 Every state is a directory on disk. Every transition is a shell command.
 Every assertion is a diff.
 
-## The core insight
+## States and transitions
 
-Most CLI tools are filesystem transformers. They read files, do some work,
-and write files. The interesting test assertion isn't "did this function
-return the right value" — it's "does the filesystem match what was expected
-after the command ran."
+A test state is a directory containing the exact files that should exist
+at that point. A transition is a command that runs against a copy of one
+state and should produce another. Verification is a recursive diff between
+what the command actually produced and what the target state directory
+contains. Extra files, missing files, content mismatches are all failures.
 
-Missouri takes this literally. A test state is a directory containing the
-exact files that should exist at that point. A transition is a command that
-runs against a copy of one state and should produce another. Verification
-is a recursive diff between what the command actually produced and what the
-target state directory contains. Extra files, missing files, content
-mismatches — all failures.
-
-There's no assertion DSL. The expected state *is the directory*. What
-you see in the filesystem is what gets compared.
+There's no assertion DSL. The expected state *is the directory*.
 
 ## Why directed graphs
 
@@ -43,24 +36,10 @@ which state directory the result should match. A state can have multiple
 outgoing transitions (branching), and multiple states can transition into the
 same target (convergence).
 
-This gives you three structural advantages:
-
-**Shared prefixes.** If 30 test paths all start from the same initial state,
-that state is defined once. The setup command that produces it runs once per
-path, not once per assertion. States marked `entrypoint: true` go further —
-missouri enumerates the prefix to the entrypoint as a single path, then
-enumerates downstream paths independently from the entrypoint. Paths through
-shared prefixes don't multiply.
-
-**Compositional tests.** Adding a new test scenario means adding a directory
-for the new expected state and a transition from an existing state. The
-existing states and transitions don't change. The graph grows without
-disturbing what's already passing.
-
-**Readable structure.** The directory tree *is* the test suite. Each state
-directory contains the fixture files that should exist at that point. Walking
-the directories shows you every intermediate and final state the tool can
-produce. No test fixtures hidden in helper functions or setup blocks.
+If 30 test paths share the same initial state, that state is defined
+once. Adding a new test scenario means adding a directory and a
+transition; existing states don't change. The directory tree is the test
+suite. Walking it shows every state the tool under test can produce.
 
 ## State discovery
 
@@ -85,7 +64,7 @@ path enumeration. Missouri finds all simple paths (no repeated states) from
 each root via depth-first search. Each path becomes an independent test
 execution.
 
-## The execution model
+## How paths run
 
 For each test path, execution proceeds step by step:
 
@@ -122,11 +101,9 @@ nothing. Environment variables come from three sources only: the project-level
 `env` config, the state-level `env` config (which overrides project-level),
 and `PATH` (constructed from the project's `bin/` directory and system paths).
 
-This is non-negotiable for reproducibility. A test that passes because
-`$TERM` happens to be set on the developer's machine and fails in CI is not
-a test — it's a coincidence. `env_clear` forces every needed variable to be
-declared explicitly in the test config. The test suite documents its own
-environmental dependencies.
+A test that passes because `$TERM` happens to be set on the developer's
+machine and fails in CI is a coincidence, not a test. `env_clear` forces
+every needed variable to be declared explicitly in the test config.
 
 ## What gets compared, what doesn't
 
@@ -188,10 +165,8 @@ fixtures are real directories you can inspect, copy, and diff outside of any
 test framework.
 
 **Snapshot testing** captures output and compares against stored snapshots.
-Missouri is a kind of snapshot testing, but the "snapshot" is an entire
-directory tree, not a string. And transitions between snapshots are
-first-class — the graph structure captures which commands connect which
-states.
+Missouri is a kind of snapshot testing where the "snapshot" is an entire
+directory tree and transitions between snapshots are part of the model.
 
 **Docker-based e2e tests** provide isolation but carry container overhead
 and can't easily model state graphs. Missouri's isolation comes from temp
