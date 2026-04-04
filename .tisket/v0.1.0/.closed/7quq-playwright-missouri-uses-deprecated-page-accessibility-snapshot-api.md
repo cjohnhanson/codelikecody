@@ -1,12 +1,12 @@
 ---
 title: "playwright-missouri uses deprecated page.accessibility.snapshot API"
-status: todo
+status: done
 priority:
 assignee:
 labels: [skills, accuracy, standard]
 depends_on: []
 created: 2026-03-23T03:12:25Z
-updated: "2026-04-03T18:33:27Z"
+updated: "2026-04-04T13:39:58Z"
 ---
 
 ## Problem
