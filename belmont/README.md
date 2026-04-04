@@ -16,10 +16,10 @@ through standard shell operations.
 
 An agent that actively tries to extract secrets through side channels
 (inspecting `/proc` for a subshell's environment, running a localhost
-echo server and curling to it) can probably succeed. This is a
+echo server and curling to it) can probably succeed. **This is a
 solo-developed codebase. I am not a security researcher. Do not use
 this for anything security-critical. I do not use this in my own
-professional work.
+professional work.**
 
 
 ## How it works
