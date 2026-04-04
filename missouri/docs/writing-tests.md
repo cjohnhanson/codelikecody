@@ -6,19 +6,15 @@ type: guide
 
 # Writing Missouri Tests
 
-## The state graph model
+States are directories. Transitions are shell commands. Missouri copies
+a state to a temp directory, runs the transition command, and diffs the
+result against the target state directory.
 
-A missouri test suite is a directed graph of filesystem states connected by
-transitions. Each state is a directory containing the files you'd expect to
-exist at that point. Each transition is a shell command that transforms one
-state into another. Missouri copies the source state to a temp directory,
-runs the command, then diffs the result against the expected target state.
+If your CLI starts with files A and you run `my-tool init`, the result
+should look like files B. State A has a transition `my-tool init`
+targeting state B.
 
-The mental model: if your CLI starts with files A and you run
-`my-tool init`, the result should look like files B. State A has a
-transition `my-tool init` targeting state B. Missouri verifies that's true.
-
-States can also carry assertions -- commands that verify properties not
+States can also carry assertions: commands that verify properties not
 captured by the filesystem snapshot (exit codes, stdout content, tool
 behavior).
 
@@ -810,6 +806,6 @@ assertions:
 
 ## Further reading
 
-- [What is Missouri?](/missouri/what-is-missouri) — the design philosophy behind filesystem state graphs
+- [What is Missouri?](/missouri/what-is-missouri) — how state graphs work, why env_clear, comparison rules
 - [CLI Reference](/missouri/cli-reference) — full command and config schema reference
 - [Getting Started](/missouri/getting-started) — build your first test suite from scratch
