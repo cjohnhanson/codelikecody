@@ -1,12 +1,12 @@
 ---
 title: "should_fail and stderr behavior contradicted between writing-tests.md and cli-reference.md"
-status: todo
+status: done
 priority:
 assignee:
 labels: [missouri, docs, accuracy, auto]
 depends_on: []
 created: 2026-03-23T03:12:16Z
-updated: "2026-04-03T18:32:46Z"
+updated: "2026-04-04T14:21:35Z"
 ---
 
 ## Problem
