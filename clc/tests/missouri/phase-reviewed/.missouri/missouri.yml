@@ -11,8 +11,8 @@ assertions:
   - name: "status set to same phase is rejected"
     command: "clc status set reviewed 2>&1; test $? -ne 0"
 
-  - name: "phase guard blocks Edit in src on feature branch"
-    command: "git init -q -b main && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init && git checkout -q -B feat-xyz && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"src/main.rs\"}}' | clc hook 2>/dev/null; test $? -eq 2"
+  - name: "phase guard blocks Edit on non-.rs file on feature branch"
+    command: "git init -q -b main && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init && git checkout -q -B feat-xyz && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"Cargo.toml\"}}' | clc hook 2>/dev/null; test $? -eq 2"
 
   - name: "phase guard allows Edit in tests/missouri on feature branch"
     command: "git init -q -b main && (git checkout -B feat-xyz 2>/dev/null || true) && echo '{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"test\",\"cwd\":\".\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"tests/missouri/foo/.missouri/missouri.yml\"}}' | clc hook"
