@@ -12,7 +12,9 @@
 # clc
 
 - [The Phase System](phase-system.md)
+- [Permission Model](permissions.md)
 - [Multi-Agent Orchestration](orchestration.md)
+- [Configuration Reference](config-reference.md)
 - [CLI Reference](cli-reference.md)
 
 # missouri

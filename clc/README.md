@@ -87,6 +87,8 @@ clc docs [topic]            # bundled documentation
 
 - [What is codelikecody?](docs/what-is-codelikecody.md) — philosophy and design
 - [Getting Started](docs/getting-started.md) — first pickup-to-done walkthrough
-- [Phase System](docs/phase-system.md) — phases, permissions, guards
-- [Orchestration](docs/orchestration.md) — supervisor, coordinators, workers, permissions
+- [Phase System](docs/phase-system.md) — phases, transitions, workflow definitions
+- [Permission Model](docs/permissions.md) — guards, requests, grants, escalation
+- [Orchestration](docs/orchestration.md) — supervisor, coordinators, workers
+- [Configuration Reference](docs/config-reference.md) — complete clc.yml schema
 - [CLI Reference](docs/cli-reference.md) — complete command documentation
