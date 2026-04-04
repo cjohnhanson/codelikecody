@@ -3,10 +3,10 @@
 Code like Cody (that's me). Opinionated workflow enforcement for coding agents.
 
 codelikecody is a set of CLI tools that enforce discipline on autonomous
-coding agents. Two principles drive the design: agents should prove their
-work through tests, not just claim it works; and undesired behavior should
-be mechanically impossible, not merely discouraged. The tools compose
-through the filesystem and standard I/O, each solving one problem.
+coding agents. Three principles drive the design: agent work should be
+verifiable, not trusted; undesired behavior should be mechanically
+impossible, not merely discouraged; and the tools compose through text
+streams and the filesystem.
 
 ## Tools
 
@@ -25,7 +25,7 @@ Assertions are byte-for-byte diffs between the directory after a command
 runs and the directory you said it should produce. No assertion DSL, no
 mocking. The expected state is the directory.
 
-`missouri docs getting-started` · [docs](missouri/docs/)
+`missouri docs getting-started` · [missouri/](missouri/)
 
 ### 🧺 tisket
 
@@ -37,7 +37,7 @@ git. Status lifecycle, labels, dependencies, per-issue scratch notes for
 agent working memory. Agents read and write issues as filesystem
 operations. No external service, no API tokens, works offline.
 
-`tisket docs getting-started` · [docs](tisket/docs/)
+`tisket docs getting-started` · [tisket/](tisket/)
 
 ### 🧛 belmont
 
@@ -57,7 +57,7 @@ servers) can probably succeed. This is a solo-developed codebase. I am
 not a security researcher. Do not use this for anything security-critical.
 I do not use this in my own professional work.
 
-`belmont --help` · [source](belmont/)
+`belmont --help` · [belmont/](belmont/)
 
 ### 📖 almanac
 
@@ -71,7 +71,7 @@ name and description, the body holds instructions. Almanac indexes
 all available skills and prints their content on demand, so agents
 load only the skills relevant to the current task.
 
-`almanac docs` · [docs](almanac/docs/)
+`almanac docs` · [almanac/](almanac/)
 
 ### 🗃️ zettel
 
@@ -83,7 +83,7 @@ links, and status. Forward links, backlinks, orphan detection, graph
 traversal. Agents create draft notes during research; humans review
 and promote them.
 
-`zettel docs getting-started` · [docs](zettel/docs/)
+`zettel docs getting-started` · [zettel/](zettel/)
 
 ### 🫎 moose
 
@@ -96,7 +96,7 @@ Browser automation for AI agents. Forked from
 to Chrome via CDP, handles screenshots, form filling, navigation, and
 session recording.
 
-`moose --help` · [source](moose/)
+`moose --help` · [moose/](moose/)
 
 ### ✌️ clc
 
@@ -114,7 +114,7 @@ review gates, and policy rules that select workflows based on issue
 labels or project. A guard intercepts every tool call and rejects
 disallowed operations before they reach the filesystem.
 
-`clc docs getting-started` · [docs](clc/docs/)
+`clc docs getting-started` · [clc/](clc/)
 
 ## Libraries
 
