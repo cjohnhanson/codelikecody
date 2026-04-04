@@ -1,12 +1,12 @@
 ---
 title: "integrate.rs merge/land logic has zero tests — complex git graph operations uncovered"
-status: todo
+status: done
 priority:
 assignee:
 labels: [clc, testing, blocking, standard]
 depends_on: []
 created: 2026-03-23T03:12:04Z
-updated: "2026-04-03T18:33:27Z"
+updated: "2026-04-04T13:56:55Z"
 ---
 
 ## Problem
