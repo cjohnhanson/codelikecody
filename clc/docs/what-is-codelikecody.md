@@ -6,40 +6,38 @@ type: explanation
 
 # What is codelikecody?
 
-Codelikecody is a workflow engine for coding agents. It manages the
-lifecycle of agent work — from issue tracking through test-driven
-development to completion — using hook-based enforcement and workspace
-isolation.
+Codelikecody is a workflow engine for coding agents. Hooks intercept
+every tool call in an agent's session and enforce constraints based
+on the current workflow phase. Agents work in isolated workspaces
+(git worktrees or Docker containers) and can't modify trunk directly.
 
-The project is seven tools and five supporting libraries. The tools are
-designed to work together, but each stands on its own.
+Seven tools, five supporting libraries. Each tool has its own binary
+and works independently.
 
 ## The tools
 
 ### clc — workflow enforcement
 
-clc is the orchestrator. It runs as a hook system inside Claude Code,
-intercepting every event in the agent's session: tool calls, prompt
-submissions, stop attempts. Based on the current git branch and workflow
-phase, it decides what's allowed and what's blocked. See the [CLI
-reference](/clc/cli-reference) for the full command surface.
+clc runs as a hook system inside Claude Code, intercepting every event
+in the agent's session: tool calls, prompt submissions, stop attempts.
+Based on the current git branch and workflow phase, it decides what's
+allowed and what's blocked. See the [CLI reference](/clc/cli-reference).
 
-The core mechanism is a configurable phase system. Workflows define a
-directed graph of phases, each with permissions (what files can be
-edited), instructions (injected into agent context), and stop gates
-(whether the agent can exit). The default workflow is a TDD sequence:
+Workflows define a directed graph of phases, each with permissions (what
+files can be edited), instructions (injected into agent context), and
+stop gates (whether the agent can exit). The default workflow is a TDD
+sequence:
 
 `tests-unwritten` → `tests-written` → `red` → `implementing` → `green`
 → `review-requested` → `in-review` → `reviewed` → `done`
 
 Custom workflows can define any phase graph. Policy rules in `clc.yml`
-select workflows based on issue labels or project, so different kinds
-of work can follow different processes.
+select workflows based on issue labels or project.
 
-Phases aren't advisory. A guard intercepts every tool call and evaluates
-it against the current phase's permissions. If the permission set says
-only test files can be edited, the guard rejects edits to source files
-before they reach the filesystem.
+A guard intercepts every tool call and evaluates it against the current
+phase's permissions. If the permission set says only test files can be
+edited, edits to source files are rejected before they reach the
+filesystem.
 
 clc also manages workspace isolation. Workspace is a trait: git worktrees
 and Docker containers are the current backends. All implementation
@@ -115,30 +113,15 @@ as an alternative engine and WebDriver/Appium for native mobile testing.
 
 ## How they fit together
 
-The tools form a loop:
+Tisket holds work as issues. clc picks up an issue, creates a workspace,
+and sets the initial workflow phase. Missouri tests run inside the
+workspace to verify behavior. When the workflow completes, `clc done`
+closes the tisket and cleans up. Almanac, belmont, zettel, and moose
+fill supporting roles: skills, secrets, notes, and browser automation.
 
-1. **Tisket** holds the work to be done. An issue describes what needs
-   building and what done looks like.
-
-2. **clc** picks up a tisket, creates an isolated workspace, and sets
-   the initial phase. The phase system enforces the configured workflow:
-   in the default TDD workflow, tests come first, then implementation.
-
-3. **Missouri** is where the tests live. States represent project
-   configurations, transitions are CLI commands being tested.
-
-4. When the workflow reaches its terminal phase, `clc done` handles
-   the bookkeeping: marking the tisket complete and cleaning up the
-   workspace.
-
-**Almanac** supplies skills — procedural knowledge agents load on
-demand. **Belmont** provides credentials. **Zettel** captures knowledge
-discovered during work. **Moose** handles browser testing.
-
-clc detects the presence of each tool in the working directory and
-injects their status into the agent's context at session start and on
-every prompt. The agent always knows which tisket it's working on, what
-phase it's in, what skills are available, and whether tests exist.
+clc detects which tools are present in the project directory and injects
+their status into the agent's context at session start and on every
+prompt.
 
 ## What it looks like in practice
 
@@ -160,12 +143,10 @@ workflow's initial phase. From here, every tool call passes through the
 guard. The phase system releases constraints as work progresses according
 to the configured workflow.
 
-Agents lose the thread. After a long sequence of tool calls, the
-original task, the current phase, and the test status can all drift out
-of effective context. clc compensates by re-injecting orientation on
-every prompt submission and nudging the agent after file edits. The
-agent never has to remember where it is — the system tells it,
-repeatedly.
+Context decays over long sessions. The original task, current phase,
+and test status can drift out of effective context as the conversation
+grows. clc re-injects orientation on every prompt submission and
+nudges after file edits.
 
 The [getting started tutorial](/clc/getting-started) walks through the
 full cycle end-to-end.

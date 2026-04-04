@@ -19,15 +19,10 @@ select workflows based on issue labels or project. See the
 
 ## Why phases exist
 
-An unsupervised coding agent, left to its own devices, will skip tests. It
-will write implementation first, then either write trivial tests after the
-fact or forget them entirely. TDD requires discipline that agents don't
-naturally have, so clc imposes it mechanically.
-
-Phases also prevent premature completion. Without the stop guard, an agent
-will declare itself done at the first sign of progress — tests passing,
-code compiling, whatever feels like a stopping point. The phase system
-forces the agent through the full lifecycle before it's allowed to exit.
+Without constraints, agents skip tests and declare work done prematurely.
+Phases make it mechanically impossible to edit source files before tests
+exist, and mechanically impossible to stop before the workflow reaches a
+designated exit point.
 
 ## The default TDD workflow
 
@@ -101,10 +96,8 @@ a feature branch, the agent is only allowed to stop in three phases:
 - **reviewed** — review is done, work is approved
 - **done** — everything is finalized
 
-Every other phase blocks the stop event. Notably, **green blocks stop**.
-Tests passing is not the finish line. The work still needs to go through
-review before the agent is allowed to walk away. This is a deliberate
-choice — green feels like "done" to an agent, but it isn't.
+Every other phase blocks the stop event. **green blocks stop** because
+tests passing doesn't mean work is reviewed and ready to merge.
 
 When stop is blocked, the agent receives a message telling it the current
 phase and suggesting `clc done` to finalize. The agent can't just ignore
