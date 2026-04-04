@@ -145,19 +145,16 @@ Internal crates that factor out shared concerns.
 
 ## Principles
 
-**Show me, don't tell me.** Missouri exists because agents are confident
-explainers and unreliable self-assessors. "The tests pass" means
-something. "I believe this is correct" does not.
+**Show me, don't tell me.** The proof of the pudding is in the eating.
+To be able to work autonomously at a high level of abstraction, agent
+outputs need to be easily verifiable.
 
-**Undesired behavior should be impossible to perform.** The phase system
-doesn't ask agents to write tests first. It makes it impossible to edit
-source files until tests exist. The trunk guard doesn't ask agents to
-stay off main. It rejects writes to main. The corollary: desired behavior
-should be impossible not to perform.
+**Undesired behavior should be impossible to perform.** If you don't
+want something to happen, make it impossible. If you want something
+to happen, make it impossible not to happen.
 
-**Compose through the filesystem.** Issues are files. Test states are
-directories. Notes are markdown. Skills are directories with a SKILL.md.
-Everything is greppable, diffable, and readable without special tooling.
+**Text streams are the universal interface.** [Unix philosophy](https://en.wikipedia.org/wiki/Unix_philosophy)
+applied to agent tooling.
 
 ## Documentation
 
