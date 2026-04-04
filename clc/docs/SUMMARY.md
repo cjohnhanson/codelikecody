@@ -13,6 +13,7 @@
 
 - [The Phase System](phase-system.md)
 - [Permission Model](permissions.md)
+- [Docker Workers](docker-workers.md)
 - [Multi-Agent Orchestration](orchestration.md)
 - [Configuration Reference](config-reference.md)
 - [CLI Reference](cli-reference.md)
