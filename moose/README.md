@@ -1,4 +1,4 @@
-# moose
+# 🫎 moose
 
 > Predominantly a browser, the moose's diet consists of both terrestrial
 > and aquatic vegetation, depending on the season, with branches, twigs

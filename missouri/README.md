@@ -1,4 +1,4 @@
-# missouri
+# 🔀 missouri
 
 > Show-me state. Model-based testing where system behavior is represented
 > as finite state automata.
