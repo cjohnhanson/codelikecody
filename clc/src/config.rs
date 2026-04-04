@@ -47,6 +47,9 @@ struct TomlFile {
 
     #[serde(default)]
     skills: Vec<SkillSource>,
+
+    #[serde(default)]
+    test_command: Option<String>,
 }
 
 // --- Workflow policy types ---
@@ -298,6 +301,11 @@ pub struct Config {
 
     #[serde(default)]
     pub skills: Vec<SkillSource>,
+
+    /// Command to run to verify tests pass (e.g. "cargo test --workspace").
+    /// Used by phase transitions to/from "green" and by `clc done`.
+    #[serde(default)]
+    pub test_command: Option<String>,
 }
 
 pub use almanac::SkillSource;
@@ -345,6 +353,7 @@ impl Default for Config {
             workflows: HashMap::new(),
             rules: Vec::new(),
             skills: Vec::new(),
+            test_command: None,
         }
     }
 }
@@ -361,6 +370,7 @@ impl From<TomlFile> for Config {
             workflows: toml.workflows,
             rules: toml.rules,
             skills: toml.skills,
+            test_command: toml.test_command,
         }
     }
 }

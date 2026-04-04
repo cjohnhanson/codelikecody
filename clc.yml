@@ -1,2 +1,3 @@
 main_branch: main
 admin_branch: clc-admin
+test_command: "cargo test --workspace"

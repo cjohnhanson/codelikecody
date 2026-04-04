@@ -278,6 +278,26 @@ fn cmd_status_set(target: &str) -> Result<(), Error> {
         .and_then(|name| cfg.workflows.get(name))
         .and_then(|def| workflow::Workflow::new(def).ok())
         .unwrap_or_else(workflow::Workflow::default_tdd);
+
+    // Enforce test command at "green" phase boundary.
+    if target == "green" {
+        if let Some(ref cmd) = cfg.test_command {
+            eprintln!("running test command: {cmd}");
+            let status = std::process::Command::new("sh")
+                .arg("-c")
+                .arg(cmd)
+                .current_dir(&cwd)
+                .status()
+                .map_err(|e| Error::NonBlocking(format!("test command failed to start: {e}")))?;
+            if !status.success() {
+                return Err(Error::NonBlocking(format!(
+                    "cannot advance to 'green': test command failed (exit {})",
+                    status.code().unwrap_or(-1)
+                )));
+            }
+        }
+    }
+
     phase::set_with_workflow(&cwd, target, cfg.required_attempts, &wf)
 }
 

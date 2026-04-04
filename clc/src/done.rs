@@ -33,6 +33,23 @@ pub fn done(project_dir: &Path, main_branch: &str, admin_branch: &str) -> Result
         )));
     }
 
+    // Run test command if configured. Tests must pass to finalize.
+    if let Some(ref cmd) = cfg.test_command {
+        eprintln!("running test command: {cmd}");
+        let status = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(cmd)
+            .current_dir(project_dir)
+            .status()
+            .map_err(|e| Error::NonBlocking(format!("test command failed to start: {e}")))?;
+        if !status.success() {
+            return Err(Error::NonBlocking(format!(
+                "cannot finalize: test command failed (exit {})",
+                status.code().unwrap_or(-1)
+            )));
+        }
+    }
+
     // Refuse to finalize if the working tree has uncommitted changes outside of
     // ephemeral directories (.clc/ and .claude/).
     if crate::gix_ops::has_relevant_uncommitted_changes(project_dir)? {
