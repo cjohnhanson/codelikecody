@@ -22,3 +22,22 @@ Terminal echo should be restored unconditionally when `ProgressReporter` is done
 ## Why It Matters
 
 A terminal left with echo disabled is effectively broken for interactive use. The user has to know to run `stty echo` or `reset` to recover. This is especially problematic when missouri is run by agents — a crash leaves the agent's terminal in a bad state with no recovery path.
+
+## Scratch Notes
+
+### 2026-04-04: Investigation
+
+This issue is stale. The underlying problem was already fixed by commit `1a9e02b`
+("feat: replace indicatif spinners with line-oriented reporting"), which removed
+all terminal echo suppression, cursor hiding, and indicatif/termimad/console
+dependencies from missouri.
+
+The current `ProgressReporter` in `missouri/src/report.rs` is pure line-oriented
+output — no `disable_echo()`, no termios, no terminal state manipulation at all.
+Comment on line 8: "No terminal manipulation, no cursor hiding, no echo suppression."
+
+Related closed tisket: `e0rz-missouri-replace-indicatif-progress-spinners-with-line-oriented-reporting-and-timing-summary` (status: done).
+
+Grep for `disable_echo|termios|stty|echo_off|ECHO` across `missouri/` returns zero matches.
+
+**Conclusion**: No tests to write, no code to change. This should be closed as already resolved.
