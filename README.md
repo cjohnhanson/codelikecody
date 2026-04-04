@@ -168,4 +168,4 @@ almanac docs
 zettel docs
 ```
 
-Development conventions live in [CLAUDE.md](CLAUDE.md).
+Development conventions live in [AGENTS.md](AGENTS.md).
