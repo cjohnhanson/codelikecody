@@ -45,15 +45,23 @@ impl client::Handler for SessionHandler {
         let local_port = self.local_port;
         eprintln!("reverse tunnel: forwarding to localhost:{local_port}");
         tokio::spawn(async move {
-            match tokio::net::TcpStream::connect(format!("127.0.0.1:{local_port}")).await {
-                Ok(mut tcp) => {
-                    let mut stream = channel.into_stream();
-                    let _ = tokio::io::copy_bidirectional(&mut tcp, &mut stream).await;
-                }
+            let tcp = match tokio::net::TcpStream::connect(format!("127.0.0.1:{local_port}")).await {
+                Ok(tcp) => tcp,
                 Err(e) => {
                     eprintln!("reverse tunnel: failed to connect to localhost:{local_port}: {e}");
+                    return;
                 }
-            }
+            };
+            // Split both streams and copy each direction independently.
+            // Using tokio::io::split instead of copy_bidirectional works
+            // around russh #178 where ChannelStream's AsyncRead can
+            // misbehave during bidirectional use.
+            let (mut tcp_read, mut tcp_write) = tcp.into_split();
+            let stream = channel.into_stream();
+            let (mut ch_read, mut ch_write) = tokio::io::split(stream);
+            let c2s = tokio::io::copy(&mut ch_read, &mut tcp_write);
+            let s2c = tokio::io::copy(&mut tcp_read, &mut ch_write);
+            let _ = tokio::try_join!(c2s, s2c);
         });
         Ok(())
     }
