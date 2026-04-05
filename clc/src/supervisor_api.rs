@@ -753,6 +753,41 @@ async fn set_phase(
                     "error": format!("invalid transition from '{}' to '{}'", current_phase, req.phase),
                 }))));
             }
+
+            // Review gate: check if this transition requires reviewer approval.
+            if let Some(reviewers) = wf.transition_reviewers(current_phase, &req.phase) {
+                // Check coordination DB for approval messages.
+                let msgs = state
+                    .db
+                    .recv(&id, &clc_sdk::coordination::Cursor::default())
+                    .await
+                    .map(|(m, _)| m)
+                    .unwrap_or_default();
+
+                let missing: Vec<&str> = reviewers
+                    .iter()
+                    .filter(|reviewer_name| {
+                        !msgs.iter().any(|m| matches!(
+                            &m.kind,
+                            clc_sdk::coordination::MessageKind::ReviewResult {
+                                review_type,
+                                verdict: clc_sdk::coordination::ReviewVerdict::Approved,
+                                ..
+                            } if review_type == *reviewer_name
+                        ))
+                    })
+                    .map(|s| s.as_str())
+                    .collect();
+
+                if !missing.is_empty() {
+                    return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({
+                        "error": format!(
+                            "review required: {}. Reviewers will be dispatched — wait for approval, then retry.",
+                            missing.join(", ")
+                        ),
+                    }))));
+                }
+            }
         }
     }
 
@@ -1213,5 +1248,327 @@ mod tests {
         });
 
         assert_eq!(body["phase"].as_str(), Some("tests-unwritten"));
+    }
+
+    // --- Helpers for workflow-aware tests ---
+
+    fn start_test_api_with_workflows(
+        workflows: std::collections::HashMap<String, crate::config::WorkflowDef>,
+    ) -> (String, Arc<DbBackend>, std::thread::JoinHandle<()>, tempfile::TempDir) {
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let db_path = tmp_dir.path().join("test.db");
+        let db_url = format!("sqlite://{}?mode=rwc", db_path.display());
+        let db_url2 = db_url.clone();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let handle = std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async {
+                let db = clc_sdk::coordination_db::DbBackend::connect(&db_url)
+                    .await
+                    .unwrap();
+                db.create_tables().await.unwrap();
+                let state = Arc::new(ApiState {
+                    db: Arc::new(db),
+                    project_dir: std::path::PathBuf::from("/tmp"),
+                    workflows,
+                });
+                let addr = start(state, 0, None).await.unwrap();
+                tx.send(addr.port()).unwrap();
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+                }
+            });
+        });
+        let port = rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("API server did not start");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        // Open a second connection to the same file-based DB for test helpers.
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let db = rt.block_on(async {
+            Arc::new(clc_sdk::coordination_db::DbBackend::connect(&db_url2).await.unwrap())
+        });
+
+        (format!("http://127.0.0.1:{port}"), db, handle, tmp_dir)
+    }
+
+    fn blocking_put(base_url: &str, path: &str, body: &serde_json::Value) -> (u16, serde_json::Value) {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let resp = reqwest::Client::new()
+                .put(format!("{base_url}{path}"))
+                .json(body)
+                .send()
+                .await
+                .unwrap();
+            let status = resp.status().as_u16();
+            let body = resp.json().await.unwrap_or(serde_json::json!({}));
+            (status, body)
+        })
+    }
+
+    fn blocking_get(base_url: &str, path: &str) -> (u16, serde_json::Value) {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let resp = reqwest::Client::new()
+                .get(format!("{base_url}{path}"))
+                .send()
+                .await
+                .unwrap();
+            let status = resp.status().as_u16();
+            let body = resp.json().await.unwrap_or(serde_json::json!({}));
+            (status, body)
+        })
+    }
+
+    fn docs_workflow_def() -> crate::config::WorkflowDef {
+        use crate::config::{PhaseDef, TransitionDef};
+        crate::config::WorkflowDef {
+            description: Some("Docs workflow for testing".into()),
+            phases: vec![
+                PhaseDef {
+                    name: "outline".into(),
+                    instructions: None,
+                    nudge: None,
+                    can_stop: false,
+                    permissions: None,
+                    transitions: Some(vec![TransitionDef::Rich {
+                        target: "draft".into(),
+                        review: vec!["docs-review".into()],
+                    }]),
+                },
+                PhaseDef {
+                    name: "draft".into(),
+                    instructions: None,
+                    nudge: None,
+                    can_stop: false,
+                    permissions: None,
+                    transitions: Some(vec![
+                        TransitionDef::Simple("outline".into()),
+                        TransitionDef::Simple("done".into()),
+                    ]),
+                },
+                PhaseDef {
+                    name: "done".into(),
+                    instructions: None,
+                    nudge: None,
+                    can_stop: false,
+                    permissions: None,
+                    transitions: None,
+                },
+            ],
+        }
+    }
+
+    fn send_approval(db: &Arc<DbBackend>, worker_id: &str, reviewer_name: &str) {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            use clc_sdk::coordination::CoordinationBackend;
+            db.send(clc_sdk::coordination::Message {
+                id: format!("test-approval-{reviewer_name}-{}", std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()),
+                from: format!("{worker_id}-reviewer-{reviewer_name}"),
+                to: worker_id.to_string(),
+                kind: clc_sdk::coordination::MessageKind::ReviewResult {
+                    request_id: String::new(),
+                    review_type: reviewer_name.to_string(),
+                    verdict: clc_sdk::coordination::ReviewVerdict::Approved,
+                    comments: "approved in test".to_string(),
+                },
+                timestamp: std::time::SystemTime::now(),
+            }).await.unwrap();
+        });
+    }
+
+    fn dispatch_with_workflow(base_url: &str, tisket_id: &str, workflow: &str) {
+        blocking_post(
+            base_url,
+            "/agents",
+            &serde_json::json!({ "id": "coord-test" }),
+        );
+        blocking_post(
+            base_url,
+            "/dispatch",
+            &serde_json::json!({
+                "tisket_id": tisket_id,
+                "model": "opus",
+                "coordinator_id": "coord-test",
+                "workflow": workflow,
+            }),
+        );
+    }
+
+    // --- Phase transition validation tests ---
+
+    #[test]
+    fn api_set_phase_rejects_invalid_transition() {
+        let workflows = std::collections::HashMap::from([
+            ("docs".into(), docs_workflow_def()),
+        ]);
+        let (base_url, _db, _handle, _tmp) = start_test_api_with_workflows(workflows);
+        dispatch_with_workflow(&base_url, "worker-1", "docs");
+
+        // outline → done is not a valid transition (must go through draft)
+        let (status, body) = blocking_put(
+            &base_url,
+            "/agents/worker-1/phase",
+            &serde_json::json!({ "phase": "done" }),
+        );
+        assert_eq!(status, 400, "skip-forward should be rejected: {body}");
+        assert!(
+            body["error"].as_str().unwrap_or("").contains("invalid transition"),
+            "error should mention invalid transition: {body}"
+        );
+    }
+
+    #[test]
+    fn api_set_phase_rejects_unknown_phase() {
+        let workflows = std::collections::HashMap::from([
+            ("docs".into(), docs_workflow_def()),
+        ]);
+        let (base_url, _db, _handle, _tmp) = start_test_api_with_workflows(workflows);
+        dispatch_with_workflow(&base_url, "worker-1", "docs");
+
+        let (status, body) = blocking_put(
+            &base_url,
+            "/agents/worker-1/phase",
+            &serde_json::json!({ "phase": "nonexistent" }),
+        );
+        assert_eq!(status, 400, "unknown phase should be rejected: {body}");
+        assert!(
+            body["error"].as_str().unwrap_or("").contains("unknown phase"),
+            "error should mention unknown phase: {body}"
+        );
+    }
+
+    #[test]
+    fn api_set_phase_blocks_review_gated_transition() {
+        let workflows = std::collections::HashMap::from([
+            ("docs".into(), docs_workflow_def()),
+        ]);
+        let (base_url, _db, _handle, _tmp) = start_test_api_with_workflows(workflows);
+        dispatch_with_workflow(&base_url, "worker-1", "docs");
+
+        // outline → draft requires docs-review approval
+        let (status, body) = blocking_put(
+            &base_url,
+            "/agents/worker-1/phase",
+            &serde_json::json!({ "phase": "draft" }),
+        );
+        assert_eq!(status, 400, "review-gated transition should be rejected without approval: {body}");
+        assert!(
+            body["error"].as_str().unwrap_or("").contains("review required"),
+            "error should mention review required: {body}"
+        );
+    }
+
+    #[test]
+    fn api_set_phase_allows_review_gated_transition_after_approval() {
+        let workflows = std::collections::HashMap::from([
+            ("docs".into(), docs_workflow_def()),
+        ]);
+        let (base_url, db, _handle, _tmp) = start_test_api_with_workflows(workflows);
+        dispatch_with_workflow(&base_url, "worker-1", "docs");
+
+        // Send an approval for docs-review
+        send_approval(&db, "worker-1", "docs-review");
+
+        // Now the transition should succeed
+        let (status, _body) = blocking_put(
+            &base_url,
+            "/agents/worker-1/phase",
+            &serde_json::json!({ "phase": "draft" }),
+        );
+        assert_eq!(status, 200, "review-gated transition should succeed after approval");
+
+        // Verify the phase was actually set
+        let (_, phase_body) = blocking_get(&base_url, "/agents/worker-1/phase");
+        assert_eq!(phase_body["phase"].as_str(), Some("draft"));
+    }
+
+    #[test]
+    fn api_set_phase_allows_valid_forward_transitions() {
+        let workflows = std::collections::HashMap::from([
+            ("docs".into(), docs_workflow_def()),
+        ]);
+        let (base_url, db, _handle, _tmp) = start_test_api_with_workflows(workflows);
+        dispatch_with_workflow(&base_url, "worker-1", "docs");
+
+        // Send approval for the review gate
+        send_approval(&db, "worker-1", "docs-review");
+
+        // outline → draft (with approval)
+        let (status, _) = blocking_put(
+            &base_url,
+            "/agents/worker-1/phase",
+            &serde_json::json!({ "phase": "draft" }),
+        );
+        assert_eq!(status, 200, "outline → draft should succeed");
+
+        // draft → done (no review gate)
+        let (status, _) = blocking_put(
+            &base_url,
+            "/agents/worker-1/phase",
+            &serde_json::json!({ "phase": "done" }),
+        );
+        assert_eq!(status, 200, "draft → done should succeed");
+    }
+
+    #[test]
+    fn api_set_phase_allows_backward_transition() {
+        let workflows = std::collections::HashMap::from([
+            ("docs".into(), docs_workflow_def()),
+        ]);
+        let (base_url, db, _handle, _tmp) = start_test_api_with_workflows(workflows);
+        dispatch_with_workflow(&base_url, "worker-1", "docs");
+
+        // Advance to draft (with approval)
+        send_approval(&db, "worker-1", "docs-review");
+        blocking_put(
+            &base_url,
+            "/agents/worker-1/phase",
+            &serde_json::json!({ "phase": "draft" }),
+        );
+
+        // draft → outline (backward, should be allowed)
+        let (status, _) = blocking_put(
+            &base_url,
+            "/agents/worker-1/phase",
+            &serde_json::json!({ "phase": "outline" }),
+        );
+        assert_eq!(status, 200, "backward transition draft → outline should succeed");
+    }
+
+    #[test]
+    fn dispatch_with_workflow_sets_correct_initial_phase() {
+        let workflows = std::collections::HashMap::from([
+            ("docs".into(), docs_workflow_def()),
+        ]);
+        let (base_url, _db, _handle, _tmp) = start_test_api_with_workflows(workflows);
+        dispatch_with_workflow(&base_url, "worker-1", "docs");
+
+        let (_, body) = blocking_get(&base_url, "/agents/worker-1/phase");
+        assert_eq!(
+            body["phase"].as_str(),
+            Some("outline"),
+            "docs workflow should start at 'outline', not 'tests-unwritten': {body}"
+        );
     }
 }

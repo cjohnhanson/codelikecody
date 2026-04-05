@@ -398,4 +398,101 @@ mod tests {
         let result = check_review_requirements(dir.path(), "test-worker", &["code".into()]);
         assert!(result.is_ok());
     }
+
+    #[test]
+    fn check_review_requirements_changes_requested_does_not_count() {
+        let dir = tempfile::tempdir().unwrap();
+        let clc_dir = dir.path().join(".clc");
+        std::fs::create_dir_all(&clc_dir).unwrap();
+
+        let coord = Coordination::open(dir.path()).unwrap();
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let db = clc_sdk::coordination_db::DbBackend::connect(
+                &format!("sqlite://{}?mode=rwc", clc_dir.join("coordination.db").display()),
+            )
+            .await
+            .unwrap();
+            db.create_tables().await.unwrap();
+            db.register_agent("test-worker", None).await.unwrap();
+        });
+
+        // Send a ChangesRequested verdict — should NOT satisfy the gate.
+        coord
+            .send(clc_sdk::coordination::Message {
+                id: "rev-changes-1".into(),
+                from: "test-reviewer".into(),
+                to: "test-worker".into(),
+                kind: clc_sdk::coordination::MessageKind::ReviewResult {
+                    request_id: "".into(),
+                    review_type: "code".into(),
+                    verdict: clc_sdk::coordination::ReviewVerdict::ChangesRequested,
+                    comments: "needs work".into(),
+                },
+                timestamp: std::time::SystemTime::now(),
+            })
+            .unwrap();
+
+        let result = check_review_requirements(dir.path(), "test-worker", &["code".into()]);
+        assert!(result.is_err(), "ChangesRequested should not satisfy the review gate");
+        assert!(
+            result.unwrap_err().to_string().contains("code"),
+            "error should mention the missing review type"
+        );
+    }
+
+    #[test]
+    fn check_review_requirements_partial_approval_blocks() {
+        let dir = tempfile::tempdir().unwrap();
+        let clc_dir = dir.path().join(".clc");
+        std::fs::create_dir_all(&clc_dir).unwrap();
+
+        let coord = Coordination::open(dir.path()).unwrap();
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let db = clc_sdk::coordination_db::DbBackend::connect(
+                &format!("sqlite://{}?mode=rwc", clc_dir.join("coordination.db").display()),
+            )
+            .await
+            .unwrap();
+            db.create_tables().await.unwrap();
+            db.register_agent("test-worker", None).await.unwrap();
+        });
+
+        // Approve "code" but not "security".
+        coord
+            .send(clc_sdk::coordination::Message {
+                id: "rev-code-1".into(),
+                from: "code-reviewer".into(),
+                to: "test-worker".into(),
+                kind: clc_sdk::coordination::MessageKind::ReviewResult {
+                    request_id: "".into(),
+                    review_type: "code".into(),
+                    verdict: clc_sdk::coordination::ReviewVerdict::Approved,
+                    comments: "lgtm".into(),
+                },
+                timestamp: std::time::SystemTime::now(),
+            })
+            .unwrap();
+
+        // Both "code" and "security" required — only "code" approved.
+        let result = check_review_requirements(
+            dir.path(),
+            "test-worker",
+            &["code".into(), "security".into()],
+        );
+        assert!(result.is_err(), "partial approval should not satisfy the gate");
+        assert!(
+            result.unwrap_err().to_string().contains("security"),
+            "error should mention the missing reviewer"
+        );
+    }
 }

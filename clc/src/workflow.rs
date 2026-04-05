@@ -577,7 +577,6 @@ mod tests {
                     transitions: None,
                 },
             ],
-            reviews: HashMap::new(),
         };
         let err = Workflow::new(&def).unwrap_err();
         assert!(err.to_string().contains("duplicate phase name"));
@@ -595,7 +594,6 @@ mod tests {
                 permissions: None,
                 transitions: Some(vec![TransitionDef::Simple("nonexistent".into())]),
             }],
-            reviews: HashMap::new(),
         };
         let err = Workflow::new(&def).unwrap_err();
         assert!(err.to_string().contains("unknown phase 'nonexistent'"));
@@ -624,7 +622,6 @@ mod tests {
                     transitions: None,
                 },
             ],
-            reviews: HashMap::new(),
         };
         let wf = Workflow::new(&def).unwrap();
         assert!(wf.can_stop("done"));
