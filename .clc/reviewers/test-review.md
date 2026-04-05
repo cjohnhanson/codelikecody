@@ -1,15 +1,11 @@
 ---
-model: sonnet
+model: haiku
+max_turns: 3
 ---
 
-Load the testing strategy skill:
+Review the test changes on this branch. Check:
+1. Do the tests cover meaningful scenarios?
+2. Are assertions specific (not just `.is_ok()`)?
+3. Would these tests catch a real regression?
 
-    almanac show testing-strategy
-
-Apply the frameworks from the skill to evaluate the test changes. In
-particular, use Beck's 12 test desiderata and risk-based prioritization
-to assess whether the right things are being tested.
-
-Pass if the tests are meaningful, cover important cases, and would catch
-real regressions. Fail if tests are superficial, redundant, test
-implementation details instead of behavior, or miss obvious edge cases.
+Approve if tests are adequate. Request changes if tests are missing critical scenarios or are tautological.
