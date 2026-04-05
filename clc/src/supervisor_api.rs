@@ -1526,4 +1526,74 @@ mod tests {
             "docs workflow should start at 'outline', not 'tests-unwritten': {body}"
         );
     }
+
+    fn multi_reviewer_workflow_def() -> crate::config::WorkflowDef {
+        use crate::config::{PhaseDef, TransitionDef};
+        crate::config::WorkflowDef {
+            description: None,
+            phases: vec![
+                PhaseDef {
+                    name: "working".into(),
+                    instructions: None,
+                    nudge: None,
+                    can_stop: false,
+                    permissions: None,
+                    transitions: Some(vec![TransitionDef::Rich {
+                        target: "done".into(),
+                        review: vec!["reviewer-a".into(), "reviewer-b".into()],
+                    }]),
+                },
+                PhaseDef {
+                    name: "done".into(),
+                    instructions: None,
+                    nudge: None,
+                    can_stop: false,
+                    permissions: None,
+                    transitions: None,
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn api_set_phase_blocks_with_partial_approval() {
+        let workflows = std::collections::HashMap::from([
+            ("multi".into(), multi_reviewer_workflow_def()),
+        ]);
+        let (base_url, db, _handle, _tmp) = start_test_api_with_workflows(workflows);
+        dispatch_with_workflow(&base_url, "worker-1", "multi");
+
+        // Only approve reviewer-a, not reviewer-b.
+        send_approval(&db, "worker-1", "reviewer-a");
+
+        let (status, body) = blocking_put(
+            &base_url,
+            "/agents/worker-1/phase",
+            &serde_json::json!({ "phase": "done" }),
+        );
+        assert_eq!(status, 400, "partial approval should block: {body}");
+        assert!(
+            body["error"].as_str().unwrap_or("").contains("reviewer-b"),
+            "error should mention the missing reviewer: {body}"
+        );
+    }
+
+    #[test]
+    fn api_set_phase_succeeds_with_all_reviewers_approved() {
+        let workflows = std::collections::HashMap::from([
+            ("multi".into(), multi_reviewer_workflow_def()),
+        ]);
+        let (base_url, db, _handle, _tmp) = start_test_api_with_workflows(workflows);
+        dispatch_with_workflow(&base_url, "worker-1", "multi");
+
+        send_approval(&db, "worker-1", "reviewer-a");
+        send_approval(&db, "worker-1", "reviewer-b");
+
+        let (status, _) = blocking_put(
+            &base_url,
+            "/agents/worker-1/phase",
+            &serde_json::json!({ "phase": "done" }),
+        );
+        assert_eq!(status, 200, "all reviewers approved should succeed");
+    }
 }
