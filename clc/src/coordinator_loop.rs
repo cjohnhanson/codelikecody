@@ -381,31 +381,8 @@ fn tick(
                 continue;
             }
 
-            // Check for pending review requests before resuming.
-            match crate::review::pending_review_types(project_dir, id) {
-                Ok(pending_reviews) if !pending_reviews.is_empty() => {
-                    for review_type in &pending_reviews {
-                        eprintln!(
-                            "coordinator '{}': spawning '{review_type}' reviewer for '{id}'",
-                            scope.id
-                        );
-                        match crate::review::spawn_reviewer(project_dir, id, review_type)
-                        {
-                            Ok(pid) => eprintln!(
-                                "coordinator '{}': reviewer pid {pid} for '{id}'",
-                                scope.id
-                            ),
-                            Err(e) => eprintln!(
-                                "coordinator '{}': reviewer spawn failed for '{id}': {e}",
-                                scope.id
-                            ),
-                        }
-                    }
-                    continue; // Don't resume worker yet — wait for reviews.
-                }
-                _ => {}
-            }
-
+            // Review spawning is handled by the supervisor's handle_reviews.
+            // The coordinator only resumes stopped workers.
             eprintln!("coordinator '{}': resuming '{id}'", scope.id);
             match crate::worker::resume(project_dir, id) {
                 Ok(()) => {}

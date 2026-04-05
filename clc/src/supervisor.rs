@@ -46,6 +46,8 @@ pub struct Supervisor {
     shutdown: Arc<AtomicBool>,
     /// Workflow name → full definition (phase graph + reviews).
     workflow_defs: std::collections::HashMap<String, crate::config::WorkflowDef>,
+    /// OAuth token for Claude API authentication (passed to reviewers).
+    oauth_token: Option<String>,
 }
 
 impl Supervisor {
@@ -78,6 +80,13 @@ impl Supervisor {
             tunnel_base_port: config.tunnel_base_port,
             shutdown: Arc::new(AtomicBool::new(false)),
             workflow_defs: config.workflows.clone(),
+            oauth_token: std::env::var("CLC_CLAUDE_CODE_OAUTH_TOKEN")
+                .or_else(|_| std::env::var("CLAUDE_CODE_OAUTH_TOKEN"))
+                .ok()
+                .or_else(|| {
+                    let token_path = dirs::home_dir()?.join(".claude").join("token");
+                    std::fs::read_to_string(token_path).ok().map(|t| t.trim().to_string())
+                }),
         }
     }
 
@@ -838,9 +847,13 @@ impl Supervisor {
                 // API URL and cert paths. New SSH sessions don't inherit the
                 // worker process's env, so we source the file explicitly.
                 let project = crate::ssh_workspace::REMOTE_PROJECT_DIR;
+                let oauth_export = self.oauth_token.as_deref()
+                    .map(|t| format!("export CLAUDE_CODE_OAUTH_TOKEN='{t}' && "))
+                    .unwrap_or_default();
                 let reviewer_cmd = format!(
                     "cd {project} && \
                      . /tmp/clc-env.sh 2>/dev/null && \
+                     {oauth_export}\
                      export CLC_REVIEW_TYPE='{agent_name}' && \
                      export CLC_REVIEWER_ID='{reviewer_id}' && \
                      nohup claude --model {model} --print '{escaped_prompt}' \

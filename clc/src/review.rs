@@ -6,8 +6,6 @@
 
 use std::path::Path;
 
-use clc_sdk::agent::Agent;
-
 use crate::coordination::Coordination;
 use crate::error::Error;
 
@@ -183,103 +181,6 @@ pub fn check_review_requirements(
             missing.join(", ")
         )))
     }
-}
-
-/// Spawn a reviewer session in the given worktree.
-///
-/// Creates a fresh claude process with `CLC_REVIEW_TYPE` and `CLC_REVIEWER_ID`
-/// env vars set. The reviewer runs, renders a verdict, and exits.
-/// Returns the reviewer process PID.
-pub fn spawn_reviewer(
-    project_dir: &Path,
-    worker_id: &str,
-    review_type: &str,
-) -> Result<u32, Error> {
-    let worktree_dir = project_dir.join(".worktrees").join(worker_id);
-    if !worktree_dir.is_dir() {
-        return Err(Error::NonBlocking(format!(
-            "no worktree for worker '{worker_id}'"
-        )));
-    }
-
-    let reviewer_id = format!("{worker_id}-reviewer-{review_type}");
-
-    // Build the review prompt from .clc/reviewers/<name>.md.
-    let reviewer = crate::reviewer::resolve(project_dir, review_type).ok();
-    let instructions = reviewer
-        .as_ref()
-        .map(|r| r.prompt.as_str())
-        .unwrap_or("Review the work in this worktree and render a verdict.");
-
-    let prompt = format!(
-        "You are a reviewer agent performing a '{review_type}' review of worker '{worker_id}'.\n\n\
-         {instructions}\n\n\
-         Examine the code, tests, and changes. When done, render your verdict:\n\
-         - `clc review approve \"comments\"` to approve\n\
-         - `clc review request-changes \"what needs to change\"` to request changes\n\n\
-         You must render exactly one verdict before stopping."
-    );
-
-    // Build the agent command.
-    let agent = clc_sdk::agent::ClaudeCodeAgent::new();
-    let config = clc_sdk::agent::AgentConfig {
-        model: crate::config::DEFAULT_REVIEWER_MODEL.to_string(),
-        system_prompt: format!(
-            "You are a reviewer agent. Review type: {review_type}. \
-             Render a verdict with `clc review approve` or `clc review request-changes`. \
-             Do not modify any files."
-        ),
-        initial_prompt: String::new(), // Sent via spawn_agent_process
-        extra_args: vec![],
-        allowed_tools: vec![],
-    };
-
-    let mut cmd = agent
-        .build_start_command(&config, &worktree_dir)
-        .map_err(|e| Error::NonBlocking(format!("failed to build reviewer command: {e}")))?;
-
-    // Set reviewer env vars.
-    cmd.env("CLC_REVIEW_TYPE", review_type);
-    cmd.env("CLC_REVIEWER_ID", &reviewer_id);
-
-    // Register reviewer agent and get bearer token for API authentication.
-    if let Ok(coord) = crate::coordination::Coordination::open(project_dir) {
-        if let Ok(token) = coord.register_agent_with_token(&reviewer_id, Some(worker_id)) {
-            cmd.env("CLC_AGENT_TOKEN", &token);
-        }
-    }
-
-    // Seed reviewer permissions into the worktree's settings.
-    // The reviewer needs read-only tools plus verdict commands.
-    let allow = vec![
-        "Bash(clc review *)".to_string(),
-        "Read".to_string(),
-        "Glob".to_string(),
-        "Grep".to_string(),
-    ];
-    let deny = vec![
-        "Edit".to_string(),
-        "Write".to_string(),
-        "NotebookEdit".to_string(),
-    ];
-    // Reviewer permissions are the default read-only set above.
-    // Additional permissions could come from the reviewer's AgentSpec
-    // in .clc/reviewers/<name>.md in the future.
-    crate::permissions::seed_defaults(&worktree_dir, &allow, &deny)?;
-
-    // Spawn in a reviewer-specific state directory (not the worker's).
-    let reviewer_dir = project_dir
-        .join(".clc")
-        .join("reviewers")
-        .join(&reviewer_id);
-
-    let pid = crate::dispatch::spawn_agent_process(cmd, &reviewer_dir, &prompt)?;
-
-    eprintln!(
-        "spawned reviewer '{reviewer_id}' (pid {pid}) for worker '{worker_id}', type '{review_type}'"
-    );
-
-    Ok(pid)
 }
 
 /// Check if a reviewer session has pending review requests for a given worker.
