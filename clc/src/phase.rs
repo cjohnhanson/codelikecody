@@ -182,13 +182,14 @@ pub fn init_phase_with_workflow(
 /// Validate and perform a phase transition using the given workflow.
 /// The workflow graph determines valid transitions.
 ///
-/// When `CLC_API_URL` is set (Docker workers), phase state is read from
-/// and written to the supervisor API. Otherwise uses `.clc/state`.
-pub fn set_with_workflow(
-    project_dir: &Path,
-    target: &str,
-    required_attempts: u32,
+/// Validate a phase transition against the workflow graph and review gates.
+/// Pure logic — no storage reads or writes.
+pub fn validate_transition(
     workflow: &Workflow,
+    current: Option<&str>,
+    target: &str,
+    worker_id: &str,
+    review_checker: &dyn Fn(&str, &[String]) -> Result<(), Error>,
 ) -> Result<(), Error> {
     if !workflow.has_phase(target) {
         return Err(Error::NonBlocking(format!(
@@ -196,24 +197,7 @@ pub fn set_with_workflow(
         )));
     }
 
-    // Load current phase — from API when in a workspace, from filesystem otherwise.
-    let use_api = std::env::var("CLC_API_URL").ok();
-    let (current_phase, current_attempts, wf_name_owned) = if let Some(ref api_url) = use_api {
-        let agent_id = crate::git::current_branch(project_dir).unwrap_or_default();
-        let name = load_phase_name_from_api(api_url, &agent_id)?;
-        // API doesn't store attempts or workflow name — use defaults.
-        (name, 0u32, None::<String>)
-    } else {
-        let raw_state = load_state_raw(project_dir)?;
-        (
-            raw_state.as_ref().map(|s| s.phase_name.clone()),
-            raw_state.as_ref().map_or(0, |s| s.attempts),
-            raw_state.as_ref().and_then(|s| s.workflow.clone()),
-        )
-    };
-    let current_name = current_phase.as_deref();
-
-    match current_name {
+    match current {
         None => {
             if target != workflow.initial_phase() {
                 return Err(Error::NonBlocking(format!(
@@ -228,26 +212,63 @@ pub fn set_with_workflow(
                     "already at phase '{current}'"
                 )));
             }
-
             if !workflow.is_valid_transition(current, target) {
                 return Err(Error::NonBlocking(format!(
                     "cannot transition from '{current}' to '{target}': not a valid transition"
                 )));
             }
-        }
-    }
 
-    let is_forward = current_name.map_or(true, |c| !workflow.is_backward(c, target));
-
-    // Review gating: if this forward transition requires reviews, check for approvals.
-    if is_forward {
-        if let Some(current) = current_name {
-            if let Some(reviewers) = workflow.transition_reviewers(current, target) {
-                let worker_id = crate::git::current_branch(project_dir).unwrap_or_default();
-                crate::review::check_review_requirements(project_dir, &worker_id, reviewers)?;
+            // Review gate: if this is a forward transition with reviewers, check approvals.
+            let is_forward = !workflow.is_backward(current, target);
+            if is_forward {
+                if let Some(reviewers) = workflow.transition_reviewers(current, target) {
+                    review_checker(worker_id, reviewers)?;
+                }
             }
         }
     }
+
+    Ok(())
+}
+
+/// When `CLC_API_URL` is set (Docker workers), phase state is read from
+/// and written to the supervisor API. Otherwise uses `.clc/state`.
+pub fn set_with_workflow(
+    project_dir: &Path,
+    target: &str,
+    required_attempts: u32,
+    workflow: &Workflow,
+) -> Result<(), Error> {
+    // Load current phase — from API when in a workspace, from filesystem otherwise.
+    let use_api = std::env::var("CLC_API_URL").ok();
+    let (current_phase, current_attempts, wf_name_owned) = if let Some(ref api_url) = use_api {
+        let agent_id = crate::git::current_branch(project_dir).unwrap_or_default();
+        let name = load_phase_name_from_api(api_url, &agent_id)?;
+        (name, 0u32, None::<String>)
+    } else {
+        let raw_state = load_state_raw(project_dir)?;
+        (
+            raw_state.as_ref().map(|s| s.phase_name.clone()),
+            raw_state.as_ref().map_or(0, |s| s.attempts),
+            raw_state.as_ref().and_then(|s| s.workflow.clone()),
+        )
+    };
+    let current_name = current_phase.as_deref();
+
+    // Validate the transition using shared logic.
+    let worker_id = crate::git::current_branch(project_dir).unwrap_or_default();
+    let project_dir_owned = project_dir.to_path_buf();
+    validate_transition(
+        workflow,
+        current_name,
+        target,
+        &worker_id,
+        &|wid, reviewers| {
+            crate::review::check_review_requirements(&project_dir_owned, wid, reviewers)
+        },
+    )?;
+
+    let is_forward = current_name.map_or(true, |c| !workflow.is_backward(c, target));
 
     // Attempt gating: only applies to forward transitions from an existing phase.
     if is_forward && required_attempts > 1 && current_name.is_some() {
@@ -665,5 +686,144 @@ mod tests {
         let contents = std::fs::read_to_string(clc_dir.join("state")).unwrap();
         assert!(contents.contains("untracked: true"));
         assert!(contents.contains("phase: implementing"));
+    }
+
+    // --- validate_transition unit tests ---
+
+    fn noop_review_checker(_: &str, _: &[String]) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn blocking_review_checker(_: &str, reviewers: &[String]) -> Result<(), Error> {
+        Err(Error::NonBlocking(format!(
+            "review required: {}",
+            reviewers.join(", ")
+        )))
+    }
+
+    #[test]
+    fn validate_transition_rejects_unknown_phase() {
+        let wf = Workflow::default_tdd();
+        let result = validate_transition(&wf, None, "nonexistent", "w", &noop_review_checker);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("unknown phase"));
+    }
+
+    #[test]
+    fn validate_transition_rejects_skip_forward() {
+        let wf = Workflow::default_tdd();
+        let result = validate_transition(
+            &wf, Some("tests-unwritten"), "implementing", "w", &noop_review_checker,
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not a valid transition"));
+    }
+
+    #[test]
+    fn validate_transition_allows_valid_forward() {
+        let wf = Workflow::default_tdd();
+        let result = validate_transition(
+            &wf, Some("tests-unwritten"), "tests-written", "w", &noop_review_checker,
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn validate_transition_allows_backward() {
+        let wf = Workflow::default_tdd();
+        let result = validate_transition(
+            &wf, Some("implementing"), "tests-unwritten", "w", &noop_review_checker,
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn validate_transition_rejects_same_phase() {
+        let wf = Workflow::default_tdd();
+        let result = validate_transition(
+            &wf, Some("implementing"), "implementing", "w", &noop_review_checker,
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("already at"));
+    }
+
+    #[test]
+    fn validate_transition_checks_review_gate() {
+        // Build a workflow with a review-gated transition.
+        use crate::config::{PhaseDef, TransitionDef, WorkflowDef};
+        let wf = Workflow::new(&WorkflowDef {
+            description: None,
+            phases: vec![
+                PhaseDef {
+                    name: "writing".into(),
+                    instructions: None,
+                    nudge: None,
+                    can_stop: false,
+                    permissions: None,
+                    transitions: Some(vec![TransitionDef::Rich {
+                        target: "done".into(),
+                        review: vec!["reviewer-a".into()],
+                    }]),
+                },
+                PhaseDef {
+                    name: "done".into(),
+                    instructions: None,
+                    nudge: None,
+                    can_stop: false,
+                    permissions: None,
+                    transitions: None,
+                },
+            ],
+        })
+        .unwrap();
+
+        // With blocking checker — should fail.
+        let result = validate_transition(
+            &wf, Some("writing"), "done", "w", &blocking_review_checker,
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("review required"));
+
+        // With noop checker — should pass.
+        let result = validate_transition(
+            &wf, Some("writing"), "done", "w", &noop_review_checker,
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn validate_transition_skips_review_for_backward() {
+        use crate::config::{PhaseDef, TransitionDef, WorkflowDef};
+        let wf = Workflow::new(&WorkflowDef {
+            description: None,
+            phases: vec![
+                PhaseDef {
+                    name: "writing".into(),
+                    instructions: None,
+                    nudge: None,
+                    can_stop: false,
+                    permissions: None,
+                    transitions: Some(vec![TransitionDef::Rich {
+                        target: "done".into(),
+                        review: vec!["reviewer-a".into()],
+                    }]),
+                },
+                PhaseDef {
+                    name: "done".into(),
+                    instructions: None,
+                    nudge: None,
+                    can_stop: false,
+                    permissions: None,
+                    transitions: Some(vec![TransitionDef::Simple("writing".into())]),
+                },
+            ],
+        })
+        .unwrap();
+
+        // Backward from done → writing should NOT check reviews.
+        let result = validate_transition(
+            &wf, Some("done"), "writing", "w", &blocking_review_checker,
+        );
+        assert!(result.is_ok(), "backward transition should skip review gate");
     }
 }
