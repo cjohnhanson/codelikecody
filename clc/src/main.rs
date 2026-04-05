@@ -300,7 +300,32 @@ fn cmd_status_set(target: &str) -> Result<(), Error> {
         }
     }
 
-    phase::set_with_workflow(&cwd, target, cfg.required_attempts, &wf)
+    // Try the transition. If blocked by a review gate, poll until approved.
+    match phase::set_with_workflow(&cwd, target, cfg.required_attempts, &wf) {
+        Ok(()) => Ok(()),
+        Err(e) if e.to_string().contains("review required") => {
+            eprintln!("{e}");
+            eprintln!("Waiting for review approval...");
+            // Poll every 15 seconds until the review gate opens.
+            for _ in 0..120 {
+                std::thread::sleep(std::time::Duration::from_secs(15));
+                match phase::set_with_workflow(&cwd, target, cfg.required_attempts, &wf) {
+                    Ok(()) => {
+                        eprintln!("Review approved — phase advanced to '{target}'");
+                        return Ok(());
+                    }
+                    Err(ref retry_err) if retry_err.to_string().contains("review required") => {
+                        continue;
+                    }
+                    Err(other) => return Err(other),
+                }
+            }
+            Err(Error::NonBlocking(format!(
+                "review gate timeout after 30 minutes for transition to '{target}'"
+            )))
+        }
+        Err(e) => Err(e),
+    }
 }
 
 fn cmd_up(dry_run: bool) -> Result<(), Error> {
