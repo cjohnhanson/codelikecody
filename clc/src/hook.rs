@@ -43,12 +43,8 @@ pub fn run() -> Result<i32, Error> {
     }
     let git_state = git::detect(cwd, &cfg.main_branch, &cfg.admin_branch);
 
-    // Load phase name (string, not enum) and resolve workflow.
-    let phase_name = if std::env::var("CLC_API_URL").is_ok() {
-        load_phase_name_from_api(git_state.as_ref())
-    } else {
-        phase::load_name(cwd).unwrap_or(None)
-    };
+    // Load phase name — routes through API when CLC_API_URL is set.
+    let phase_name = phase::load_name(cwd).unwrap_or(None);
 
     let workflow = resolve_workflow(cwd, &cfg);
 
@@ -645,34 +641,6 @@ fn resolve_workflow(cwd: &Path, cfg: &Config) -> Workflow {
     // If so, we can't resolve without issue labels, so fall back to default.
     Workflow::default_tdd()
 }
-
-/// Load phase name from the supervisor API (string, not enum).
-fn load_phase_name_from_api(git: Option<&git::GitState>) -> Option<String> {
-    let api_url = std::env::var("CLC_API_URL").ok()?;
-    let agent_id = git.map(|s| s.branch.as_str()).unwrap_or("unknown");
-
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .ok()?;
-
-    let result: Result<serde_json::Value, String> = rt.block_on(async {
-        let client = crate::coordination_client::build_api_client()
-            .map_err(|e| format!("{e}"))?;
-        let resp = client
-            .get(format!("{api_url}/agents/{agent_id}/phase"))
-            .send()
-            .await
-            .map_err(|e| format!("{e}"))?;
-        resp.json().await.map_err(|e| format!("{e}"))
-    });
-
-    match result {
-        Ok(resp) => resp["phase"].as_str().map(|s| s.to_string()),
-        Err(_) => None,
-    }
-}
-
 
 /// Check a tool use via the supervisor API.
 /// Returns Allow if granted, Block if denied (with escalation message).
