@@ -311,19 +311,21 @@ pub fn pending_review_types(
         return Ok(vec![]);
     }
 
-    // Check which ones have been resolved (have a ReviewResult).
+    // Check which ones have been approved (only Approved verdicts count).
     let worker_msgs = recv_messages(&coord, worker_id)?;
     let approved: Vec<String> = worker_msgs
         .iter()
         .filter_map(|m| match &m.kind {
-            clc_sdk::coordination::MessageKind::ReviewResult { review_type, .. } => {
-                Some(review_type.clone())
-            }
+            clc_sdk::coordination::MessageKind::ReviewResult {
+                review_type,
+                verdict: clc_sdk::coordination::ReviewVerdict::Approved,
+                ..
+            } => Some(review_type.clone()),
             _ => None,
         })
         .collect();
 
-    // Return types that are requested but not yet resolved.
+    // Return types that are requested but not yet approved.
     Ok(requested
         .into_iter()
         .filter(|rt| !approved.contains(rt))
