@@ -415,4 +415,128 @@ mod tests {
             "error should mention the missing reviewer"
         );
     }
+
+    #[test]
+    fn has_pending_review_true_when_unapproved() {
+        let dir = tempfile::tempdir().unwrap();
+        let clc_dir = dir.path().join(".clc");
+        std::fs::create_dir_all(&clc_dir).unwrap();
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let db = clc_sdk::coordination_db::DbBackend::connect(
+                &format!("sqlite://{}?mode=rwc", clc_dir.join("coordination.db").display()),
+            )
+            .await
+            .unwrap();
+            db.create_tables().await.unwrap();
+            db.register_agent("test-worker", None).await.unwrap();
+        });
+
+        // Build a workflow with a review-gated transition.
+        use crate::config::{PhaseDef, TransitionDef, WorkflowDef};
+        let wf = crate::workflow::Workflow::new(&WorkflowDef {
+            description: None,
+            phases: vec![
+                PhaseDef {
+                    name: "writing".into(),
+                    instructions: None,
+                    nudge: None,
+                    can_stop: false,
+                    permissions: None,
+                    transitions: Some(vec![TransitionDef::Rich {
+                        target: "done".into(),
+                        review: vec!["test-reviewer".into()],
+                    }]),
+                },
+                PhaseDef {
+                    name: "done".into(),
+                    instructions: None,
+                    nudge: None,
+                    can_stop: false,
+                    permissions: None,
+                    transitions: None,
+                },
+            ],
+        })
+        .unwrap();
+
+        // No approval yet — should be pending.
+        assert!(has_pending_review(dir.path(), "test-worker", &wf, "writing"));
+
+        // Non-review-gated phase — should not be pending.
+        assert!(!has_pending_review(dir.path(), "test-worker", &wf, "done"));
+    }
+
+    #[test]
+    fn has_pending_review_false_after_approval() {
+        let dir = tempfile::tempdir().unwrap();
+        let clc_dir = dir.path().join(".clc");
+        std::fs::create_dir_all(&clc_dir).unwrap();
+
+        let coord = Coordination::open(dir.path()).unwrap();
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let db = clc_sdk::coordination_db::DbBackend::connect(
+                &format!("sqlite://{}?mode=rwc", clc_dir.join("coordination.db").display()),
+            )
+            .await
+            .unwrap();
+            db.create_tables().await.unwrap();
+            db.register_agent("test-worker", None).await.unwrap();
+        });
+
+        use crate::config::{PhaseDef, TransitionDef, WorkflowDef};
+        let wf = crate::workflow::Workflow::new(&WorkflowDef {
+            description: None,
+            phases: vec![
+                PhaseDef {
+                    name: "writing".into(),
+                    instructions: None,
+                    nudge: None,
+                    can_stop: false,
+                    permissions: None,
+                    transitions: Some(vec![TransitionDef::Rich {
+                        target: "done".into(),
+                        review: vec!["test-reviewer".into()],
+                    }]),
+                },
+                PhaseDef {
+                    name: "done".into(),
+                    instructions: None,
+                    nudge: None,
+                    can_stop: false,
+                    permissions: None,
+                    transitions: None,
+                },
+            ],
+        })
+        .unwrap();
+
+        // Send approval.
+        coord
+            .send(clc_sdk::coordination::Message {
+                id: "rev-1".into(),
+                from: "test-reviewer".into(),
+                to: "test-worker".into(),
+                kind: clc_sdk::coordination::MessageKind::ReviewResult {
+                    request_id: "".into(),
+                    review_type: "test-reviewer".into(),
+                    verdict: clc_sdk::coordination::ReviewVerdict::Approved,
+                    comments: "lgtm".into(),
+                },
+                timestamp: std::time::SystemTime::now(),
+            })
+            .unwrap();
+
+        // After approval — should not be pending.
+        assert!(!has_pending_review(dir.path(), "test-worker", &wf, "writing"));
+    }
 }
