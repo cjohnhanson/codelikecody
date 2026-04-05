@@ -39,7 +39,12 @@ pub fn load_attempts(project_dir: &Path) -> Result<u32, Error> {
     Ok(state.map_or(0, |s| s.attempts))
 }
 
-fn load_workflow_name_from_api(api_url: &str, agent_id: &str) -> Result<Option<String>, Error> {
+/// Load the full phase state from the API in a single request.
+/// Returns (phase_name, attempts, workflow_name).
+fn load_phase_state_from_api(
+    api_url: &str,
+    agent_id: &str,
+) -> Result<Option<(String, u32, Option<String>)>, Error> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -47,70 +52,45 @@ fn load_workflow_name_from_api(api_url: &str, agent_id: &str) -> Result<Option<S
     let result: Result<serde_json::Value, Error> = rt.block_on(async {
         let client = crate::coordination_client::build_api_client()
             .map_err(|e| Error::NonBlocking(format!("{e}")))?;
-        client
+        let resp = client
             .get(format!("{api_url}/agents/{agent_id}/phase"))
             .send()
             .await
-            .map_err(|e| Error::NonBlocking(format!("{e}")))?
-            .json()
-            .await
-            .map_err(|e| Error::NonBlocking(format!("{e}")))
-    });
-    match result {
-        Ok(resp) => Ok(resp["workflow"].as_str().map(str::to_string)),
-        Err(_) => Ok(None),
-    }
-}
-
-fn load_attempts_from_api(api_url: &str, agent_id: &str) -> Result<u32, Error> {
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|e| Error::NonBlocking(format!("tokio: {e}")))?;
-    let result: Result<serde_json::Value, Error> = rt.block_on(async {
-        let client = crate::coordination_client::build_api_client()
             .map_err(|e| Error::NonBlocking(format!("{e}")))?;
-        client
-            .get(format!("{api_url}/agents/{agent_id}/phase"))
-            .send()
-            .await
-            .map_err(|e| Error::NonBlocking(format!("{e}")))?
-            .json()
+        if resp.status() == 404 {
+            return Ok(serde_json::json!(null));
+        }
+        resp.json()
             .await
             .map_err(|e| Error::NonBlocking(format!("{e}")))
     });
     match result {
-        Ok(resp) => Ok(resp["attempts"].as_u64().unwrap_or(0) as u32),
-        Err(_) => Ok(0),
-    }
-}
-
-fn load_phase_name_from_api(api_url: &str, agent_id: &str) -> Result<Option<String>, Error> {
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|e| Error::NonBlocking(format!("tokio: {e}")))?;
-
-    let result: Result<serde_json::Value, Error> = rt.block_on(async {
-        let client = crate::coordination_client::build_api_client()
-            .map_err(|e| Error::NonBlocking(format!("{e}")))?;
-        client
-            .get(format!("{api_url}/agents/{agent_id}/phase"))
-            .send()
-            .await
-            .map_err(|e| Error::NonBlocking(format!("{e}")))?
-            .json()
-            .await
-            .map_err(|e| Error::NonBlocking(format!("{e}")))
-    });
-
-    match result {
+        Ok(resp) if resp.is_null() => Ok(None),
         Ok(resp) => {
-            let name = resp["phase"].as_str().map(|s| s.to_string());
-            Ok(name)
+            let phase = resp["phase"].as_str().map(str::to_string);
+            let Some(phase) = phase else { return Ok(None) };
+            let attempts = resp["attempts"].as_u64().unwrap_or(0) as u32;
+            let workflow = resp["workflow"].as_str().map(str::to_string);
+            Ok(Some((phase, attempts, workflow)))
         }
         Err(_) => Ok(None),
     }
+}
+
+fn load_workflow_name_from_api(api_url: &str, agent_id: &str) -> Result<Option<String>, Error> {
+    Ok(load_phase_state_from_api(api_url, agent_id)?
+        .and_then(|(_, _, wf)| wf))
+}
+
+fn load_attempts_from_api(api_url: &str, agent_id: &str) -> Result<u32, Error> {
+    Ok(load_phase_state_from_api(api_url, agent_id)?
+        .map(|(_, a, _)| a)
+        .unwrap_or(0))
+}
+
+fn load_phase_name_from_api(api_url: &str, agent_id: &str) -> Result<Option<String>, Error> {
+    Ok(load_phase_state_from_api(api_url, agent_id)?
+        .map(|(p, _, _)| p))
 }
 
 /// Raw state from the `.clc/state` file.
