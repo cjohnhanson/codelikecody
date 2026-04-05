@@ -791,7 +791,7 @@ impl Supervisor {
             });
         }
 
-        // Advance workers with all reviews approved.
+        // Advance workers with all reviews approved, then resume them.
         for action in &advance_actions {
             eprintln!(
                 "supervisor: all reviews approved for '{}', advancing {} → {}",
@@ -802,6 +802,25 @@ impl Supervisor {
                 &action.next_phase,
                 action.workflow_name.as_deref(),
             );
+        }
+
+        // Resume workers that were advanced (they stopped at the review gate).
+        for action in &advance_actions {
+            if let Some(worker) = self.workers.iter_mut().find(|w| w.tisket_id == action.worker_id) {
+                if let Some(ref mut ws) = worker.workspace {
+                    let project = crate::ssh_workspace::REMOTE_PROJECT_DIR;
+                    let resume_msg = format!(
+                        "Review approved. Phase advanced to '{}'. Continue working.",
+                        action.next_phase
+                    );
+                    eprintln!("supervisor: resuming '{}' after review", action.worker_id);
+                    // Send resume message to the worker's stdin pipe.
+                    let _ = ws.exec(&format!(
+                        "cd {project} && echo '{}' > .clc/worker/stdin.pipe 2>/dev/null",
+                        resume_msg.replace('\'', "'\\''")
+                    ));
+                }
+            }
         }
 
         // Spawn reviewers for workers that need them.
