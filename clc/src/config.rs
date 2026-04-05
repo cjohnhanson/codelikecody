@@ -382,6 +382,12 @@ pub struct Config {
     /// Used by phase transitions to/from "green" and by `clc done`.
     #[serde(default)]
     pub test_command: Option<String>,
+
+    /// Additional bash command prefixes allowed on trunk. These are appended
+    /// to the built-in allowlist (git, cargo, clc, etc). Use for project-specific
+    /// tools that agents should be able to run on trunk.
+    #[serde(default)]
+    pub trunk_bash_allow: Vec<String>,
 }
 
 pub use almanac::SkillSource;
@@ -430,6 +436,7 @@ impl Default for Config {
             rules: Vec::new(),
             skills: Vec::new(),
             test_command: None,
+            trunk_bash_allow: Vec::new(),
         }
     }
 }
@@ -447,6 +454,7 @@ impl From<TomlFile> for Config {
             rules: toml.rules,
             skills: toml.skills,
             test_command: toml.test_command,
+            trunk_bash_allow: Vec::new(),
         }
     }
 }

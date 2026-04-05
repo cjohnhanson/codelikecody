@@ -103,7 +103,7 @@ pub fn run() -> Result<i32, Error> {
         {
             // Check local phase/permission guards first. Only escalate to the
             // supervisor API if the local guard doesn't explicitly allow it.
-            let local = guard::evaluate_with_workflow(&event, git_state.as_ref(), phase_name.as_deref(), &workflow, cwd);
+            let local = guard::evaluate_with_workflow(&event, git_state.as_ref(), phase_name.as_deref(), &workflow, cwd, &cfg.trunk_bash_allow);
             match local {
                 Response::Passthrough => {
                     // Local guard says passthrough — tool is allowed locally.
@@ -127,7 +127,7 @@ pub fn run() -> Result<i32, Error> {
             // Allow stopping when a permission escalation is pending —
             // the worker should not burn tokens waiting for coordinator.
             let guard_result = guard::evaluate_with_workflow(
-                &event, git_state.as_ref(), phase_name.as_deref(), &workflow, cwd,
+                &event, git_state.as_ref(), phase_name.as_deref(), &workflow, cwd, &cfg.trunk_bash_allow,
             );
             if matches!(guard_result, Response::Block { .. }) {
                 if has_pending_escalation(git_state.as_ref()) {
@@ -139,7 +139,7 @@ pub fn run() -> Result<i32, Error> {
                 guard_result
             }
         }
-        _ => guard::evaluate_with_workflow(&event, git_state.as_ref(), phase_name.as_deref(), &workflow, cwd),
+        _ => guard::evaluate_with_workflow(&event, git_state.as_ref(), phase_name.as_deref(), &workflow, cwd, &cfg.trunk_bash_allow),
     };
 
     let (output, exit_code) = adapter.format_response(&event, &response);

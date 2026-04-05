@@ -51,6 +51,7 @@ pub fn evaluate_with_workflow(
     phase_name: Option<&str>,
     workflow: &Workflow,
     cwd: &Path,
+    extra_bash_allow: &[String],
 ) -> Response {
     if std::env::var("CLC_GUARD_OFF").is_ok_and(|v| !v.is_empty()) {
         return Response::Passthrough;
@@ -59,7 +60,7 @@ pub fn evaluate_with_workflow(
         Event::PreToolUse {
             tool_name,
             tool_input,
-        } => check_tool_use_workflow(tool_name, tool_input, git, phase_name, workflow, cwd),
+        } => check_tool_use_workflow(tool_name, tool_input, git, phase_name, workflow, cwd, extra_bash_allow),
         Event::Stop => check_stop_workflow(git, phase_name, workflow),
         _ => Response::Passthrough,
     }
@@ -101,6 +102,7 @@ fn check_tool_use_workflow(
     phase_name: Option<&str>,
     workflow: &Workflow,
     cwd: &Path,
+    extra_bash_allow: &[String],
 ) -> Response {
     // Git-add validation runs on all branches, before any other checks.
     if tool_name == "Bash" {
@@ -122,7 +124,7 @@ fn check_tool_use_workflow(
         }
 
         if tool_name == "Bash" {
-            return check_bash_allowlist(tool_input);
+            return check_bash_allowlist(tool_input, extra_bash_allow);
         }
 
         return Response::Block {
@@ -315,7 +317,7 @@ fn find_glob_match(pattern: &str, value: &str) -> Option<usize> {
 }
 
 /// Check if a Bash command is on the trunk allowlist.
-fn check_bash_allowlist(tool_input: &Value) -> Response {
+fn check_bash_allowlist(tool_input: &Value, extra_allow: &[String]) -> Response {
     let command = tool_input
         .get("command")
         .and_then(Value::as_str)
@@ -324,6 +326,11 @@ fn check_bash_allowlist(tool_input: &Value) -> Response {
     let trimmed = command.trim_start();
 
     for prefix in BASH_ALLOWLIST {
+        if trimmed.starts_with(prefix) || trimmed == prefix.trim() {
+            return Response::Passthrough;
+        }
+    }
+    for prefix in extra_allow {
         if trimmed.starts_with(prefix) || trimmed == prefix.trim() {
             return Response::Passthrough;
         }
@@ -423,6 +430,7 @@ mod tests {
             Some("implementing"),
             &wf,
             test_cwd(),
+            &[],
         );
         assert!(matches!(resp, Response::Passthrough));
     }
@@ -439,6 +447,7 @@ mod tests {
             Some("tests-unwritten"),
             &wf,
             test_cwd(),
+            &[],
         );
         assert!(matches!(resp, Response::Passthrough));
     }
@@ -455,6 +464,7 @@ mod tests {
             Some("tests-unwritten"),
             &wf,
             test_cwd(),
+            &[],
         );
         assert!(matches!(resp, Response::Block { .. }));
     }
@@ -470,6 +480,7 @@ mod tests {
             None, // No phase — should fall back to tests-unwritten
             &wf,
             test_cwd(),
+            &[],
         );
         assert!(
             matches!(resp, Response::Block { .. }),
@@ -488,6 +499,7 @@ mod tests {
             Some("tests-unwritten"),
             &wf,
             test_cwd(),
+            &[],
         );
         assert!(matches!(resp, Response::Passthrough));
     }
@@ -503,6 +515,7 @@ mod tests {
             Some("tests-unwritten"),
             &wf,
             test_cwd(),
+            &[],
         );
         assert!(matches!(resp, Response::Passthrough));
     }
@@ -518,6 +531,7 @@ mod tests {
             None,
             &wf,
             test_cwd(),
+            &[],
         );
         assert!(matches!(resp, Response::Passthrough));
     }
