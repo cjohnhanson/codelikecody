@@ -611,8 +611,15 @@ async fn tool_check(
         })));
     }
 
-    // Not granted — escalate to coordinator.
-    let coordinator_id = "coordinator".to_string(); // TODO: look up agent's parent_id
+    // Not granted — escalate to the agent's parent (coordinator).
+    // The agent's parent_id is set at registration time by the coordinator.
+    let coordinator_id = state
+        .db
+        .get_parent_id(&id)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "coordinator".to_string());
 
     let reason = req["reason"]
         .as_str()

@@ -343,7 +343,10 @@ impl Supervisor {
         use clc_sdk::workspace::{WorkspaceConfig, Workspace};
         use clc_sdk::agent::AgentConfig;
 
-        let image = scope.image.as_deref().unwrap_or("clc-worker:latest");
+        let Some(image) = scope.image.as_deref() else {
+            eprintln!("supervisor: coordinator '{}' has no image configured", scope.id);
+            return;
+        };
         let tunnel_port = 19200 + idx as u16;
 
         // Build the coordinator-run command that will execute inside the container.
@@ -883,7 +886,7 @@ impl Supervisor {
 
             // Verify the worker has meaningful commits (not just pickup + finalize).
             let commit_check = ws.exec(
-                &format!("cd /project && git log --oneline main..HEAD --no-merges | grep -cv 'clc: pickup\\|clc: finalize'"),
+                &format!("cd /project && git log --oneline {}..HEAD --no-merges | grep -cv 'clc: pickup\\|clc: finalize'", self.main_branch),
             );
             let meaningful_commits = commit_check
                 .ok()
