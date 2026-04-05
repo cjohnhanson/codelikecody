@@ -259,6 +259,11 @@ pub struct SupervisorConfig {
 
     #[serde(default)]
     pub coordinators: Vec<CoordinatorScope>,
+
+    /// Workflow name → reviewer agent names. The supervisor spawns these
+    /// agents when a worker reaches a review gate.
+    #[serde(default)]
+    pub workflow_agents: std::collections::HashMap<String, Vec<String>>,
 }
 
 const fn default_poll_interval() -> u64 {

@@ -172,6 +172,19 @@ impl Coordination {
         }
     }
 
+    pub fn get_phase(
+        &self,
+        agent_id: &str,
+    ) -> Result<Option<(String, i32, Option<String>)>, CoordinationError> {
+        match &self.inner {
+            Backend::Db { backend, rt } => rt.block_on(backend.get_phase(agent_id)),
+            Backend::Api(_) => {
+                // Supervisor always uses DB backend directly.
+                Err(CoordinationError::Storage("get_phase not available via API".into()))
+            }
+        }
+    }
+
     pub fn grant_permission(
         &self,
         agent_id: &str,

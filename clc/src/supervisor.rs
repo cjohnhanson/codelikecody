@@ -42,6 +42,8 @@ pub struct Supervisor {
     workers: Vec<WorkerState>,
     poll_interval: Duration,
     shutdown: Arc<AtomicBool>,
+    /// Workflow name → reviewer agent names from topology config.
+    workflow_agents: std::collections::HashMap<String, Vec<String>>,
 }
 
 impl Supervisor {
@@ -71,6 +73,7 @@ impl Supervisor {
             workers: Vec::new(),
             poll_interval: Duration::from_secs(config.poll_interval),
             shutdown: Arc::new(AtomicBool::new(false)),
+            workflow_agents: config.workflow_agents.clone(),
         }
     }
 
@@ -241,6 +244,9 @@ impl Supervisor {
             // which registers the agent as Pending. The supervisor picks up
             // pending workers here and starts Docker workspaces for them.
             self.start_pending_workers(&coord);
+
+            // Spawn reviewer agents for workers at review-requested phase.
+            self.handle_reviews(&coord);
 
             // Land completed workers. Fetch the git pack from the worker's
             // container, import into the host repo, and attempt ff-merge.
@@ -649,6 +655,155 @@ impl Supervisor {
             Err(e) => {
                 eprintln!("supervisor: docker start failed for worker '{tisket_id}': {e}");
                 let _ = coord.set_status(tisket_id, clc_sdk::coordination::AgentStatus::Failed);
+            }
+        }
+    }
+
+    /// Spawn reviewer agents for workers that have reached review-requested phase.
+    ///
+    /// For each running worker at `review-requested`:
+    /// 1. Look up the workflow's reviewer agent names
+    /// 2. Resolve each reviewer from `.clc/reviewers/<name>.md`
+    /// 3. Spawn reviewer agents in the worker's SSH workspace
+    /// 4. Reviewers examine the code and render verdicts via `clc review`
+    fn handle_reviews(&mut self, coord: &Coordination) {
+        // Phase 1: collect which workers need reviews spawned.
+        struct ReviewAction {
+            worker_idx: usize,
+            worker_id: String,
+            agent_names: Vec<String>,
+        }
+        let mut actions = Vec::new();
+
+        for (idx, worker) in self.workers.iter().enumerate() {
+            let status = coord
+                .list_agents(None)
+                .unwrap_or_default()
+                .into_iter()
+                .find(|(id, _)| *id == worker.tisket_id)
+                .map(|(_, s)| s);
+
+            if !matches!(status, Some(clc_sdk::coordination::AgentStatus::Running)) {
+                continue;
+            }
+
+            let phase_info = coord.get_phase(&worker.tisket_id).ok().flatten();
+            let Some((ref phase, _, ref workflow_name)) = phase_info else {
+                continue;
+            };
+            if phase != "review-requested" {
+                continue;
+            }
+
+            let agent_names = workflow_name
+                .as_deref()
+                .and_then(|wf| self.workflow_agents.get(wf))
+                .cloned()
+                .unwrap_or_default();
+
+            if agent_names.is_empty() {
+                continue;
+            }
+
+            // Skip if reviewers already running.
+            let has_active_reviewers = coord
+                .list_agents(Some(&worker.tisket_id))
+                .unwrap_or_default()
+                .iter()
+                .any(|(_, s)| matches!(s,
+                    clc_sdk::coordination::AgentStatus::Running
+                    | clc_sdk::coordination::AgentStatus::Pending
+                ));
+            if has_active_reviewers {
+                continue;
+            }
+
+            // Check if already fully approved.
+            let all_approved = agent_names.iter().all(|name| {
+                crate::review::check_review_requirements(
+                    &self.project_dir,
+                    &worker.tisket_id,
+                    &[name.clone()],
+                )
+                .is_ok()
+            });
+            if all_approved {
+                eprintln!(
+                    "supervisor: all reviews approved for '{}', advancing",
+                    worker.tisket_id
+                );
+                continue;
+            }
+
+            actions.push(ReviewAction {
+                worker_idx: idx,
+                worker_id: worker.tisket_id.clone(),
+                agent_names,
+            });
+        }
+
+        // Phase 2: spawn reviewers (needs &mut access to worker workspaces).
+        for action in actions {
+            let Some(ref mut ws) = self.workers[action.worker_idx].workspace else {
+                continue;
+            };
+
+            eprintln!(
+                "supervisor: spawning {} reviewer(s) for '{}'",
+                action.agent_names.len(),
+                action.worker_id
+            );
+
+            for agent_name in &action.agent_names {
+                let reviewer = match crate::reviewer::resolve(&self.project_dir, agent_name) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        eprintln!("supervisor: reviewer '{agent_name}' not found: {e}");
+                        continue;
+                    }
+                };
+
+                let review_prompt = format!(
+                    "You are reviewer '{}' performing a review of worker '{}'.\n\n\
+                     {}\n\n\
+                     Examine the code changes on this branch. When done:\n\
+                     - `clc review approve \"comments\"` to approve\n\
+                     - `clc review request-changes \"what needs to change\"` to request changes\n\n\
+                     You must render exactly one verdict before stopping.",
+                    agent_name, action.worker_id, reviewer.prompt
+                );
+
+                let reviewer_id = format!("{}-reviewer-{agent_name}", action.worker_id);
+                let _ = coord.register_agent(&reviewer_id, Some(&action.worker_id));
+                let _ = coord.set_status(&reviewer_id, clc_sdk::coordination::AgentStatus::Running);
+
+                let model = reviewer.spec.model.as_deref().unwrap_or("sonnet");
+                let escaped_prompt = review_prompt.replace('\'', "'\\''");
+                let reviewer_cmd = format!(
+                    "cd /project && export CLC_REVIEW_TYPE='{agent_name}' && \
+                     export CLC_REVIEWER_ID='{reviewer_id}' && \
+                     nohup claude --model {model} --print '{escaped_prompt}' \
+                     > /tmp/reviewer-{agent_name}.log 2>&1 &"
+                );
+
+                match ws.exec(&reviewer_cmd) {
+                    Ok(_) => {
+                        eprintln!(
+                            "supervisor: spawned reviewer '{agent_name}' for '{}'",
+                            action.worker_id
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "supervisor: reviewer '{agent_name}' failed for '{}': {e}",
+                            action.worker_id
+                        );
+                        let _ = coord.set_status(
+                            &reviewer_id,
+                            clc_sdk::coordination::AgentStatus::Failed,
+                        );
+                    }
+                }
             }
         }
     }

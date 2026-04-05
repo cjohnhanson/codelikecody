@@ -225,9 +225,16 @@ impl TopologyConfig {
             });
         }
 
+        let workflow_agents = self
+            .workflows
+            .iter()
+            .map(|(name, spec)| (name.clone(), spec.agents.clone()))
+            .collect();
+
         config::SupervisorConfig {
             poll_interval: self.supervisor.poll_interval,
             coordinators,
+            workflow_agents,
         }
     }
 }

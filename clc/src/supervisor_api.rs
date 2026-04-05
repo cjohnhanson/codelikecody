@@ -482,7 +482,9 @@ async fn pickable_tiskets(
     State(state): State<Arc<ApiState>>,
     Query(query): Query<PickableQuery>,
 ) -> Result<Json<Vec<String>>, StatusCode> {
-    // Already-dispatched agents for this coordinator.
+    // Currently-active agents for this coordinator. Only Running/Pending
+    // agents are excluded — Stopped/Completed/Failed agents from prior runs
+    // must be eligible for re-dispatch.
     let dispatched: Vec<String> = if let Some(ref cid) = query.coordinator_id {
         state
             .db
@@ -490,6 +492,10 @@ async fn pickable_tiskets(
             .await
             .unwrap_or_default()
             .into_iter()
+            .filter(|(_, s)| matches!(s,
+                clc_sdk::coordination::AgentStatus::Running
+                | clc_sdk::coordination::AgentStatus::Pending
+            ))
             .map(|(id, _)| id)
             .collect()
     } else {
