@@ -401,25 +401,12 @@ fn tick(
             // Check for pending review requests before resuming.
             match crate::review::pending_review_types(project_dir, id) {
                 Ok(pending_reviews) if !pending_reviews.is_empty() => {
-                    // Spawn reviewers for each pending review type.
-                    let cfg = crate::config::load(project_dir).unwrap_or_default();
-                    let workflow = {
-                        let worktree_dir = project_dir.join(".worktrees").join(id);
-                        let wf_name =
-                            crate::phase::load_workflow_name(&worktree_dir).unwrap_or(None);
-                        wf_name
-                            .as_ref()
-                            .and_then(|name| cfg.workflows.get(name))
-                            .and_then(|def| crate::workflow::Workflow::new(def).ok())
-                            .unwrap_or_else(crate::workflow::Workflow::default_tdd)
-                    };
-
                     for review_type in &pending_reviews {
                         eprintln!(
                             "coordinator '{}': spawning '{review_type}' reviewer for '{id}'",
                             scope.id
                         );
-                        match crate::review::spawn_reviewer(project_dir, id, review_type, &workflow)
+                        match crate::review::spawn_reviewer(project_dir, id, review_type)
                         {
                             Ok(pid) => eprintln!(
                                 "coordinator '{}': reviewer pid {pid} for '{id}'",

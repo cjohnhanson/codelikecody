@@ -70,9 +70,28 @@ pub enum TransitionDef {
     Simple(String),
     Rich {
         target: String,
-        #[serde(default)]
-        requires: Vec<String>,
+        /// Reviewer agent names that must approve before this transition.
+        /// Each name resolves to `.clc/reviewers/<name>.md`.
+        #[serde(default, deserialize_with = "deserialize_review_field")]
+        review: Vec<String>,
     },
+}
+
+/// Accept `review:` as either a single string or a list of strings.
+fn deserialize_review_field<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(String),
+        Many(Vec<String>),
+    }
+    match OneOrMany::deserialize(deserializer)? {
+        OneOrMany::One(s) => Ok(vec![s]),
+        OneOrMany::Many(v) => Ok(v),
+    }
 }
 
 impl TransitionDef {
@@ -84,11 +103,11 @@ impl TransitionDef {
         }
     }
 
-    /// Review types required for this transition, if any.
-    pub fn requires(&self) -> &[String] {
+    /// Reviewer agent names required for this transition.
+    pub fn reviewers(&self) -> &[String] {
         match self {
             Self::Simple(_) => &[],
-            Self::Rich { requires, .. } => requires,
+            Self::Rich { review, .. } => review,
         }
     }
 }
@@ -134,16 +153,9 @@ impl From<PhaseDefOrString> for PhaseDef {
     }
 }
 
-/// A review type definition.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-pub struct ReviewDef {
-    #[serde(default)]
-    pub instructions: Option<String>,
-    #[serde(default)]
-    pub permissions: Option<PermissionsDef>,
-}
-
-/// A named workflow: description, phase graph, and review types.
+/// A named workflow: description and phase graph. Review gates live on
+/// transitions — each transition's `review` field names the reviewer agents
+/// that must approve before the transition is allowed.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct WorkflowDef {
     #[serde(default)]
@@ -151,9 +163,6 @@ pub struct WorkflowDef {
 
     #[serde(default, deserialize_with = "deserialize_phases")]
     pub phases: Vec<PhaseDef>,
-
-    #[serde(default)]
-    pub reviews: HashMap<String, ReviewDef>,
 }
 
 fn deserialize_phases<'de, D>(deserializer: D) -> Result<Vec<PhaseDef>, D::Error>
@@ -277,11 +286,6 @@ pub struct SupervisorConfig {
     #[serde(default)]
     pub workflows: std::collections::HashMap<String, WorkflowDef>,
 
-    /// Workflow name → reviewer agent names. Separate from the phase graph
-    /// because agent names resolve to `.clc/reviewers/<name>.md` files which
-    /// are a runtime concern, not a workflow definition concern.
-    #[serde(default)]
-    pub workflow_agents: std::collections::HashMap<String, Vec<String>>,
 }
 
 const fn default_poll_interval() -> u64 {
@@ -897,14 +901,8 @@ workflows:
         transitions:
           - implementing
           - target: done
-            requires: [code]
+            review: [code]
       - name: done
-    reviews:
-      code:
-        instructions: "Review for correctness."
-        permissions:
-          allow: ["Bash(cargo test *)"]
-          deny: ["Edit", "Write", "Bash"]
 "#;
         let config: Config = serde_yml::from_str(yaml).unwrap();
         let wf = &config.workflows["tdd"];
@@ -924,14 +922,14 @@ workflows:
         let t = wf.phases[0].transitions.as_ref().unwrap();
         assert_eq!(t.len(), 1);
         assert_eq!(t[0].target(), "tests-written");
-        assert!(t[0].requires().is_empty());
+        assert!(t[0].reviewers().is_empty());
 
-        // Rich transition with requires
+        // Rich transition with review agents
         let green_t = wf.phases[3].transitions.as_ref().unwrap();
         assert_eq!(green_t.len(), 2);
         assert_eq!(green_t[0].target(), "implementing");
         assert_eq!(green_t[1].target(), "done");
-        assert_eq!(green_t[1].requires(), &["code".to_string()]);
+        assert_eq!(green_t[1].reviewers(), &["code".to_string()]);
 
         // Terminal phase (no transitions)
         assert!(wf.phases[4].transitions.is_none());
@@ -942,12 +940,6 @@ workflows:
 
         // nudge
         assert_eq!(wf.phases[2].nudge.as_deref(), Some("Run tests."));
-
-        // Reviews
-        let review = &wf.reviews["code"];
-        assert_eq!(review.instructions.as_deref(), Some("Review for correctness."));
-        let rperms = review.permissions.as_ref().unwrap();
-        assert_eq!(rperms.allow, vec!["Bash(cargo test *)"]);
     }
 
     #[test]
@@ -973,7 +965,6 @@ phases = ["tests-unwritten", "tests-written", "red", "implementing", "green"]
         let config: Config = serde_yml::from_str(yaml).unwrap();
         let wf = &config.workflows["empty"];
         assert!(wf.phases.is_empty());
-        assert!(wf.reviews.is_empty());
         assert!(wf.description.is_none());
     }
 
@@ -1009,14 +1000,14 @@ rules:
     fn transition_def_target_and_requires() {
         let simple = TransitionDef::Simple("foo".into());
         assert_eq!(simple.target(), "foo");
-        assert!(simple.requires().is_empty());
+        assert!(simple.reviewers().is_empty());
 
         let rich = TransitionDef::Rich {
             target: "bar".into(),
-            requires: vec!["code".into(), "security".into()],
+            review: vec!["code-review".into(), "security-review".into()],
         };
         assert_eq!(rich.target(), "bar");
-        assert_eq!(rich.requires().len(), 2);
+        assert_eq!(rich.reviewers().len(), 2);
     }
 
     // --- Skills config tests ---

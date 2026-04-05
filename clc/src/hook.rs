@@ -73,7 +73,6 @@ pub fn run() -> Result<i32, Error> {
                     cwd,
                     git_state.as_ref(),
                     review_type.as_deref().unwrap_or(""),
-                    &workflow,
                     &cfg,
                 )
             } else {
@@ -443,7 +442,6 @@ fn assemble_reviewer_prime(
     cwd: &Path,
     git: Option<&git::GitState>,
     review_type: &str,
-    workflow: &Workflow,
     _cfg: &Config,
 ) -> String {
     use std::fmt::Write;
@@ -463,11 +461,11 @@ fn assemble_reviewer_prime(
     }
     let _ = writeln!(out, "Review type: `{review_type}`\n");
 
-    // Review instructions from workflow config
-    if let Some(review_def) = workflow.review_def(review_type) {
-        if let Some(instructions) = &review_def.instructions {
+    // Review instructions from .clc/reviewers/<name>.md
+    if let Ok(reviewer) = crate::reviewer::resolve(cwd, review_type) {
+        if !reviewer.prompt.is_empty() {
             out.push_str("## Review instructions\n\n");
-            out.push_str(instructions);
+            out.push_str(&reviewer.prompt);
             out.push_str("\n\n");
         }
     }

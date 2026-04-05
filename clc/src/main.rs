@@ -321,14 +321,14 @@ fn cmd_up(dry_run: bool) -> Result<(), Error> {
     }
 
     // Validate workflow agents resolve to .clc/reviewers/ files.
-    if let Some(ref topo) = topology::load(&project_dir)? {
-        for c in &sup_config.coordinators {
-            if let Some(ref wf_name) = c.workflow {
-                if let Some(wf) = topo.workflows.get(wf_name) {
-                    for agent_name in &wf.agents {
-                        reviewer::resolve(&project_dir, agent_name)?;
-                    }
-                }
+    // Validate that reviewer agent files exist for all review-gated transitions.
+    for (wf_name, wf_def) in &sup_config.workflows {
+        let wf = crate::workflow::Workflow::new(wf_def).map_err(|e| {
+            Error::NonBlocking(format!("workflow '{wf_name}': {e}"))
+        })?;
+        for phase_name in wf.phase_names() {
+            for agent_name in wf.reviewers_from(phase_name) {
+                reviewer::resolve(&project_dir, &agent_name)?;
             }
         }
     }

@@ -7,28 +7,213 @@ workspaces:
 
 workflows:
   tdd:
-    agents:
-      - scope-check
-      - code-review
-      - test-review
+    description: "Test-driven development with full review gates."
+    phases:
+      - name: tests-unwritten
+        instructions: "Write failing tests that specify the desired behavior."
+        permissions:
+          allow: ["Edit(tests/**)", "Write(tests/**)", "Edit(**.rs)", "Write(**.rs)"]
+          deny: ["Edit", "Write", "NotebookEdit"]
+        transitions:
+          - target: tests-written
+            review: test-review
+
+      - name: tests-written
+        instructions: "Verify tests fail for the right reasons."
+        permissions:
+          allow: ["Edit(tests/**)", "Write(tests/**)", "Edit(**.rs)", "Write(**.rs)"]
+          deny: ["Edit", "Write", "NotebookEdit"]
+        transitions:
+          - red
+          - tests-unwritten
+
+      - name: red
+        instructions: "Tests are red. Confirm failures match expectations."
+        permissions:
+          allow: ["Edit(tests/**)", "Write(tests/**)", "Edit(**.rs)", "Write(**.rs)"]
+          deny: ["Edit", "Write", "NotebookEdit"]
+        transitions:
+          - implementing
+          - tests-unwritten
+
+      - name: implementing
+        instructions: "Write the minimum code to make failing tests pass."
+        transitions:
+          - green
+          - red
+
+      - name: green
+        instructions: "Tests pass. Refactor if needed."
+        permissions:
+          allow: ["Edit(tests/**)", "Write(tests/**)", "Edit(**.rs)", "Write(**.rs)"]
+          deny: ["Edit", "Write", "NotebookEdit"]
+        transitions:
+          - implementing
+          - target: review-requested
+            review: [scope-check, code-review, test-review]
+
+      - name: review-requested
+        instructions: "Review has been requested."
+        can_stop: true
+        transitions:
+          - in-review
+
+      - in-review
+
+      - name: reviewed
+        can_stop: true
+        transitions:
+          - done
+          - implementing
+
+      - done
+
   tdd-light:
-    agents:
-      - scope-check
+    description: "TDD with scope check only."
+    phases:
+      - name: tests-unwritten
+        instructions: "Write failing tests."
+        permissions:
+          allow: ["Edit(tests/**)", "Write(tests/**)", "Edit(**.rs)", "Write(**.rs)"]
+          deny: ["Edit", "Write", "NotebookEdit"]
+        transitions:
+          - tests-written
+
+      - name: tests-written
+        permissions:
+          allow: ["Edit(tests/**)", "Write(tests/**)", "Edit(**.rs)", "Write(**.rs)"]
+          deny: ["Edit", "Write", "NotebookEdit"]
+        transitions:
+          - red
+          - tests-unwritten
+
+      - name: red
+        transitions:
+          - implementing
+          - tests-unwritten
+
+      - name: implementing
+        transitions:
+          - green
+          - red
+
+      - name: green
+        permissions:
+          allow: ["Edit(tests/**)", "Write(tests/**)", "Edit(**.rs)", "Write(**.rs)"]
+          deny: ["Edit", "Write", "NotebookEdit"]
+        transitions:
+          - implementing
+          - target: review-requested
+            review: scope-check
+
+      - name: review-requested
+        can_stop: true
+        transitions:
+          - in-review
+
+      - in-review
+      - reviewed
+      - done
+
   tdd-secure:
-    agents:
-      - scope-check
-      - code-review
-      - test-review
-      - security-review
+    description: "TDD with security review."
+    phases:
+      - name: tests-unwritten
+        instructions: "Write failing tests."
+        permissions:
+          allow: ["Edit(tests/**)", "Write(tests/**)", "Edit(**.rs)", "Write(**.rs)"]
+          deny: ["Edit", "Write", "NotebookEdit"]
+        transitions:
+          - target: tests-written
+            review: test-review
+
+      - name: tests-written
+        permissions:
+          allow: ["Edit(tests/**)", "Write(tests/**)", "Edit(**.rs)", "Write(**.rs)"]
+          deny: ["Edit", "Write", "NotebookEdit"]
+        transitions:
+          - red
+          - tests-unwritten
+
+      - name: red
+        transitions:
+          - implementing
+          - tests-unwritten
+
+      - name: implementing
+        transitions:
+          - green
+          - red
+
+      - name: green
+        permissions:
+          allow: ["Edit(tests/**)", "Write(tests/**)", "Edit(**.rs)", "Write(**.rs)"]
+          deny: ["Edit", "Write", "NotebookEdit"]
+        transitions:
+          - implementing
+          - target: review-requested
+            review: [scope-check, code-review, test-review, security-review]
+
+      - name: review-requested
+        can_stop: true
+        transitions:
+          - in-review
+
+      - in-review
+      - reviewed
+      - done
+
   docs:
-    agents:
-      - scope-check
-      - docs-review
+    description: "Documentation workflow."
+    phases:
+      - name: outline
+        instructions: "Establish structure."
+        permissions:
+          allow: ["Edit(docs/**)", "Write(docs/**)"]
+          deny: ["Edit", "Write"]
+        transitions:
+          - draft
+
+      - name: draft
+        instructions: "Write sections."
+        transitions:
+          - outline
+          - target: review-requested
+            review: [scope-check, docs-review]
+
+      - name: review-requested
+        can_stop: true
+        transitions:
+          - in-review
+
+      - in-review
+      - reviewed
+      - done
+
   frontend:
-    agents:
-      - scope-check
-      - code-review
-      - design-review
+    description: "Frontend development with design review."
+    phases:
+      - name: tests-unwritten
+        instructions: "Write component tests."
+        transitions:
+          - tests-written
+
+      - tests-written
+
+      - name: implementing
+        instructions: "Build the component."
+        transitions:
+          - target: review-requested
+            review: [scope-check, code-review, design-review]
+
+      - name: review-requested
+        can_stop: true
+        transitions:
+          - in-review
+
+      - in-review
+      - reviewed
+      - done
 
 coordinators:
   auto:

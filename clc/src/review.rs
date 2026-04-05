@@ -194,7 +194,6 @@ pub fn spawn_reviewer(
     project_dir: &Path,
     worker_id: &str,
     review_type: &str,
-    workflow: &crate::workflow::Workflow,
 ) -> Result<u32, Error> {
     let worktree_dir = project_dir.join(".worktrees").join(worker_id);
     if !worktree_dir.is_dir() {
@@ -205,10 +204,11 @@ pub fn spawn_reviewer(
 
     let reviewer_id = format!("{worker_id}-reviewer-{review_type}");
 
-    // Build the review prompt.
-    let review_def = workflow.review_def(review_type);
-    let instructions = review_def
-        .and_then(|r| r.instructions.as_deref())
+    // Build the review prompt from .clc/reviewers/<name>.md.
+    let reviewer = crate::reviewer::resolve(project_dir, review_type).ok();
+    let instructions = reviewer
+        .as_ref()
+        .map(|r| r.prompt.as_str())
         .unwrap_or("Review the work in this worktree and render a verdict.");
 
     let prompt = format!(
@@ -251,21 +251,20 @@ pub fn spawn_reviewer(
 
     // Seed reviewer permissions into the worktree's settings.
     // The reviewer needs read-only tools plus verdict commands.
-    let mut allow = vec![
+    let allow = vec![
         "Bash(clc review *)".to_string(),
         "Read".to_string(),
         "Glob".to_string(),
         "Grep".to_string(),
     ];
-    let mut deny = vec![
+    let deny = vec![
         "Edit".to_string(),
         "Write".to_string(),
         "NotebookEdit".to_string(),
     ];
-    if let Some(ref perms) = review_def.and_then(|r| r.permissions.as_ref()) {
-        allow.extend(perms.allow.iter().cloned());
-        deny.extend(perms.deny.iter().cloned());
-    }
+    // Reviewer permissions are the default read-only set above.
+    // Additional permissions could come from the reviewer's AgentSpec
+    // in .clc/reviewers/<name>.md in the future.
     crate::permissions::seed_defaults(&worktree_dir, &allow, &deny)?;
 
     // Spawn in a reviewer-specific state directory (not the worker's).

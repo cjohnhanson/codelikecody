@@ -42,8 +42,6 @@ pub struct Supervisor {
     workers: Vec<WorkerState>,
     poll_interval: Duration,
     shutdown: Arc<AtomicBool>,
-    /// Workflow name → reviewer agent names from topology config.
-    workflow_agents: std::collections::HashMap<String, Vec<String>>,
     /// Workflow name → full definition (phase graph + reviews).
     workflow_defs: std::collections::HashMap<String, crate::config::WorkflowDef>,
 }
@@ -75,7 +73,6 @@ impl Supervisor {
             workers: Vec::new(),
             poll_interval: Duration::from_secs(config.poll_interval),
             shutdown: Arc::new(AtomicBool::new(false)),
-            workflow_agents: config.workflow_agents.clone(),
             workflow_defs: config.workflows.clone(),
         }
     }
@@ -715,12 +712,8 @@ impl Supervisor {
                 continue;
             }
 
-            // Get the agent names for this workflow's reviewers.
-            let agent_names = workflow_name
-                .as_deref()
-                .and_then(|wf_name| self.workflow_agents.get(wf_name))
-                .cloned()
-                .unwrap_or_default();
+            // Get reviewer agent names from the transition's review field.
+            let agent_names = wf.reviewers_from(phase);
 
             if agent_names.is_empty() {
                 continue;
@@ -754,11 +747,11 @@ impl Supervisor {
                 // Find the transition whose review gate is now satisfied.
                 if let Some(phase_def) = wf.phase_def(phase) {
                     if let Some(transitions) = &phase_def.transitions {
-                        // Pick the transition that has `requires` (the review-gated one).
-                        // If no transition has requires, fall back to the first.
+                        // Pick the review-gated transition.
+                        // If none has reviewers, fall back to the first.
                         let target = transitions
                             .iter()
-                            .find(|t| !t.requires().is_empty())
+                            .find(|t| !t.reviewers().is_empty())
                             .or_else(|| transitions.first())
                             .map(|t| t.target().to_string());
                         if let Some(target) = target {

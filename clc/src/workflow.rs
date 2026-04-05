@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::config::{PhaseDef, PermissionsDef, ReviewDef, TransitionDef, WorkflowDef};
+use crate::config::{PhaseDef, PermissionsDef, TransitionDef, WorkflowDef};
 use crate::error::Error;
 
 /// A validated workflow graph. Constructed from a `WorkflowDef`, with all
@@ -13,9 +13,6 @@ pub struct Workflow {
     phases: Vec<PhaseDef>,
     /// Phase name → index in `phases` for O(1) lookup.
     index: HashMap<String, usize>,
-    /// Review type definitions (consumed by review gate runtime, not yet implemented).
-    #[allow(dead_code)]
-    reviews: HashMap<String, ReviewDef>,
 }
 
 impl Workflow {
@@ -24,7 +21,6 @@ impl Workflow {
     /// Returns an error if:
     /// - The workflow has no phases
     /// - A transition references a nonexistent phase
-    /// - A transition `requires` references a nonexistent review type
     /// - Duplicate phase names exist
     pub fn new(def: &WorkflowDef) -> Result<Self, Error> {
         if def.phases.is_empty() {
@@ -54,15 +50,6 @@ impl Workflow {
                             t.target()
                         )));
                     }
-                    for req in t.requires() {
-                        if !def.reviews.contains_key(req) {
-                            return Err(Error::NonBlocking(format!(
-                                "phase '{}' transition to '{}' requires unknown review type '{req}'",
-                                phase.name,
-                                t.target()
-                            )));
-                        }
-                    }
                 }
             }
         }
@@ -71,7 +58,6 @@ impl Workflow {
             description: def.description.clone(),
             phases: def.phases.clone(),
             index,
-            reviews: def.reviews.clone(),
         })
     }
 
@@ -158,10 +144,7 @@ impl Workflow {
                     nudge: None,
                     can_stop: true,
                     permissions: test_only.clone(),
-                    transitions: Some(vec![TransitionDef::Rich {
-                        target: "in-review".into(),
-                        requires: vec!["review".into()],
-                    }]),
+                    transitions: Some(vec![TransitionDef::Simple("in-review".into())]),
                 },
                 PhaseDef {
                     name: "in-review".into(),
@@ -191,17 +174,6 @@ impl Workflow {
                     transitions: None, // terminal
                 },
             ],
-            reviews: HashMap::from([(
-                "review".into(),
-                ReviewDef {
-                    instructions: Some(
-                        "Review the code changes for correctness, test quality, \
-                         and adherence to project standards."
-                            .into(),
-                    ),
-                    permissions: None,
-                },
-            )]),
         };
 
         // The default TDD workflow is known-valid; unwrap is safe.
@@ -271,20 +243,15 @@ impl Workflow {
         self.phase_def(phase).and_then(|p| p.nudge.as_deref())
     }
 
-    /// Review types required for a specific transition.
-    pub fn transition_requires(&self, from: &str, to: &str) -> Option<&[String]> {
+    /// Reviewer agent names required for a specific transition.
+    pub fn transition_reviewers(&self, from: &str, to: &str) -> Option<&[String]> {
         let phase = self.phase_def(from)?;
         let transitions = phase.transitions.as_ref()?;
         transitions
             .iter()
             .find(|t| t.target() == to)
-            .map(|t| t.requires())
+            .map(|t| t.reviewers())
             .filter(|r| !r.is_empty())
-    }
-
-    /// Get a review definition by type name.
-    pub fn review_def(&self, review_type: &str) -> Option<&ReviewDef> {
-        self.reviews.get(review_type)
     }
 
     /// Whether a phase name exists in this workflow.
@@ -293,14 +260,12 @@ impl Workflow {
     }
 
     /// Whether the given phase has any review-gated transitions.
-    /// Returns true if any transition from this phase has `requires`.
     pub fn has_review_gate(&self, phase: &str) -> bool {
-        !self.required_reviews_from(phase).is_empty()
+        !self.reviewers_from(phase).is_empty()
     }
 
-    /// All review types required by any transition FROM the given phase.
-    /// Returns an empty vec if no transitions require reviews.
-    pub fn required_reviews_from(&self, phase: &str) -> Vec<String> {
+    /// All reviewer agent names required by transitions FROM the given phase.
+    pub fn reviewers_from(&self, phase: &str) -> Vec<String> {
         let Some(phase_def) = self.phase_def(phase) else {
             return Vec::new();
         };
@@ -309,7 +274,7 @@ impl Workflow {
         };
         transitions
             .iter()
-            .flat_map(|t| t.requires().iter().cloned())
+            .flat_map(|t| t.reviewers().iter().cloned())
             .collect()
     }
 
@@ -471,7 +436,7 @@ mod tests {
                         TransitionDef::Simple("outline".into()),
                         TransitionDef::Rich {
                             target: "done".into(),
-                            requires: vec!["writing".into()],
+                            review: vec!["docs-review".into()],
                         },
                     ]),
                 },
@@ -484,20 +449,6 @@ mod tests {
                     transitions: None,
                 },
             ],
-            reviews: {
-                let mut m = HashMap::new();
-                m.insert(
-                    "writing".into(),
-                    ReviewDef {
-                        instructions: Some("Review for clarity.".into()),
-                        permissions: Some(PermissionsDef {
-                            allow: vec![],
-                            deny: vec!["Edit".into(), "Write".into()],
-                        }),
-                    },
-                );
-                m
-            },
         };
         Workflow::new(&def).unwrap()
     }
@@ -532,19 +483,11 @@ mod tests {
     #[test]
     fn custom_workflow_review_gate() {
         let wf = docs_workflow();
-        let reqs = wf.transition_requires("draft", "done");
-        assert_eq!(reqs, Some(&["writing".to_string()][..]));
+        let reviewers = wf.transition_reviewers("draft", "done");
+        assert_eq!(reviewers, Some(&["docs-review".to_string()][..]));
 
-        // Simple transition has no requirements
-        assert!(wf.transition_requires("outline", "draft").is_none());
-    }
-
-    #[test]
-    fn custom_workflow_review_def() {
-        let wf = docs_workflow();
-        let review = wf.review_def("writing").unwrap();
-        assert_eq!(review.instructions.as_deref(), Some("Review for clarity."));
-        assert!(wf.review_def("nonexistent").is_none());
+        // Simple transition has no reviewers
+        assert!(wf.transition_reviewers("outline", "draft").is_none());
     }
 
     #[test]
@@ -573,13 +516,13 @@ mod tests {
     // --- Review gate detection tests ---
 
     #[test]
-    fn has_review_gate_default_tdd() {
+    fn default_tdd_no_review_gates() {
+        // The built-in default has no review gates — projects configure
+        // them in clc.yaml workflow definitions.
         let wf = tdd();
-        assert!(wf.has_review_gate("review-requested"));
+        assert!(!wf.has_review_gate("review-requested"));
         assert!(!wf.has_review_gate("tests-unwritten"));
         assert!(!wf.has_review_gate("green"));
-        assert!(!wf.has_review_gate("implementing"));
-        assert!(!wf.has_review_gate("done"));
     }
 
     #[test]
@@ -591,28 +534,17 @@ mod tests {
     }
 
     #[test]
-    fn required_reviews_from_returns_types() {
-        let wf = tdd();
-        let reviews = wf.required_reviews_from("review-requested");
-        assert_eq!(reviews, vec!["review"]);
-
+    fn reviewers_from_returns_agent_names() {
         let wf = docs_workflow();
-        let reviews = wf.required_reviews_from("draft");
-        assert_eq!(reviews, vec!["writing"]);
+        let reviewers = wf.reviewers_from("draft");
+        assert_eq!(reviewers, vec!["docs-review"]);
     }
 
     #[test]
-    fn required_reviews_from_empty_for_ungated() {
+    fn reviewers_from_empty_for_ungated() {
         let wf = tdd();
-        assert!(wf.required_reviews_from("implementing").is_empty());
-        assert!(wf.required_reviews_from("nonexistent").is_empty());
-    }
-
-    #[test]
-    fn default_tdd_has_review_def() {
-        let wf = tdd();
-        let review = wf.review_def("review").unwrap();
-        assert!(review.instructions.is_some());
+        assert!(wf.reviewers_from("implementing").is_empty());
+        assert!(wf.reviewers_from("nonexistent").is_empty());
     }
 
     // --- Validation error tests ---
@@ -669,36 +601,6 @@ mod tests {
         assert!(err.to_string().contains("unknown phase 'nonexistent'"));
     }
 
-    #[test]
-    fn validation_rejects_unknown_review_type_in_requires() {
-        let def = WorkflowDef {
-            description: None,
-            phases: vec![
-                PhaseDef {
-                    name: "working".into(),
-                    instructions: None,
-                    nudge: None,
-                    can_stop: false,
-                    permissions: None,
-                    transitions: Some(vec![TransitionDef::Rich {
-                        target: "done".into(),
-                        requires: vec!["nonexistent-review".into()],
-                    }]),
-                },
-                PhaseDef {
-                    name: "done".into(),
-                    instructions: None,
-                    nudge: None,
-                    can_stop: false,
-                    permissions: None,
-                    transitions: None,
-                },
-            ],
-            reviews: HashMap::new(),
-        };
-        let err = Workflow::new(&def).unwrap_err();
-        assert!(err.to_string().contains("unknown review type"));
-    }
 
     #[test]
     fn can_stop_on_terminal_even_without_flag() {

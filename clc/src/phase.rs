@@ -242,9 +242,9 @@ pub fn set_with_workflow(
     // Review gating: if this forward transition requires reviews, check for approvals.
     if is_forward {
         if let Some(current) = current_name {
-            if let Some(required) = workflow.transition_requires(current, target) {
+            if let Some(reviewers) = workflow.transition_reviewers(current, target) {
                 let worker_id = crate::git::current_branch(project_dir).unwrap_or_default();
-                crate::review::check_review_requirements(project_dir, &worker_id, required)?;
+                crate::review::check_review_requirements(project_dir, &worker_id, reviewers)?;
             }
         }
     }
