@@ -305,13 +305,10 @@ impl Supervisor {
         let scope = self.coordinators[idx].scope.clone();
         eprintln!("supervisor: starting coordinator '{}'", scope.id);
 
-        match scope.workspace {
-            crate::config::WorkspaceType::Docker => {
-                self.start_coordinator_docker(idx, &scope);
-            }
-            crate::config::WorkspaceType::Worktree => {
-                self.start_coordinator_local(idx, &scope);
-            }
+        if scope.image.is_some() {
+            self.start_coordinator_docker(idx, &scope);
+        } else {
+            self.start_coordinator_local(idx, &scope);
         }
     }
 
@@ -346,7 +343,7 @@ impl Supervisor {
         use clc_sdk::workspace::{WorkspaceConfig, Workspace};
         use clc_sdk::agent::AgentConfig;
 
-        let image = scope.docker_image.as_deref().unwrap_or("clc-worker:latest");
+        let image = scope.image.as_deref().unwrap_or("clc-worker:latest");
         let tunnel_port = 19200 + idx as u16;
 
         // Build the coordinator-run command that will execute inside the container.
@@ -387,7 +384,7 @@ impl Supervisor {
         // Coordinator in Docker dispatches workers via API, not local process.
         start_cmd.push("--workspace".to_string());
         start_cmd.push("docker".to_string());
-        if let Some(ref img) = scope.docker_image {
+        if let Some(ref img) = scope.image {
             start_cmd.push("--docker-image".to_string());
             start_cmd.push(img.clone());
         }
@@ -542,7 +539,7 @@ impl Supervisor {
 
             match parent_scope {
                 Some(c) => {
-                    let image = c.scope.docker_image.as_deref().unwrap_or("clc-worker:latest").to_string();
+                    let image = c.scope.image.as_deref().unwrap_or("clc-worker:latest").to_string();
                     to_launch.push((id.clone(), c.scope.model.clone(), image, c.scope.id.clone()));
                 }
                 None => {

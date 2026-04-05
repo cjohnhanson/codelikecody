@@ -15,18 +15,8 @@ pub enum WorkspaceType {
     Reviewer,
 }
 
-/// How the workspace is isolated.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum IsolationType {
-    Worktree,
-    Docker,
-}
-
-impl Default for IsolationType {
-    fn default() -> Self {
-        Self::Worktree
-    }
+fn default_isolation() -> String {
+    "worktree".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,11 +24,12 @@ pub struct WorkspaceSpec {
     #[serde(rename = "type")]
     pub workspace_type: WorkspaceType,
     pub agent: String,
+    /// Isolation type (e.g. "worktree", "docker", "podman"). Opaque string.
+    #[serde(default = "default_isolation")]
+    pub isolation: String,
+    /// Container image for SSH-based workspaces.
     #[serde(default)]
-    pub isolation: IsolationType,
-    /// Docker image (only used when isolation = docker).
-    #[serde(default)]
-    pub docker_image: Option<String>,
+    pub image: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -199,17 +190,13 @@ impl TopologyConfig {
             let coord = &self.coordinators[name];
             let ws = self.workspaces.get(&coord.workspace);
 
-            let (model, workspace_type, docker_image) = match ws {
+            let (model, isolation, image) = match ws {
                 Some(ws) => {
-                    let wt = match ws.isolation {
-                        IsolationType::Docker => config::WorkspaceType::Docker,
-                        IsolationType::Worktree => config::WorkspaceType::Worktree,
-                    };
-                    (ws.agent.clone(), wt, ws.docker_image.clone())
+                    (ws.agent.clone(), ws.isolation.clone(), ws.image.clone())
                 }
                 None => (
                     "opus".to_string(),
-                    config::WorkspaceType::Worktree,
+                    "worktree".to_string(),
                     None,
                 ),
             };
@@ -221,8 +208,8 @@ impl TopologyConfig {
                 exclude_label: coord.selector.exclude_label.clone(),
                 max_workers: coord.max_workers,
                 model,
-                workspace: workspace_type,
-                docker_image,
+                workspace: isolation,
+                image,
                 auto_grant: coord.auto_grant.clone(),
                 always_escalate: coord.always_escalate.clone(),
                 workflow: coord.workflow.clone(),
@@ -698,7 +685,7 @@ workspaces:
     type: worker
     agent: opus
     isolation: docker
-    docker_image: clc-worker:latest
+    image: clc-worker:latest
 coordinators:
   dev:
     workspace: docker-worker
@@ -721,8 +708,8 @@ supervisor:
         assert_eq!(c.max_workers, 2);
         assert_eq!(c.label.as_deref(), Some("backend"));
         assert_eq!(c.project.as_deref(), Some("v0.1.0"));
-        assert!(matches!(c.workspace, config::WorkspaceType::Docker));
-        assert_eq!(c.docker_image.as_deref(), Some("clc-worker:latest"));
+        assert_eq!(c.workspace, "docker");
+        assert_eq!(c.image.as_deref(), Some("clc-worker:latest"));
     }
 
     #[test]
@@ -741,8 +728,8 @@ coordinators:
         let c = &sup.coordinators[0];
 
         assert_eq!(c.model, "sonnet");
-        assert!(matches!(c.workspace, config::WorkspaceType::Worktree));
-        assert!(c.docker_image.is_none());
+        assert_eq!(c.workspace, "worktree");
+        assert!(c.image.is_none());
         assert_eq!(c.max_workers, 3); // default
     }
 

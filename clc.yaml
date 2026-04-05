@@ -3,7 +3,7 @@ workspaces:
     type: worker
     agent: opus
     isolation: docker
-    docker_image: clc-worker:latest
+    image: clc-worker:latest
 
 workflows:
   tdd:

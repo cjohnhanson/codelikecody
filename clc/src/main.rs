@@ -338,11 +338,7 @@ fn cmd_up(dry_run: bool) -> Result<(), Error> {
         println!("poll_interval: {}s", sup_config.poll_interval);
         println!("coordinators: {}", sup_config.coordinators.len());
         for c in &sup_config.coordinators {
-            let ws = match c.workspace {
-                config::WorkspaceType::Docker => "docker",
-                config::WorkspaceType::Worktree => "worktree",
-            };
-            print!("  {} (model={}, workspace={}, max_workers={})", c.id, c.model, ws, c.max_workers);
+            print!("  {} (model={}, workspace={}, max_workers={})", c.id, c.model, c.workspace, c.max_workers);
             if let Some(ref label) = c.label {
                 print!(", label={label}");
             }
@@ -396,11 +392,6 @@ fn cmd_coordinator_run(
     let effective_project = project.map(str::to_string).or(filter_project);
     let effective_exclude = exclude_label.map(str::to_string).or(filter_exclude);
 
-    let ws_type = match workspace {
-        "docker" => config::WorkspaceType::Docker,
-        _ => config::WorkspaceType::Worktree,
-    };
-
     let scope = config::CoordinatorScope {
         id: id.to_string(),
         project: effective_project,
@@ -408,8 +399,8 @@ fn cmd_coordinator_run(
         exclude_label: effective_exclude,
         max_workers,
         model: model.to_string(),
-        workspace: ws_type,
-        docker_image: docker_image.map(str::to_string),
+        workspace: workspace.to_string(),
+        image: docker_image.map(str::to_string),
         auto_grant: auto_grant.to_vec(),
         always_escalate: always_escalate.to_vec(),
         workflow: workflow.map(str::to_string),

@@ -227,12 +227,8 @@ pub struct CoordinatorConfig {
     pub always_escalate: Vec<String>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum WorkspaceType {
-    #[default]
-    Worktree,
-    Docker,
+fn default_workspace() -> String {
+    "worktree".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -254,12 +250,14 @@ pub struct CoordinatorScope {
     #[serde(default = "default_coordinator_model")]
     pub model: String,
 
-    #[serde(default)]
-    pub workspace: WorkspaceType,
+    /// Workspace isolation type. Opaque string — the supervisor uses this
+    /// to select the workspace implementation, not to branch on known values.
+    #[serde(default = "default_workspace")]
+    pub workspace: String,
 
-    /// Docker image to use for docker workspaces.
+    /// Container image for SSH-based workspaces.
     #[serde(default)]
-    pub docker_image: Option<String>,
+    pub image: Option<String>,
 
     #[serde(default)]
     pub auto_grant: Vec<String>,

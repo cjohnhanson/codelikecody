@@ -315,36 +315,35 @@ fn tick(
             }
 
             // Local coordinator: dispatch directly.
-            let ws_type = match scope.workspace {
-                crate::config::WorkspaceType::Worktree => crate::dispatch::DispatchWorkspace::Worktree,
-                crate::config::WorkspaceType::Docker => {
-                    let ca = std::sync::Arc::new(match (
-                        std::env::var("CLC_CA_CERT"),
-                        std::env::var("CLC_CA_KEY"),
-                    ) {
-                        (Ok(cert_path), Ok(key_path)) => {
-                            let cert_pem = std::fs::read_to_string(&cert_path)
-                                .expect("read supervisor CA cert");
-                            let key_pem = std::fs::read_to_string(&key_path)
-                                .expect("read supervisor CA key");
-                            crate::tls::EphemeralCA::from_pem(&cert_pem, &key_pem)
-                                .expect("load supervisor CA")
-                        }
-                        _ => crate::tls::EphemeralCA::new()
-                            .expect("ephemeral CA for dispatch (no supervisor CA available)"),
-                    });
-                    let api_port = std::env::var("CLC_API_PORT")
-                        .ok()
-                        .and_then(|p| p.parse().ok())
-                        .unwrap_or(19100);
-                    let tunnel_port = 19200 + (running + pickable.iter().position(|x| x == id).unwrap_or(0)) as u16;
-                    crate::dispatch::DispatchWorkspace::Docker {
-                        image: scope.docker_image.clone(),
-                        ca: Some(ca),
-                        api_port,
-                        tunnel_port,
+            let ws_type = if scope.image.is_some() {
+                let ca = std::sync::Arc::new(match (
+                    std::env::var("CLC_CA_CERT"),
+                    std::env::var("CLC_CA_KEY"),
+                ) {
+                    (Ok(cert_path), Ok(key_path)) => {
+                        let cert_pem = std::fs::read_to_string(&cert_path)
+                            .expect("read supervisor CA cert");
+                        let key_pem = std::fs::read_to_string(&key_path)
+                            .expect("read supervisor CA key");
+                        crate::tls::EphemeralCA::from_pem(&cert_pem, &key_pem)
+                            .expect("load supervisor CA")
                     }
+                    _ => crate::tls::EphemeralCA::new()
+                        .expect("ephemeral CA for dispatch (no supervisor CA available)"),
+                });
+                let api_port = std::env::var("CLC_API_PORT")
+                    .ok()
+                    .and_then(|p| p.parse().ok())
+                    .unwrap_or(19100);
+                let tunnel_port = 19200 + (running + pickable.iter().position(|x| x == id).unwrap_or(0)) as u16;
+                crate::dispatch::DispatchWorkspace::Docker {
+                    image: scope.image.clone(),
+                    ca: Some(ca),
+                    api_port,
+                    tunnel_port,
                 }
+            } else {
+                crate::dispatch::DispatchWorkspace::Worktree
             };
             match crate::dispatch::dispatch_with_workspace(
                 project_dir,
@@ -366,7 +365,7 @@ fn tick(
     // 2. Land completed workers.
     // For Docker workspaces, the supervisor handles landing (it has host
     // repo access). The coordinator only lands worktree-based workers.
-    if !matches!(scope.workspace, crate::config::WorkspaceType::Docker) {
+    if scope.image.is_none() {
         let agents = coord.list_agents(Some(&scope.id)).unwrap_or_default();
         for (id, status) in &agents {
             if *status == clc_sdk::coordination::AgentStatus::Completed {
