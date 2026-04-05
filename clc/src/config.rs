@@ -299,6 +299,9 @@ const fn default_tunnel_base_port() -> u16 {
     19200
 }
 
+/// Default model for reviewer agents when not specified in the reviewer file.
+pub const DEFAULT_REVIEWER_MODEL: &str = "sonnet";
+
 /// Generate a random hex token (16 bytes / 32 hex chars).
 pub fn generate_token() -> String {
     use std::fmt::Write;

@@ -223,7 +223,7 @@ pub fn spawn_reviewer(
     // Build the agent command.
     let agent = clc_sdk::agent::ClaudeCodeAgent::new();
     let config = clc_sdk::agent::AgentConfig {
-        model: "sonnet".to_string(),
+        model: crate::config::DEFAULT_REVIEWER_MODEL.to_string(),
         system_prompt: format!(
             "You are a reviewer agent. Review type: {review_type}. \
              Render a verdict with `clc review approve` or `clc review request-changes`. \

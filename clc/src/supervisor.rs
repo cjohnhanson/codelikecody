@@ -830,7 +830,8 @@ impl Supervisor {
                 let _ = coord.register_agent(&reviewer_id, Some(&action.worker_id));
                 let _ = coord.set_status(&reviewer_id, clc_sdk::coordination::AgentStatus::Running);
 
-                let model = reviewer.spec.model.as_deref().unwrap_or("sonnet");
+                let model = reviewer.spec.model.as_deref()
+                    .unwrap_or(crate::config::DEFAULT_REVIEWER_MODEL);
                 let escaped_prompt = review_prompt.replace('\'', "'\\''");
                 // Source the worker's env file for mTLS credentials. The SSH
                 // workspace writes /tmp/clc-env.sh during dispatch with the
