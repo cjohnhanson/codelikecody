@@ -542,7 +542,11 @@ impl Supervisor {
 
             match parent_scope {
                 Some(c) => {
-                    let image = c.scope.image.as_deref().unwrap_or("clc-worker:latest").to_string();
+                    let Some(image) = c.scope.image.as_deref() else {
+                        eprintln!("supervisor: coordinator '{}' has no image for worker '{id}'", c.scope.id);
+                        continue;
+                    };
+                    let image = image.to_string();
                     to_launch.push((id.clone(), c.scope.model.clone(), image, c.scope.id.clone()));
                 }
                 None => {

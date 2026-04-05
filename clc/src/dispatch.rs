@@ -167,7 +167,9 @@ pub fn dispatch_with_workspace(
                 agent_config,
             };
 
-            let image_name = image.clone().unwrap_or_else(|| "clc-worker:latest".to_string());
+            let image_name = image.clone().ok_or_else(|| Error::NonBlocking(
+                "SSH workspace dispatch requires an image — set image in workspace config".into()
+            ))?;
             let env = DockerEnvironment::new(&image_name, project_dir, id)
                 .map_err(|e| Error::NonBlocking(format!("docker env: {e}")))?;
 
