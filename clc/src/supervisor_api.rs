@@ -421,7 +421,7 @@ async fn dispatch_worker(
     }
 
     // Seed baseline tool grants so the worker can function.
-    for pattern in BASELINE_TOOL_GRANTS {
+    for pattern in crate::config::BASELINE_TOOL_GRANTS {
         let _ = state
             .db
             .grant_permission(
@@ -458,25 +458,6 @@ async fn dispatch_worker(
     ))
 }
 
-/// Baseline tool grants seeded at dispatch. The phase guard (workflow
-/// permissions) constrains what edits are allowed in each phase — these
-/// grants cover the mechanical tools every worker needs.
-const BASELINE_TOOL_GRANTS: &[&str] = &[
-    "Read",
-    "Write",
-    "Edit",
-    "MultiEdit",
-    "Grep",
-    "Glob",
-    "WebFetch",
-    "WebSearch",
-    "Bash",
-    "Bash(*)",
-    "Agent",
-    "Skill",
-    "ToolSearch",
-    "NotebookEdit",
-];
 
 #[derive(Deserialize)]
 struct PickableQuery {

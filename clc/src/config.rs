@@ -299,6 +299,26 @@ const fn default_tunnel_base_port() -> u16 {
     19200
 }
 
+/// Baseline tool grants seeded at dispatch. The phase guard (workflow
+/// permissions) constrains what edits are allowed in each phase — these
+/// grants cover the mechanical tools every worker needs.
+pub const BASELINE_TOOL_GRANTS: &[&str] = &[
+    "Read",
+    "Write",
+    "Edit",
+    "MultiEdit",
+    "Grep",
+    "Glob",
+    "WebFetch",
+    "WebSearch",
+    "Bash",
+    "Bash(*)",
+    "Agent",
+    "Skill",
+    "ToolSearch",
+    "NotebookEdit",
+];
+
 const fn default_poll_interval() -> u64 {
     10
 }

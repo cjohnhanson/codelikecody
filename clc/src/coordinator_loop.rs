@@ -502,27 +502,6 @@ fn tick(
     Ok(TickResult::Continue)
 }
 
-/// Baseline grants seeded at dispatch. The phase guard (workflow permissions)
-/// is the primary constraint on what workers can do — it blocks edits to
-/// non-test files during test phases, etc. The API grants supplement this
-/// with a broad allowlist so workers don't get stuck on routine shell commands.
-#[allow(dead_code)] // Used when dispatch_via_api seeds grants.
-const BASELINE_TOOL_GRANTS: &[&str] = &[
-    "Read",
-    "Write",
-    "Edit",
-    "MultiEdit",
-    "Grep",
-    "Glob",
-    "WebFetch",
-    "WebSearch",
-    "Bash",        // All Bash commands — phase guard handles file restrictions.
-    "Bash(*)",     // Pattern form for matching Bash(any command).
-    "Agent",
-    "Skill",
-    "ToolSearch",
-    "NotebookEdit",
-];
 
 /// Pull latest trunk into the coordinator's workspace.
 ///
