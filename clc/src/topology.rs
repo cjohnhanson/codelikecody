@@ -81,10 +81,24 @@ pub struct AdminConfig {
     pub coordinators: Vec<String>,
 }
 
+fn default_api_port() -> u16 {
+    19100
+}
+
+fn default_tunnel_base_port() -> u16 {
+    19200
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SupervisorSpec {
     #[serde(default = "default_poll_interval")]
     pub poll_interval: u64,
+
+    #[serde(default = "default_api_port")]
+    pub api_port: u16,
+
+    #[serde(default = "default_tunnel_base_port")]
+    pub tunnel_base_port: u16,
 }
 
 fn default_poll_interval() -> u64 {
@@ -95,6 +109,8 @@ impl Default for SupervisorSpec {
     fn default() -> Self {
         Self {
             poll_interval: default_poll_interval(),
+            api_port: default_api_port(),
+            tunnel_base_port: default_tunnel_base_port(),
         }
     }
 }
@@ -230,6 +246,8 @@ impl TopologyConfig {
 
         config::SupervisorConfig {
             poll_interval: self.supervisor.poll_interval,
+            api_port: self.supervisor.api_port,
+            tunnel_base_port: self.supervisor.tunnel_base_port,
             coordinators,
             workflows,
         }

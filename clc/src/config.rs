@@ -276,6 +276,12 @@ pub struct SupervisorConfig {
     #[serde(default = "default_poll_interval")]
     pub poll_interval: u64,
 
+    #[serde(default = "default_api_port")]
+    pub api_port: u16,
+
+    #[serde(default = "default_tunnel_base_port")]
+    pub tunnel_base_port: u16,
+
     #[serde(default)]
     pub coordinators: Vec<CoordinatorScope>,
 
@@ -283,7 +289,14 @@ pub struct SupervisorConfig {
     /// Source of truth for phase transition validation and review gate enforcement.
     #[serde(default)]
     pub workflows: std::collections::HashMap<String, WorkflowDef>,
+}
 
+const fn default_api_port() -> u16 {
+    19100
+}
+
+const fn default_tunnel_base_port() -> u16 {
+    19200
 }
 
 const fn default_poll_interval() -> u64 {

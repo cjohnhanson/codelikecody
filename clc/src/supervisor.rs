@@ -41,6 +41,8 @@ pub struct Supervisor {
     coordinators: Vec<CoordinatorState>,
     workers: Vec<WorkerState>,
     poll_interval: Duration,
+    api_port: u16,
+    tunnel_base_port: u16,
     shutdown: Arc<AtomicBool>,
     /// Workflow name → full definition (phase graph + reviews).
     workflow_defs: std::collections::HashMap<String, crate::config::WorkflowDef>,
@@ -72,6 +74,8 @@ impl Supervisor {
             coordinators,
             workers: Vec::new(),
             poll_interval: Duration::from_secs(config.poll_interval),
+            api_port: config.api_port,
+            tunnel_base_port: config.tunnel_base_port,
             shutdown: Arc::new(AtomicBool::new(false)),
             workflow_defs: config.workflows.clone(),
         }
@@ -135,7 +139,7 @@ impl Supervisor {
         // Start the supervisor API server on a dedicated thread.
         let api_project_dir = self.project_dir.clone();
         let api_workflows = self.workflow_defs.clone();
-        let api_port = 19100; // TODO: configurable from SupervisorConfig
+        let api_port = self.api_port;
         let api_tls = tls_config;
         let (api_tx, api_rx) = std::sync::mpsc::channel();
 
@@ -320,7 +324,7 @@ impl Supervisor {
         cmd.arg("coordinator-run");
         self.append_coordinator_args(&mut cmd, scope);
 
-        cmd.env("CLC_API_PORT", "19100");
+        cmd.env("CLC_API_PORT", self.api_port.to_string());
         cmd.env("CLC_CA_CERT", self.project_dir.join(".clc").join("ca-cert.pem"));
         cmd.env("CLC_CA_KEY", self.project_dir.join(".clc").join("ca-key.pem"));
         cmd.current_dir(&self.project_dir);
@@ -347,7 +351,7 @@ impl Supervisor {
             eprintln!("supervisor: coordinator '{}' has no image configured", scope.id);
             return;
         };
-        let tunnel_port = 19200 + idx as u16;
+        let tunnel_port = self.tunnel_base_port + idx as u16;
 
         // Build the coordinator-run command that will execute inside the container.
         let mut start_cmd = vec![
@@ -437,7 +441,7 @@ impl Supervisor {
         let ssh_config = SSHWorkspaceConfig {
             workspace_config: ws_config,
             ca,
-            api_port: 19100,
+            api_port: self.api_port,
             oauth_token: None,
             start_command: Some(start_cmd),
         };
@@ -574,7 +578,7 @@ impl Supervisor {
         use clc_sdk::agent::AgentConfig;
         use clc_sdk::workspace::{Workspace, WorkspaceConfig};
 
-        let tunnel_port = 19200 + self.coordinators.len() as u16 + self.workers.len() as u16;
+        let tunnel_port = self.tunnel_base_port + self.coordinators.len() as u16 + self.workers.len() as u16;
 
         let ca_cert_path = self.project_dir.join(".clc").join("ca-cert.pem");
         let ca_key_path = self.project_dir.join(".clc").join("ca-key.pem");
@@ -633,7 +637,7 @@ impl Supervisor {
         let ssh_config = SSHWorkspaceConfig {
             workspace_config: ws_config,
             ca,
-            api_port: 19100,
+            api_port: self.api_port,
             oauth_token,
             start_command: None, // Workers use default clc workspace start
         };
