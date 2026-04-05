@@ -77,7 +77,7 @@ fn find_issue_for_branch(repo: &tisket::Repo, branch: &str) -> Option<CurrentIss
 }
 
 impl clc_sdk::ClcTool for TisketState {
-    fn prime(&self, ctx: &clc_sdk::PrimeContext) -> String {
+    fn prime(&self, _ctx: &clc_sdk::PrimeContext) -> String {
         use std::fmt::Write;
 
         let mut out = String::new();
@@ -113,28 +113,8 @@ impl clc_sdk::ClcTool for TisketState {
                 out.push('\n');
             }
 
-            // Phase-adapted directives when an issue is active.
-            match ctx.phase.as_deref() {
-                Some("tests-unwritten" | "tests-written" | "red") => {
-                    out.push_str(
-                        "\nThis issue defines the work. Review the requirements above before \
-                         implementing.\n",
-                    );
-                }
-                Some("implementing") => {
-                    out.push_str(
-                        "\nAll work in this session relates to this issue.\n\
-                         Update the scratch notes with progress as work proceeds.\n",
-                    );
-                }
-                Some("green") => {
-                    out.push_str(
-                        "\nUpdate the scratch notes with a summary of what was done.\n\
-                         Run `clc done` to finalize.\n",
-                    );
-                }
-                _ => {}
-            }
+            // Phase-specific instructions come from the workflow definition
+            // and are injected by the hook's prime text assembly, not here.
         } else {
             let _ = writeln!(
                 out,
