@@ -495,29 +495,10 @@ async fn pickable_tiskets(
             .list_issues(query.project.as_deref(), None, None, false, &[])
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-        let result: Vec<String> = issues
+        let result: Vec<String> = crate::coordinator_loop::filter_pickable_ids(
+                &issues, &repo, query.label.as_deref(), query.exclude_label.as_deref(),
+            )
             .into_iter()
-            .filter(|i| i.frontmatter.status.is_pickable())
-            .filter(|i| {
-                i.frontmatter.depends_on.iter().all(|dep_id| {
-                    repo.find_issue(dep_id)
-                        .map(|dep| dep.closed)
-                        .unwrap_or(false)
-                })
-            })
-            .filter(|i| {
-                query
-                    .label
-                    .as_deref()
-                    .is_none_or(|l| i.frontmatter.labels.iter().any(|il| il == l))
-            })
-            .filter(|i| {
-                query
-                    .exclude_label
-                    .as_deref()
-                    .is_none_or(|l| !i.frontmatter.labels.iter().any(|il| il == l))
-            })
-            .map(|i| i.id)
             .filter(|id| !dispatched.contains(id))
             .collect();
 

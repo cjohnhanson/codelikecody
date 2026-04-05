@@ -160,28 +160,12 @@ pub fn dry_run(
         }
     }
 
+    let pickable_ids = filter_pickable_ids(&issues, &repo, scope.label.as_deref(), scope.exclude_label.as_deref());
+
+    // Additional dry-run filters: depends_on and tisket.
     let pickable: Vec<_> = issues
         .into_iter()
-        .filter(|i| i.frontmatter.status.is_pickable())
-        .filter(|i| {
-            i.frontmatter.depends_on.iter().all(|dep_id| {
-                repo.find_issue(dep_id)
-                    .map(|dep| dep.closed)
-                    .unwrap_or(false)
-            })
-        })
-        .filter(|i| {
-            scope
-                .label
-                .as_deref()
-                .is_none_or(|l| i.frontmatter.labels.iter().any(|il| il == l))
-        })
-        .filter(|i| {
-            scope
-                .exclude_label
-                .as_deref()
-                .is_none_or(|l| !i.frontmatter.labels.iter().any(|il| il == l))
-        })
+        .filter(|i| pickable_ids.contains(&i.id))
         .filter(|i| {
             depends_on.is_none_or(|dep| {
                 i.id == dep || i.frontmatter.depends_on.iter().any(|d| d == dep)
@@ -757,8 +741,25 @@ fn find_undispatched_local(
         .map(|(id, _)| id)
         .collect();
 
-    let pickable: Vec<String> = issues
+    let pickable = filter_pickable_ids(&issues, &repo, scope.label.as_deref(), scope.exclude_label.as_deref())
         .into_iter()
+        .filter(|id| !dispatched.contains(id))
+        .collect();
+
+    Ok(pickable)
+}
+
+/// Filter tisket issues to those that are pickable: correct status, dependencies
+/// resolved, label/exclude_label match. Shared logic used by both the local
+/// coordinator and the supervisor API's /pickable endpoint.
+pub(crate) fn filter_pickable_ids(
+    issues: &[tisket::Issue],
+    repo: &tisket::Repo,
+    label: Option<&str>,
+    exclude_label: Option<&str>,
+) -> Vec<String> {
+    issues
+        .iter()
         .filter(|i| i.frontmatter.status.is_pickable())
         .filter(|i| {
             i.frontmatter.depends_on.iter().all(|dep_id| {
@@ -768,20 +769,11 @@ fn find_undispatched_local(
             })
         })
         .filter(|i| {
-            scope
-                .label
-                .as_deref()
-                .is_none_or(|l| i.frontmatter.labels.iter().any(|il| il == l))
+            label.is_none_or(|l| i.frontmatter.labels.iter().any(|il| il == l))
         })
         .filter(|i| {
-            scope
-                .exclude_label
-                .as_deref()
-                .is_none_or(|l| !i.frontmatter.labels.iter().any(|il| il == l))
+            exclude_label.is_none_or(|l| !i.frontmatter.labels.iter().any(|il| il == l))
         })
-        .map(|i| i.id)
-        .filter(|id| !dispatched.contains(id))
-        .collect();
-
-    Ok(pickable)
+        .map(|i| i.id.clone())
+        .collect()
 }
