@@ -86,12 +86,14 @@ supervisor:
       max_workers: 3
       model: opus
       workspace: docker
-      docker_image: clc-worker
+      image: clc-worker
 ```
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `poll_interval` | integer | `10` | Seconds between dispatch polls |
+| `api_port` | integer | `19100` | Port for the supervisor API server |
+| `tunnel_base_port` | integer | `19200` | Base port for SSH reverse tunnels |
 | `coordinators` | list | `[]` | Coordinator scope definitions |
 
 ### Coordinator scope
@@ -104,8 +106,8 @@ supervisor:
 | `exclude_label` | string | none | Skip issues with this label |
 | `max_workers` | integer | `3` | Concurrent worker limit |
 | `model` | string | `"opus"` | Claude model for workers |
-| `workspace` | string | `"worktree"` | `"worktree"` or `"docker"` |
-| `docker_image` | string | none | Docker image for workers |
+| `workspace` | string | `"worktree"` | Isolation type (opaque string) |
+| `image` | string | none | Container image for SSH-based workspaces |
 | `auto_grant` | list | `[]` | Per-coordinator auto-grant patterns |
 | `always_escalate` | list | `[]` | Per-coordinator escalation patterns |
 | `workflow` | string | none | Override workflow for this coordinator |
@@ -124,7 +126,9 @@ workflows:
         permissions:
           allow: ["Edit(tests/**)"]
           deny: ["Edit", "Write"]
-        transitions: [tests-written]
+        transitions:
+          - target: tests-written
+            review: test-review
       - name: tests-written
         transitions: [implementing]
       - name: implementing
@@ -135,11 +139,8 @@ workflows:
         transitions:
           - implementing
           - target: done
-            requires: [code]
+            review: [scope-check, code-review]
       - name: done
-    reviews:
-      code:
-        instructions: "Review for correctness."
 ```
 
 ### WorkflowDef
@@ -148,7 +149,6 @@ workflows:
 |-------|------|---------|-------------|
 | `description` | string | none | Human-readable description |
 | `phases` | list | `[]` | Phase definitions |
-| `reviews` | map | `{}` | Named review type definitions |
 
 ### PhaseDef
 
@@ -170,30 +170,29 @@ phases: ["draft", "review", "done"]
 ### TransitionDef
 
 Transitions can be simple (just a target name) or rich (with review
-gates):
+gates). Review gates name the reviewer agents from `.clc/reviewers/<name>.md`
+that must approve before the transition is allowed.
 
 ```yaml
-# simple
+# simple — no review gate
 transitions: [implementing, tests-unwritten]
 
-# rich — require review before advancing
+# rich — reviewer agents must approve before advancing
 transitions:
   - implementing
   - target: done
-    requires: [code]
+    review: [scope-check, code-review]
+
+# single reviewer (string instead of list)
+transitions:
+  - target: tests-written
+    review: test-review
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `target` | string | Target phase name |
-| `requires` | list | Review types that must pass |
-
-### ReviewDef
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `instructions` | string | none | Reviewer guidance |
-| `permissions` | object | none | Reviewer's permission set |
+| `review` | string or list | Reviewer agent names that must approve |
 
 ## rules
 

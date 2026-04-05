@@ -105,7 +105,7 @@ supervisor:
   coordinators:
     - id: backend
       workspace: docker
-      docker_image: clc-worker
+      image: clc-worker
       max_workers: 3
 ```
 

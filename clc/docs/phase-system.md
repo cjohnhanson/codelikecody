@@ -217,11 +217,8 @@ workflows:
         transitions:
           - drafting
           - target: done
-            requires: [docs]
+            review: docs-review
       - name: done
-    reviews:
-      docs:
-        instructions: "Check for accuracy and completeness."
 ```
 
 Policy rules select which workflow applies to a given issue:
@@ -241,22 +238,19 @@ built-in TDD workflow.
 
 ## Review gates
 
-Transitions can require reviews before they're allowed. A transition
-with `requires: [code]` means the `code` review must pass before the
-agent can advance.
+Transitions can name reviewer agents that must approve before the
+transition is allowed. A transition with `review: [scope-check, code-review]`
+means both reviewer agents must approve before the agent can advance.
 
-Reviews are defined in two places:
+Reviewers are defined as markdown files at `.clc/reviewers/<name>.md` —
+each has AgentSpec frontmatter (model, max turns) and a review prompt
+in the body. The transition's `review` field names the reviewer file
+to use.
 
-- **In the workflow definition** (`workflows.<name>.reviews`) — review
-  type name, instructions, and optional permissions.
-- **As reviewer files** (`.clc/reviewers/<name>.md`) — a markdown file
-  with AgentSpec frontmatter that specifies the model, max turns, and
-  review prompt.
-
-When a transition requires a review, the reviewer agent is spawned,
-evaluates the work, and returns a verdict (approve or request changes).
-If changes are requested, the agent goes back to an earlier phase to
-address them.
+When a transition has a review gate, the supervisor spawns the reviewer
+agent, which evaluates the work and renders a verdict (approve or
+request changes). If changes are requested, the agent goes back to an
+earlier phase to address them.
 
 ## Further reading
 
