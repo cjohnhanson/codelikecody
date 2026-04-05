@@ -5,12 +5,15 @@ workspaces:
     type: worker
     agent: opus
     isolation: docker
-    docker_image: clc-worker:latest
+    image: clc-worker:latest
 workflows:
   standard:
-    agents:
-      - scope-check
-      - test-quality
+    phases:
+      - name: tests-unwritten
+        transitions:
+          - tests-written
+      - tests-written
+      - done
 coordinators:
   dev:
     workspace: docker-worker

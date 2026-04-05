@@ -211,7 +211,7 @@ impl Workspace for SSHWorkspace {
         self.rt.block_on(async {
             session
                 .exec(&format!(
-                    "clc workspace receive --pack-file /tmp/repo.pack --refs-file /tmp/repo.refs --branch {branch_name} --dir /project"
+                    "clc workspace receive --pack-file /tmp/repo.pack --refs-file /tmp/repo.refs --branch {branch_name} --dir {REMOTE_PROJECT_DIR}"
                 ))
                 .await
                 .map_err(|e| WorkspaceError::Process(format!("receive pack: {e}")))
@@ -224,7 +224,7 @@ impl Workspace for SSHWorkspace {
         //    spawns process, writes PID, sends initial prompt. No shell involved.
         let init_result = self.rt.block_on(async {
             session
-                .exec("cd /project && clc workspace init 2>&1")
+                .exec(&format!("cd {REMOTE_PROJECT_DIR} && clc workspace init 2>&1"))
                 .await
         });
         match init_result {
@@ -236,10 +236,10 @@ impl Workspace for SSHWorkspace {
             Err(e) => {
                 // Try to get more info.
                 let debug = self.rt.block_on(async {
-                    session.exec("ls -la /project/ 2>&1 && ls -la /project/.git/ 2>&1").await
+                    session.exec(&format!("ls -la {REMOTE_PROJECT_DIR}/ 2>&1 && ls -la {REMOTE_PROJECT_DIR}/.git/ 2>&1")).await
                 });
                 if let Ok(ls) = debug {
-                    eprintln!("ssh workspace: /project contents: {ls}");
+                    eprintln!("ssh workspace: {REMOTE_PROJECT_DIR} contents: {ls}");
                 }
                 return Err(WorkspaceError::Process(format!("workspace init: {e}")));
             }
@@ -440,7 +440,7 @@ impl DockerEnvironment {
 /// and the API binds to 0.0.0.0 with mTLS protecting it.
 fn build_coordinator_exec_cmd(tunnel_port: u16, start_cmd: &str) -> String {
     format!(
-        "cd /project && \
+        "cd {REMOTE_PROJECT_DIR} && \
          export GIT_AUTHOR_NAME=clc-worker && \
          export GIT_AUTHOR_EMAIL=worker@clc.local && \
          export GIT_COMMITTER_NAME=clc-worker && \
@@ -460,7 +460,7 @@ fn build_coordinator_exec_cmd(tunnel_port: u16, start_cmd: &str) -> String {
 /// the worker's exported env vars).
 fn build_worker_exec_cmd(tunnel_port: u16, start_cmd: &str) -> String {
     format!(
-        "cd /project && \
+        "cd {REMOTE_PROJECT_DIR} && \
          export GIT_AUTHOR_NAME=clc-worker && \
          export GIT_AUTHOR_EMAIL=worker@clc.local && \
          export GIT_COMMITTER_NAME=clc-worker && \
@@ -623,7 +623,7 @@ mod tests {
     #[test]
     fn coordinator_exec_cmd_cds_to_project() {
         let cmd = build_coordinator_exec_cmd(19200, "clc coordinator-run");
-        assert!(cmd.starts_with("cd /project &&"));
+        assert!(cmd.starts_with(&format!("cd {} &&", REMOTE_PROJECT_DIR)));
     }
 
     #[test]

@@ -179,9 +179,6 @@ pub fn init_phase_with_workflow(
     write_state_str(project_dir, target, 0, workflow_name)
 }
 
-/// Validate and perform a phase transition using the given workflow.
-/// The workflow graph determines valid transitions.
-///
 /// Validate a phase transition against the workflow graph and review gates.
 /// Pure logic — no storage reads or writes.
 pub fn validate_transition(
