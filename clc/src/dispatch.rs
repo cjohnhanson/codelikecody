@@ -29,21 +29,12 @@ use crate::pickup;
 /// Worker state directory name inside `.clc/`.
 const WORKER_DIR: &str = "worker";
 
-/// Workspace type for dispatch.
-pub enum DispatchWorkspace {
-    Worktree,
-    Docker {
-        image: Option<String>,
-        ca: Option<std::sync::Arc<crate::tls::EphemeralCA>>,
-        api_port: u16,
-        tunnel_port: u16,
-    },
-}
-
-impl Default for DispatchWorkspace {
-    fn default() -> Self {
-        Self::Worktree
-    }
+/// Configuration for SSH-based dispatch (Docker, podman, etc).
+pub struct SSHDispatchConfig {
+    pub image: String,
+    pub ca: std::sync::Arc<crate::tls::EphemeralCA>,
+    pub api_port: u16,
+    pub tunnel_port: u16,
 }
 
 pub fn dispatch(
@@ -65,10 +56,12 @@ pub fn dispatch(
         worker_perm_defaults,
         worker_perm_deny,
         coordinator_id,
-        &DispatchWorkspace::default(),
+        None,
     )
 }
 
+/// Dispatch a worker. If `ssh_config` is provided, the worker runs in an
+/// SSH workspace (Docker, podman, etc). Otherwise it runs as a local process.
 pub fn dispatch_with_workspace(
     project_dir: &Path,
     id: &str,
@@ -78,7 +71,7 @@ pub fn dispatch_with_workspace(
     worker_perm_defaults: &[String],
     worker_perm_deny: &[String],
     coordinator_id: Option<&str>,
-    workspace_type: &DispatchWorkspace,
+    ssh_config: Option<&SSHDispatchConfig>,
 ) -> Result<(), Error> {
     // Must be on main branch.
     let git_state = git::detect(project_dir, main_branch, admin_branch)
@@ -134,78 +127,67 @@ pub fn dispatch_with_workspace(
         allowed_tools: vec![],
     };
 
-    match workspace_type {
-        DispatchWorkspace::Worktree => {
-            let mut cmd = agent
-                .build_start_command(&agent_config, &worktree_dir)
-                .map_err(|e| Error::NonBlocking(format!("failed to build agent command: {e}")))?;
+    if let Some(ssh) = ssh_config {
+        use crate::ssh_workspace::{DockerEnvironment, SSHWorkspace, SSHWorkspaceConfig};
 
-            // Register agent and get bearer token for API authentication.
-            if let Ok(coord) = Coordination::open(project_dir) {
-                if let Ok(token) = coord.register_agent_with_token(id, coordinator_id) {
-                    cmd.env("CLC_AGENT_TOKEN", &token);
-                }
-            }
+        let ws_config = clc_sdk::workspace::WorkspaceConfig {
+            tisket_id: id.to_string(),
+            project_dir: project_dir.to_path_buf(),
+            main_branch: main_branch.to_string(),
+            agent_config,
+        };
 
-            let worker_dir = worktree_dir.join(".clc").join(WORKER_DIR);
-            let pid = spawn_agent_process(cmd, &worker_dir, &initial_prompt)?;
+        let env = DockerEnvironment::new(&ssh.image, project_dir, id)
+            .map_err(|e| Error::NonBlocking(format!("docker env: {e}")))?;
 
-            if let Ok(coord) = Coordination::open(project_dir) {
-                let _ = coord.set_status(id, clc_sdk::coordination::AgentStatus::Running);
-                let _ = coord.set_pid(id, Some(pid.cast_signed()));
-            }
+        let oauth_token = std::env::var("CLC_CLAUDE_CODE_OAUTH_TOKEN")
+            .ok()
+            .or_else(|| {
+                let token_path = dirs::home_dir()?.join(".claude").join("token");
+                std::fs::read_to_string(token_path).ok().map(|s| s.trim().to_string())
+            });
 
-            eprintln!("dispatched worker for '{id}' (pid {pid})");
+        let ws_ssh_config = SSHWorkspaceConfig {
+            workspace_config: ws_config,
+            ca: std::sync::Arc::clone(&ssh.ca),
+            api_port: ssh.api_port,
+            oauth_token,
+            start_command: None,
+        };
+
+        let mut workspace = SSHWorkspace::new(ws_ssh_config, Box::new(env), ssh.tunnel_port)
+            .map_err(|e| Error::NonBlocking(format!("ssh workspace: {e}")))?;
+
+        workspace
+            .start()
+            .map_err(|e| Error::NonBlocking(format!("ssh workspace start: {e}")))?;
+
+        if let Ok(coord) = Coordination::open(project_dir) {
+            let _ = coord.register_agent(id, coordinator_id);
+            let _ = coord.set_status(id, clc_sdk::coordination::AgentStatus::Running);
         }
-        DispatchWorkspace::Docker { image, ca, api_port, tunnel_port } => {
-            use crate::ssh_workspace::{DockerEnvironment, SSHWorkspace, SSHWorkspaceConfig};
 
-            let ws_config = clc_sdk::workspace::WorkspaceConfig {
-                tisket_id: id.to_string(),
-                project_dir: project_dir.to_path_buf(),
-                main_branch: main_branch.to_string(),
-                agent_config,
-            };
+        eprintln!("dispatched worker for '{id}' (ssh)");
+    } else {
+        let mut cmd = agent
+            .build_start_command(&agent_config, &worktree_dir)
+            .map_err(|e| Error::NonBlocking(format!("failed to build agent command: {e}")))?;
 
-            let image_name = image.clone().ok_or_else(|| Error::NonBlocking(
-                "SSH workspace dispatch requires an image — set image in workspace config".into()
-            ))?;
-            let env = DockerEnvironment::new(&image_name, project_dir, id)
-                .map_err(|e| Error::NonBlocking(format!("docker env: {e}")))?;
-
-            let oauth_token = std::env::var("CLC_CLAUDE_CODE_OAUTH_TOKEN")
-                .ok()
-                .or_else(|| {
-                    let token_path = dirs::home_dir()?.join(".claude").join("token");
-                    std::fs::read_to_string(token_path).ok().map(|s| s.trim().to_string())
-                });
-
-            let ssh_config = SSHWorkspaceConfig {
-                workspace_config: ws_config,
-                ca: ca.clone().unwrap_or_else(|| {
-                    std::sync::Arc::new(
-                        crate::tls::EphemeralCA::new().expect("ephemeral CA"),
-                    )
-                }),
-                api_port: *api_port,
-                oauth_token,
-                start_command: None, // Workers use default `clc workspace start`.
-            };
-
-            let mut workspace = SSHWorkspace::new(ssh_config, Box::new(env), *tunnel_port)
-                .map_err(|e| Error::NonBlocking(format!("ssh workspace: {e}")))?;
-
-            workspace
-                .start()
-                .map_err(|e| Error::NonBlocking(format!("ssh workspace start: {e}")))?;
-
-            if let Ok(coord) = Coordination::open(project_dir) {
-                let _ = coord.register_agent(id, coordinator_id);
-                let _ = coord.set_status(id, clc_sdk::coordination::AgentStatus::Running);
+        if let Ok(coord) = Coordination::open(project_dir) {
+            if let Ok(token) = coord.register_agent_with_token(id, coordinator_id) {
+                cmd.env("CLC_AGENT_TOKEN", &token);
             }
-
-            eprintln!("dispatched worker for '{id}' (docker/ssh)");
         }
+
+        let worker_dir = worktree_dir.join(".clc").join(WORKER_DIR);
+        let pid = spawn_agent_process(cmd, &worker_dir, &initial_prompt)?;
+
+        if let Ok(coord) = Coordination::open(project_dir) {
+            let _ = coord.set_status(id, clc_sdk::coordination::AgentStatus::Running);
+            let _ = coord.set_pid(id, Some(pid.cast_signed()));
+        }
+
+        eprintln!("dispatched worker for '{id}' (pid {pid})");
     }
 
     Ok(())

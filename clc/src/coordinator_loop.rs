@@ -315,7 +315,7 @@ fn tick(
             }
 
             // Local coordinator: dispatch directly.
-            let ws_type = if scope.image.is_some() {
+            let ssh_config = if let Some(ref image) = scope.image {
                 let ca = std::sync::Arc::new(match (
                     std::env::var("CLC_CA_CERT"),
                     std::env::var("CLC_CA_KEY"),
@@ -336,14 +336,14 @@ fn tick(
                     .and_then(|p| p.parse().ok())
                     .unwrap_or(19100);
                 let tunnel_port = 19200 + (running + pickable.iter().position(|x| x == id).unwrap_or(0)) as u16;
-                crate::dispatch::DispatchWorkspace::Docker {
-                    image: scope.image.clone(),
-                    ca: Some(ca),
+                Some(crate::dispatch::SSHDispatchConfig {
+                    image: image.clone(),
+                    ca,
                     api_port,
                     tunnel_port,
-                }
+                })
             } else {
-                crate::dispatch::DispatchWorkspace::Worktree
+                None
             };
             match crate::dispatch::dispatch_with_workspace(
                 project_dir,
@@ -354,7 +354,7 @@ fn tick(
                 worker_perm_defaults,
                 worker_perm_deny,
                 Some(&scope.id),
-                &ws_type,
+                ssh_config.as_ref(),
             ) {
                 Ok(()) => {}
                 Err(e) => eprintln!("coordinator '{}': dispatch failed for '{id}': {e}", scope.id),
