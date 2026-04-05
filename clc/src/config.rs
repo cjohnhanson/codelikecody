@@ -419,21 +419,40 @@ fn default_admin_branch() -> String {
 /// defaults if no file exists. Returns an error if a file exists but is invalid.
 pub fn load(project_dir: &Path) -> Result<Config, Error> {
     let yaml_root_path = project_dir.join(YAML_ROOT_CONFIG_FILENAME);
-    if yaml_root_path.exists() {
-        return load_yaml(&yaml_root_path);
+    let mut cfg = if yaml_root_path.exists() {
+        load_yaml(&yaml_root_path)?
+    } else {
+        let toml_path = project_dir.join(TOML_CONFIG_FILENAME);
+        if toml_path.exists() {
+            load_toml(&toml_path)?
+        } else {
+            let yaml_path = project_dir.join(".clc").join(YAML_CONFIG_FILENAME);
+            if yaml_path.exists() {
+                load_yaml(&yaml_path)?
+            } else {
+                Config::default()
+            }
+        }
+    };
+
+    // Merge workflow definitions from topology (clc.yaml) if present.
+    // The topology is the authoritative source for workflows — its definitions
+    // take precedence over anything in clc.yml.
+    if let Ok(Some(topo)) = crate::topology::load(project_dir) {
+        for (name, spec) in &topo.workflows {
+            if let Some(phases) = &spec.phases {
+                cfg.workflows.insert(
+                    name.clone(),
+                    WorkflowDef {
+                        description: spec.description.clone(),
+                        phases: phases.clone(),
+                    },
+                );
+            }
+        }
     }
 
-    let toml_path = project_dir.join(TOML_CONFIG_FILENAME);
-    if toml_path.exists() {
-        return load_toml(&toml_path);
-    }
-
-    let yaml_path = project_dir.join(".clc").join(YAML_CONFIG_FILENAME);
-    if yaml_path.exists() {
-        return load_yaml(&yaml_path);
-    }
-
-    Ok(Config::default())
+    Ok(cfg)
 }
 
 fn load_toml(path: &Path) -> Result<Config, Error> {
