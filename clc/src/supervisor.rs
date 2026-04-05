@@ -839,39 +839,76 @@ impl Supervisor {
                 let _ = coord.register_agent(&reviewer_id, Some(&action.worker_id));
                 let _ = coord.set_status(&reviewer_id, clc_sdk::coordination::AgentStatus::Running);
 
-                let model = reviewer.spec.model.as_deref()
-                    .unwrap_or(crate::config::DEFAULT_REVIEWER_MODEL);
-                let escaped_prompt = review_prompt.replace('\'', "'\\''");
-                // Source the worker's env file for mTLS credentials. The SSH
-                // workspace writes /tmp/clc-env.sh during dispatch with the
-                // API URL and cert paths. New SSH sessions don't inherit the
-                // worker process's env, so we source the file explicitly.
+                // Get the diff from the worker's container.
                 let project = crate::ssh_workspace::REMOTE_PROJECT_DIR;
-                let oauth_export = self.oauth_token.as_deref()
-                    .map(|t| format!("export CLAUDE_CODE_OAUTH_TOKEN='{t}'\n"))
-                    .unwrap_or_default();
-                // Write the reviewer command to a script file, then execute it
-                // with nohup. Direct `nohup ... &` via SSH exec doesn't survive
-                // channel close — the script approach ensures the process persists.
-                let script = format!(
-                    "#!/bin/sh\ncd {project}\n. /tmp/clc-env.sh 2>/dev/null\n\
-                     {oauth_export}\
-                     export CLC_REVIEW_TYPE='{agent_name}'\n\
-                     export CLC_REVIEWER_ID='{reviewer_id}'\n\
-                     claude --model {model} --print '{escaped_prompt}' \
-                     > /tmp/reviewer-{agent_name}.log 2>&1\n"
-                );
-                let reviewer_cmd = format!(
-                    "cat > /tmp/run-reviewer-{agent_name}.sh << 'SCRIPT'\n{script}SCRIPT\n\
-                     chmod +x /tmp/run-reviewer-{agent_name}.sh && \
-                     nohup /tmp/run-reviewer-{agent_name}.sh > /dev/null 2>&1 &"
+                let diff = ws.exec(
+                    &format!("cd {project} && git diff {}..HEAD --stat && echo '---' && git diff {}..HEAD", self.main_branch, self.main_branch),
+                ).unwrap_or_default();
+                let diff_str = String::from_utf8_lossy(&diff);
+                let diff_truncated = if diff_str.len() > 50000 {
+                    format!("{}...(truncated)", &diff_str[..50000])
+                } else {
+                    diff_str.to_string()
+                };
+
+                // Build the review prompt with the diff included.
+                let full_prompt = format!(
+                    "{review_prompt}\n\n## Diff\n\n```\n{diff_truncated}\n```\n\n\
+                     Based on the diff above, render your verdict. \
+                     Reply with APPROVED or CHANGES_REQUESTED followed by your comments.",
                 );
 
-                match ws.exec(&reviewer_cmd) {
-                    Ok(_) => {
+                // Run the reviewer on the HOST via claude --print. No container
+                // resource contention — the reviewer doesn't share memory with
+                // the worker.
+                let model = reviewer.spec.model.as_deref()
+                    .unwrap_or(crate::config::DEFAULT_REVIEWER_MODEL);
+                let escaped = full_prompt.replace('\'', "'\\''");
+
+                let oauth_env = self.oauth_token.as_deref()
+                    .map(|t| format!("CLAUDE_CODE_OAUTH_TOKEN={t} "))
+                    .unwrap_or_default();
+
+                let output = std::process::Command::new("sh")
+                    .arg("-c")
+                    .arg(format!("{oauth_env}claude --model {model} --print '{escaped}'"))
+                    .output();
+
+                match output {
+                    Ok(out) => {
+                        let response = String::from_utf8_lossy(&out.stdout);
                         eprintln!(
-                            "supervisor: spawned reviewer '{agent_name}' for '{}'",
-                            action.worker_id
+                            "supervisor: reviewer '{agent_name}' for '{}': {}",
+                            action.worker_id,
+                            response.chars().take(100).collect::<String>()
+                        );
+
+                        // Parse verdict and write to coordination DB.
+                        let verdict = if response.to_uppercase().contains("APPROVED")
+                            && !response.to_uppercase().contains("CHANGES_REQUESTED")
+                        {
+                            clc_sdk::coordination::ReviewVerdict::Approved
+                        } else {
+                            clc_sdk::coordination::ReviewVerdict::ChangesRequested
+                        };
+
+                        let _ = coord.send(clc_sdk::coordination::Message {
+                            id: format!("review-{agent_name}-{}", std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos()),
+                            from: reviewer_id.clone(),
+                            to: action.worker_id.clone(),
+                            kind: clc_sdk::coordination::MessageKind::ReviewResult {
+                                request_id: String::new(),
+                                review_type: agent_name.clone(),
+                                verdict,
+                                comments: response.chars().take(2000).collect(),
+                            },
+                            timestamp: std::time::SystemTime::now(),
+                        });
+
+                        let _ = coord.set_status(
+                            &reviewer_id,
+                            clc_sdk::coordination::AgentStatus::Completed,
                         );
                     }
                     Err(e) => {
