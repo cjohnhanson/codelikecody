@@ -158,7 +158,10 @@ impl Workflow {
                     nudge: None,
                     can_stop: true,
                     permissions: test_only.clone(),
-                    transitions: Some(vec![TransitionDef::Simple("in-review".into())]),
+                    transitions: Some(vec![TransitionDef::Rich {
+                        target: "in-review".into(),
+                        requires: vec!["review".into()],
+                    }]),
                 },
                 PhaseDef {
                     name: "in-review".into(),
@@ -188,7 +191,17 @@ impl Workflow {
                     transitions: None, // terminal
                 },
             ],
-            reviews: HashMap::new(),
+            reviews: HashMap::from([(
+                "review".into(),
+                ReviewDef {
+                    instructions: Some(
+                        "Review the code changes for correctness, test quality, \
+                         and adherence to project standards."
+                            .into(),
+                    ),
+                    permissions: None,
+                },
+            )]),
         };
 
         // The default TDD workflow is known-valid; unwrap is safe.
@@ -279,13 +292,34 @@ impl Workflow {
         self.index.contains_key(phase)
     }
 
+    /// Whether the given phase has any review-gated transitions.
+    /// Returns true if any transition from this phase has `requires`.
+    pub fn has_review_gate(&self, phase: &str) -> bool {
+        !self.required_reviews_from(phase).is_empty()
+    }
+
+    /// All review types required by any transition FROM the given phase.
+    /// Returns an empty vec if no transitions require reviews.
+    pub fn required_reviews_from(&self, phase: &str) -> Vec<String> {
+        let Some(phase_def) = self.phase_def(phase) else {
+            return Vec::new();
+        };
+        let Some(transitions) = &phase_def.transitions else {
+            return Vec::new();
+        };
+        transitions
+            .iter()
+            .flat_map(|t| t.requires().iter().cloned())
+            .collect()
+    }
+
     /// All phase names in order.
     pub fn phase_names(&self) -> impl Iterator<Item = &str> {
         self.phases.iter().map(|p| p.name.as_str())
     }
 
     /// Look up a phase definition by name.
-    fn phase_def(&self, name: &str) -> Option<&PhaseDef> {
+    pub fn phase_def(&self, name: &str) -> Option<&PhaseDef> {
         self.index.get(name).map(|&i| &self.phases[i])
     }
 }
@@ -534,6 +568,51 @@ mod tests {
         let wf = docs_workflow();
         let names: Vec<&str> = wf.phase_names().collect();
         assert_eq!(names, vec!["outline", "draft", "done"]);
+    }
+
+    // --- Review gate detection tests ---
+
+    #[test]
+    fn has_review_gate_default_tdd() {
+        let wf = tdd();
+        assert!(wf.has_review_gate("review-requested"));
+        assert!(!wf.has_review_gate("tests-unwritten"));
+        assert!(!wf.has_review_gate("green"));
+        assert!(!wf.has_review_gate("implementing"));
+        assert!(!wf.has_review_gate("done"));
+    }
+
+    #[test]
+    fn has_review_gate_custom_workflow() {
+        let wf = docs_workflow();
+        assert!(wf.has_review_gate("draft"));
+        assert!(!wf.has_review_gate("outline"));
+        assert!(!wf.has_review_gate("done"));
+    }
+
+    #[test]
+    fn required_reviews_from_returns_types() {
+        let wf = tdd();
+        let reviews = wf.required_reviews_from("review-requested");
+        assert_eq!(reviews, vec!["review"]);
+
+        let wf = docs_workflow();
+        let reviews = wf.required_reviews_from("draft");
+        assert_eq!(reviews, vec!["writing"]);
+    }
+
+    #[test]
+    fn required_reviews_from_empty_for_ungated() {
+        let wf = tdd();
+        assert!(wf.required_reviews_from("implementing").is_empty());
+        assert!(wf.required_reviews_from("nonexistent").is_empty());
+    }
+
+    #[test]
+    fn default_tdd_has_review_def() {
+        let wf = tdd();
+        let review = wf.review_def("review").unwrap();
+        assert!(review.instructions.is_some());
     }
 
     // --- Validation error tests ---

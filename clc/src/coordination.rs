@@ -185,6 +185,24 @@ impl Coordination {
         }
     }
 
+    /// Set phase directly via DB (supervisor use only — bypasses API validation
+    /// because the supervisor IS the validation authority).
+    pub fn set_phase_via_db(
+        &self,
+        agent_id: &str,
+        phase: &str,
+        workflow: Option<&str>,
+    ) -> Result<(), CoordinationError> {
+        match &self.inner {
+            Backend::Db { backend, rt } => {
+                rt.block_on(backend.set_phase(agent_id, phase, 0, workflow))
+            }
+            Backend::Api(_) => {
+                Err(CoordinationError::Storage("set_phase_via_db not available via API".into()))
+            }
+        }
+    }
+
     pub fn grant_permission(
         &self,
         agent_id: &str,

@@ -44,6 +44,8 @@ pub struct Supervisor {
     shutdown: Arc<AtomicBool>,
     /// Workflow name → reviewer agent names from topology config.
     workflow_agents: std::collections::HashMap<String, Vec<String>>,
+    /// Workflow name → full definition (phase graph + reviews).
+    workflow_defs: std::collections::HashMap<String, crate::config::WorkflowDef>,
 }
 
 impl Supervisor {
@@ -74,6 +76,7 @@ impl Supervisor {
             poll_interval: Duration::from_secs(config.poll_interval),
             shutdown: Arc::new(AtomicBool::new(false)),
             workflow_agents: config.workflow_agents.clone(),
+            workflow_defs: config.workflows.clone(),
         }
     }
 
@@ -134,6 +137,7 @@ impl Supervisor {
 
         // Start the supervisor API server on a dedicated thread.
         let api_project_dir = self.project_dir.clone();
+        let api_workflows = self.workflow_defs.clone();
         let api_port = 19100; // TODO: configurable from SupervisorConfig
         let api_tls = tls_config;
         let (api_tx, api_rx) = std::sync::mpsc::channel();
@@ -155,6 +159,7 @@ impl Supervisor {
                 let api_state = Arc::new(crate::supervisor_api::ApiState {
                     db: Arc::new(db),
                     project_dir: api_project_dir,
+                    workflows: api_workflows,
                 });
 
                 match crate::supervisor_api::start(api_state, api_port, Some(api_tls)).await {
@@ -245,7 +250,7 @@ impl Supervisor {
             // pending workers here and starts Docker workspaces for them.
             self.start_pending_workers(&coord);
 
-            // Spawn reviewer agents for workers at review-requested phase.
+            // Check workers for review gates and spawn reviewer agents.
             self.handle_reviews(&coord);
 
             // Land completed workers. Fetch the git pack from the worker's
@@ -659,45 +664,61 @@ impl Supervisor {
         }
     }
 
-    /// Spawn reviewer agents for workers that have reached review-requested phase.
+    /// Check workers for pending review gates and spawn reviewer agents.
     ///
-    /// For each running worker at `review-requested`:
-    /// 1. Look up the workflow's reviewer agent names
-    /// 2. Resolve each reviewer from `.clc/reviewers/<name>.md`
-    /// 3. Spawn reviewer agents in the worker's SSH workspace
-    /// 4. Reviewers examine the code and render verdicts via `clc review`
+    /// Uses the workflow's `required_reviews_from()` to determine which phases
+    /// have review gates — no hardcoded phase names. When all required reviews
+    /// are approved, advances the phase via the API.
     fn handle_reviews(&mut self, coord: &Coordination) {
-        // Phase 1: collect which workers need reviews spawned.
+        // Fetch all agents once to avoid N+1 queries.
+        let all_agents = coord.list_agents(None).unwrap_or_default();
+
         struct ReviewAction {
             worker_idx: usize,
             worker_id: String,
             agent_names: Vec<String>,
         }
-        let mut actions = Vec::new();
+        struct AdvanceAction {
+            worker_id: String,
+            current_phase: String,
+            next_phase: String,
+            workflow_name: Option<String>,
+        }
+        let mut spawn_actions = Vec::new();
+        let mut advance_actions = Vec::new();
 
         for (idx, worker) in self.workers.iter().enumerate() {
-            let status = coord
-                .list_agents(None)
-                .unwrap_or_default()
-                .into_iter()
+            // Only check running workers.
+            let status = all_agents
+                .iter()
                 .find(|(id, _)| *id == worker.tisket_id)
-                .map(|(_, s)| s);
-
+                .map(|(_, s)| s.clone());
             if !matches!(status, Some(clc_sdk::coordination::AgentStatus::Running)) {
                 continue;
             }
 
+            // Get current phase and workflow.
             let phase_info = coord.get_phase(&worker.tisket_id).ok().flatten();
             let Some((ref phase, _, ref workflow_name)) = phase_info else {
                 continue;
             };
-            if phase != "review-requested" {
+
+            // Build the workflow from the definition, or fall back to default.
+            let wf = workflow_name
+                .as_deref()
+                .and_then(|name| self.workflow_defs.get(name))
+                .and_then(|def| crate::workflow::Workflow::new(def).ok())
+                .unwrap_or_else(crate::workflow::Workflow::default_tdd);
+
+            // Check if the current phase has review-gated transitions.
+            if !wf.has_review_gate(phase) {
                 continue;
             }
 
+            // Get the agent names for this workflow's reviewers.
             let agent_names = workflow_name
                 .as_deref()
-                .and_then(|wf| self.workflow_agents.get(wf))
+                .and_then(|wf_name| self.workflow_agents.get(wf_name))
                 .cloned()
                 .unwrap_or_default();
 
@@ -705,20 +726,21 @@ impl Supervisor {
                 continue;
             }
 
-            // Skip if reviewers already running.
-            let has_active_reviewers = coord
-                .list_agents(Some(&worker.tisket_id))
-                .unwrap_or_default()
+            // Skip if reviewers already running for this worker.
+            let has_active_reviewers = all_agents
                 .iter()
-                .any(|(_, s)| matches!(s,
-                    clc_sdk::coordination::AgentStatus::Running
-                    | clc_sdk::coordination::AgentStatus::Pending
-                ));
+                .any(|(id, s)| {
+                    id.starts_with(&format!("{}-reviewer-", worker.tisket_id))
+                        && matches!(s,
+                            clc_sdk::coordination::AgentStatus::Running
+                            | clc_sdk::coordination::AgentStatus::Pending
+                        )
+                });
             if has_active_reviewers {
                 continue;
             }
 
-            // Check if already fully approved.
+            // Check if all reviews are already approved.
             let all_approved = agent_names.iter().all(|name| {
                 crate::review::check_review_requirements(
                     &self.project_dir,
@@ -727,23 +749,53 @@ impl Supervisor {
                 )
                 .is_ok()
             });
+
             if all_approved {
-                eprintln!(
-                    "supervisor: all reviews approved for '{}', advancing",
-                    worker.tisket_id
-                );
+                // Find the transition whose review gate is now satisfied.
+                if let Some(phase_def) = wf.phase_def(phase) {
+                    if let Some(transitions) = &phase_def.transitions {
+                        // Pick the transition that has `requires` (the review-gated one).
+                        // If no transition has requires, fall back to the first.
+                        let target = transitions
+                            .iter()
+                            .find(|t| !t.requires().is_empty())
+                            .or_else(|| transitions.first())
+                            .map(|t| t.target().to_string());
+                        if let Some(target) = target {
+                            advance_actions.push(AdvanceAction {
+                                worker_id: worker.tisket_id.clone(),
+                                current_phase: phase.clone(),
+                                next_phase: target,
+                                workflow_name: workflow_name.clone(),
+                            });
+                        }
+                    }
+                }
                 continue;
             }
 
-            actions.push(ReviewAction {
+            spawn_actions.push(ReviewAction {
                 worker_idx: idx,
                 worker_id: worker.tisket_id.clone(),
                 agent_names,
             });
         }
 
-        // Phase 2: spawn reviewers (needs &mut access to worker workspaces).
-        for action in actions {
+        // Advance workers with all reviews approved.
+        for action in &advance_actions {
+            eprintln!(
+                "supervisor: all reviews approved for '{}', advancing {} → {}",
+                action.worker_id, action.current_phase, action.next_phase
+            );
+            let _ = coord.set_phase_via_db(
+                &action.worker_id,
+                &action.next_phase,
+                action.workflow_name.as_deref(),
+            );
+        }
+
+        // Spawn reviewers for workers that need them.
+        for action in spawn_actions {
             let Some(ref mut ws) = self.workers[action.worker_idx].workspace else {
                 continue;
             };
@@ -779,8 +831,14 @@ impl Supervisor {
 
                 let model = reviewer.spec.model.as_deref().unwrap_or("sonnet");
                 let escaped_prompt = review_prompt.replace('\'', "'\\''");
+                // Source the worker's env file for mTLS credentials. The SSH
+                // workspace writes /tmp/clc-env.sh during dispatch with the
+                // API URL and cert paths. New SSH sessions don't inherit the
+                // worker process's env, so we source the file explicitly.
                 let reviewer_cmd = format!(
-                    "cd /project && export CLC_REVIEW_TYPE='{agent_name}' && \
+                    "cd /project && \
+                     . /tmp/clc-env.sh 2>/dev/null && \
+                     export CLC_REVIEW_TYPE='{agent_name}' && \
                      export CLC_REVIEWER_ID='{reviewer_id}' && \
                      nohup claude --model {model} --print '{escaped_prompt}' \
                      > /tmp/reviewer-{agent_name}.log 2>&1 &"

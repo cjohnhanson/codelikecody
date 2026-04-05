@@ -424,6 +424,7 @@ mod tests {
                 let state = std::sync::Arc::new(crate::supervisor_api::ApiState {
                     db: std::sync::Arc::new(db),
                     project_dir: std::path::PathBuf::from("/tmp"),
+                    workflows: Default::default(),
                 });
                 let addr = crate::supervisor_api::start(state, 0, None).await.unwrap();
                 tx.send(addr.port()).unwrap();

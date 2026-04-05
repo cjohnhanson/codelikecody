@@ -164,6 +164,18 @@ where
     Ok(raw.into_iter().map(PhaseDef::from).collect())
 }
 
+/// Deserialize an optional phases list (for topology WorkflowSpec where phases
+/// are optional — omitted means use the built-in default).
+pub fn deserialize_phases_opt<'de, D>(
+    deserializer: D,
+) -> Result<Option<Vec<PhaseDef>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw: Option<Vec<PhaseDefOrString>> = Option::deserialize(deserializer)?;
+    Ok(raw.map(|v| v.into_iter().map(PhaseDef::from).collect()))
+}
+
 /// Match criteria for a workflow policy rule.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RuleMatch {
@@ -260,8 +272,14 @@ pub struct SupervisorConfig {
     #[serde(default)]
     pub coordinators: Vec<CoordinatorScope>,
 
-    /// Workflow name → reviewer agent names. The supervisor spawns these
-    /// agents when a worker reaches a review gate.
+    /// Workflow name → full definition (phase graph + review agents).
+    /// Source of truth for phase transition validation and review gate enforcement.
+    #[serde(default)]
+    pub workflows: std::collections::HashMap<String, WorkflowDef>,
+
+    /// Workflow name → reviewer agent names. Separate from the phase graph
+    /// because agent names resolve to `.clc/reviewers/<name>.md` files which
+    /// are a runtime concern, not a workflow definition concern.
     #[serde(default)]
     pub workflow_agents: std::collections::HashMap<String, Vec<String>>,
 }

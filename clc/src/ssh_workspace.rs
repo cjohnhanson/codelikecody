@@ -451,6 +451,9 @@ fn build_coordinator_exec_cmd(tunnel_port: u16, start_cmd: &str) -> String {
 
 /// Build the shell command that starts a worker inside a Docker workspace.
 /// Uses the reverse SSH tunnel to reach the supervisor API.
+/// Also writes /tmp/clc-env.sh so reviewer agents spawned later in the same
+/// container can source the mTLS credentials (new SSH sessions don't inherit
+/// the worker's exported env vars).
 fn build_worker_exec_cmd(tunnel_port: u16, start_cmd: &str) -> String {
     format!(
         "cd /project && \
@@ -462,6 +465,7 @@ fn build_worker_exec_cmd(tunnel_port: u16, start_cmd: &str) -> String {
          export CLC_API_CERT=/tmp/workspace-cert.pem && \
          export CLC_API_KEY=/tmp/workspace-key.pem && \
          export CLC_API_CA=/tmp/ca-cert.pem && \
+         printf 'export CLC_API_URL=https://localhost:{tunnel_port}\\nexport CLC_API_CERT=/tmp/workspace-cert.pem\\nexport CLC_API_KEY=/tmp/workspace-key.pem\\nexport CLC_API_CA=/tmp/ca-cert.pem\\n' > /tmp/clc-env.sh && \
          {start_cmd} 2>&1"
     )
 }

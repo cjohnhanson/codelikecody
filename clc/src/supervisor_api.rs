@@ -22,6 +22,9 @@ use clc_sdk::coordination_db::DbBackend;
 pub struct ApiState {
     pub db: Arc<DbBackend>,
     pub project_dir: PathBuf,
+    /// Workflow definitions from the topology config. Used for phase
+    /// transition validation without loading config files from disk.
+    pub workflows: std::collections::HashMap<String, crate::config::WorkflowDef>,
 }
 
 /// Start the supervisor API server. Returns the bound address.
@@ -431,10 +434,17 @@ async fn dispatch_worker(
             .await;
     }
 
-    // Set initial phase so the phase guard knows where the worker is.
+    // Set initial phase from the workflow definition. The first phase in
+    // the workflow is the starting point — no hardcoded phase names.
+    let initial_phase = req.workflow.as_deref()
+        .and_then(|name| state.workflows.get(name))
+        .and_then(|def| crate::workflow::Workflow::new(def).ok())
+        .map(|wf| wf.initial_phase().to_string())
+        .unwrap_or_else(|| crate::workflow::Workflow::default_tdd().initial_phase().to_string());
+
     let _ = state
         .db
-        .set_phase(&req.tisket_id, "tests-unwritten", 0, req.workflow.as_deref())
+        .set_phase(&req.tisket_id, &initial_phase, 0, req.workflow.as_deref())
         .await;
 
     Ok((
@@ -697,8 +707,9 @@ async fn get_phase(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let (phase, attempts, workflow) = entry
-        .unwrap_or(("tests-unwritten".to_string(), 0, None));
+    let Some((phase, attempts, workflow)) = entry else {
+        return Err(StatusCode::NOT_FOUND);
+    };
 
     Ok(Json(serde_json::json!({
         "agent_id": id,
@@ -726,10 +737,9 @@ async fn set_phase(
     // Validate transitions for existing entries only.
     if let Some((current_phase, _, workflow_name)) = &existing {
         if current_phase != &req.phase {
-            let cfg = crate::config::load(&state.project_dir).unwrap_or_default();
             let wf = workflow_name
                 .as_deref()
-                .and_then(|name| cfg.workflows.get(name))
+                .and_then(|name| state.workflows.get(name))
                 .and_then(|def| crate::workflow::Workflow::new(def).ok())
                 .unwrap_or_else(crate::workflow::Workflow::default_tdd);
 
@@ -1036,6 +1046,7 @@ mod tests {
                 let state = Arc::new(ApiState {
                     db: Arc::new(db),
                     project_dir: std::path::PathBuf::from("/tmp"),
+                    workflows: Default::default(),
                 });
                 let addr = start(state, 0, None).await.unwrap();
                 tx.send(addr.port()).unwrap();

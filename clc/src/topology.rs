@@ -108,14 +108,27 @@ impl Default for SupervisorSpec {
     }
 }
 
-/// A workflow definition in the topology. Carries the phase graph and
-/// named agents that run at review gates.
+/// A workflow definition in the topology. Carries agent names for review
+/// gates and optionally a full phase graph. When phases are omitted,
+/// the built-in default_tdd graph is used.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct WorkflowSpec {
     /// Named agents used during review phases. Each name resolves to
     /// `.clc/reviewers/<name>.md` — an AgentSpec frontmatter + review prompt.
     #[serde(default)]
     pub agents: Vec<String>,
+
+    /// Optional phase graph. When provided, overrides the default TDD phases.
+    #[serde(default, deserialize_with = "crate::config::deserialize_phases_opt")]
+    pub phases: Option<Vec<crate::config::PhaseDef>>,
+
+    /// Review type definitions referenced by phase transitions.
+    #[serde(default)]
+    pub reviews: std::collections::HashMap<String, crate::config::ReviewDef>,
+
+    /// Human-readable description injected into prime text.
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -231,9 +244,25 @@ impl TopologyConfig {
             .map(|(name, spec)| (name.clone(), spec.agents.clone()))
             .collect();
 
+        let workflows = self
+            .workflows
+            .iter()
+            .filter_map(|(name, spec)| {
+                // Only include workflows that define custom phases.
+                // Workflows with only agents (no phases) use the built-in default.
+                let phases = spec.phases.clone()?;
+                Some((name.clone(), config::WorkflowDef {
+                    description: spec.description.clone(),
+                    phases,
+                    reviews: spec.reviews.clone(),
+                }))
+            })
+            .collect();
+
         config::SupervisorConfig {
             poll_interval: self.supervisor.poll_interval,
             coordinators,
+            workflows,
             workflow_agents,
         }
     }
