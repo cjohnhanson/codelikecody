@@ -965,6 +965,29 @@ fn parse_message_kind(
             phase: payload["phase"].as_str().unwrap_or_default().to_string(),
             detail: payload["detail"].as_str().unwrap_or_default().to_string(),
         }),
+        "review_request" => Some(clc_sdk::coordination::MessageKind::ReviewRequest {
+            review_type: payload["review_type"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+            branch: payload["branch"].as_str().unwrap_or_default().to_string(),
+            summary: payload["summary"].as_str().unwrap_or_default().to_string(),
+        }),
+        "review_result" => Some(clc_sdk::coordination::MessageKind::ReviewResult {
+            request_id: payload["request_id"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+            review_type: payload["review_type"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+            verdict: match payload["verdict"].as_str().unwrap_or("") {
+                "Approved" => clc_sdk::coordination::ReviewVerdict::Approved,
+                _ => clc_sdk::coordination::ReviewVerdict::ChangesRequested,
+            },
+            comments: payload["comments"].as_str().unwrap_or_default().to_string(),
+        }),
         _ => None,
     }
 }
@@ -1595,5 +1618,119 @@ mod tests {
             &serde_json::json!({ "phase": "done" }),
         );
         assert_eq!(status, 200, "all reviewers approved should succeed");
+    }
+
+    // --- Auth tests for ReviewResult messages ---
+
+    fn blocking_post_with_auth(
+        base_url: &str,
+        path: &str,
+        body: &serde_json::Value,
+        token: &str,
+    ) -> (u16, serde_json::Value) {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let resp = reqwest::Client::new()
+                .post(format!("{base_url}{path}"))
+                .header("Authorization", format!("Bearer {token}"))
+                .json(body)
+                .send()
+                .await
+                .unwrap();
+            let status = resp.status().as_u16();
+            let body = resp.json().await.unwrap_or(serde_json::json!({}));
+            (status, body)
+        })
+    }
+
+    #[test]
+    fn send_review_result_without_auth_returns_401() {
+        let (base_url, _db, _handle, _tmp) = start_test_api_with_workflows(Default::default());
+
+        // Register a worker.
+        blocking_post(&base_url, "/agents", &serde_json::json!({ "id": "worker-1" }));
+
+        // Send a ReviewResult without Authorization header.
+        let (status, _) = blocking_post(
+            &base_url,
+            "/agents/worker-1/messages",
+            &serde_json::json!({
+                "from": "reviewer-1",
+                "kind": "review_result",
+                "payload": {
+                    "request_id": "",
+                    "review_type": "code",
+                    "verdict": "Approved",
+                    "comments": "lgtm"
+                }
+            }),
+        );
+        assert_eq!(status, 401, "ReviewResult without auth should be 401");
+    }
+
+    #[test]
+    fn send_review_result_with_wrong_token_returns_401() {
+        let (base_url, _db, _handle, _tmp) = start_test_api_with_workflows(Default::default());
+
+        // Register worker and reviewer.
+        blocking_post(&base_url, "/agents", &serde_json::json!({ "id": "worker-1" }));
+        let (_, reviewer_body) = blocking_post(
+            &base_url,
+            "/agents",
+            &serde_json::json!({ "id": "reviewer-1" }),
+        );
+
+        // Send ReviewResult with a bogus token.
+        let (status, _) = blocking_post_with_auth(
+            &base_url,
+            "/agents/worker-1/messages",
+            &serde_json::json!({
+                "from": "reviewer-1",
+                "kind": "review_result",
+                "payload": {
+                    "request_id": "",
+                    "review_type": "code",
+                    "verdict": "Approved",
+                    "comments": "lgtm"
+                }
+            }),
+            "bogus-token-does-not-exist",
+        );
+        assert_eq!(status, 401, "ReviewResult with invalid token should be 401");
+    }
+
+    #[test]
+    fn send_review_result_with_valid_auth_succeeds() {
+        let (base_url, _db, _handle, _tmp) = start_test_api_with_workflows(Default::default());
+
+        // Register worker and reviewer — get reviewer's token.
+        blocking_post(&base_url, "/agents", &serde_json::json!({ "id": "worker-1" }));
+        let (_, reviewer_body) = blocking_post(
+            &base_url,
+            "/agents",
+            &serde_json::json!({ "id": "reviewer-1" }),
+        );
+        let token = reviewer_body["token"].as_str().unwrap();
+
+        // Send ReviewResult with the reviewer's own token.
+        let (status, _) = blocking_post_with_auth(
+            &base_url,
+            "/agents/worker-1/messages",
+            &serde_json::json!({
+                "from": "reviewer-1",
+                "kind": "review_result",
+                "payload": {
+                    "request_id": "",
+                    "review_type": "code",
+                    "verdict": "Approved",
+                    "comments": "lgtm"
+                }
+            }),
+            token,
+        );
+        assert_eq!(status, 200, "ReviewResult with valid auth should succeed: {}", status);
     }
 }
