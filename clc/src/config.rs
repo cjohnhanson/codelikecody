@@ -299,6 +299,21 @@ const fn default_tunnel_base_port() -> u16 {
     19200
 }
 
+/// Generate a random hex token (16 bytes / 32 hex chars).
+pub fn generate_token() -> String {
+    use std::fmt::Write;
+    let mut bytes = [0u8; 16];
+    if let Ok(mut f) = std::fs::File::open("/dev/urandom") {
+        use std::io::Read;
+        let _ = f.read_exact(&mut bytes);
+    }
+    let mut buf = String::with_capacity(32);
+    for b in &bytes {
+        let _ = write!(buf, "{b:02x}");
+    }
+    buf
+}
+
 /// Baseline tool grants seeded at dispatch. The phase guard (workflow
 /// permissions) constrains what edits are allowed in each phase — these
 /// grants cover the mechanical tools every worker needs.

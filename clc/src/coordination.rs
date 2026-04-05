@@ -89,7 +89,7 @@ impl Coordination {
         match &self.inner {
             Backend::Db { backend, rt } => {
                 rt.block_on(backend.register_agent(id, parent_id))?;
-                let token = generate_local_token();
+                let token = crate::config::generate_token();
                 rt.block_on(backend.set_token(id, &token))?;
                 Ok(token)
             }
@@ -263,17 +263,3 @@ impl Coordination {
     }
 }
 
-/// Generate a random 32-hex-char token from /dev/urandom.
-fn generate_local_token() -> String {
-    use std::fmt::Write;
-    let mut bytes = [0u8; 16];
-    if let Ok(mut f) = std::fs::File::open("/dev/urandom") {
-        use std::io::Read;
-        let _ = f.read_exact(&mut bytes);
-    }
-    let mut buf = String::with_capacity(32);
-    for b in &bytes {
-        let _ = write!(buf, "{b:02x}");
-    }
-    buf
-}

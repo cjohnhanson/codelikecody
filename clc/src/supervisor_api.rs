@@ -207,7 +207,7 @@ async fn register_agent(
         .map_err(|_| StatusCode::CONFLICT)?;
 
     // Generate and store a bearer token for this agent.
-    let token = generate_token();
+    let token = crate::config::generate_token();
     state
         .db
         .set_token(&req.id, &token)
@@ -217,20 +217,6 @@ async fn register_agent(
     Ok(Json(serde_json::json!({ "id": req.id, "token": token })))
 }
 
-/// Generate a random bearer token (32 hex chars) from /dev/urandom.
-fn generate_token() -> String {
-    use std::fmt::Write;
-    let mut bytes = [0u8; 16];
-    if let Ok(mut f) = std::fs::File::open("/dev/urandom") {
-        use std::io::Read;
-        let _ = f.read_exact(&mut bytes);
-    }
-    let mut buf = String::with_capacity(32);
-    for b in &bytes {
-        let _ = write!(buf, "{b:02x}");
-    }
-    buf
-}
 
 async fn get_agent(
     State(state): State<Arc<ApiState>>,
