@@ -262,9 +262,9 @@ impl Workspace for SSHWorkspace {
                 self.config.workspace_config.agent_config.model.clone(),
             ];
 
-            let api_url = format!("https://host.docker.internal:{}", self.config.api_port);
-            args.push("--api-url".to_string());
-            args.push(api_url);
+            // The API URL comes from the CLC_API_URL env var set by
+            // build_worker_exec_cmd, which uses the reverse tunnel
+            // (localhost:{tunnel_port}). No need to pass --api-url here.
 
             if let Some(ref token) = self.config.oauth_token {
                 args.push("--oauth-token".to_string());
@@ -434,10 +434,7 @@ impl DockerEnvironment {
 }
 
 /// Build the shell command that starts a coordinator inside a Docker workspace.
-/// Uses host.docker.internal to reach the supervisor API directly — the reverse
-/// SSH tunnel is unreliable because russh tears down the forwarding listener when
-/// all channels close. host.docker.internal works on Docker Desktop (macOS/Windows)
-/// and the API binds to 0.0.0.0 with mTLS protecting it.
+/// Uses the reverse SSH tunnel (localhost:{tunnel_port}) to reach the supervisor API.
 fn build_coordinator_exec_cmd(tunnel_port: u16, start_cmd: &str) -> String {
     format!(
         "cd {REMOTE_PROJECT_DIR} && \
