@@ -836,8 +836,9 @@ impl Supervisor {
                 // workspace writes /tmp/clc-env.sh during dispatch with the
                 // API URL and cert paths. New SSH sessions don't inherit the
                 // worker process's env, so we source the file explicitly.
+                let project = crate::ssh_workspace::REMOTE_PROJECT_DIR;
                 let reviewer_cmd = format!(
-                    "cd /project && \
+                    "cd {project} && \
                      . /tmp/clc-env.sh 2>/dev/null && \
                      export CLC_REVIEW_TYPE='{agent_name}' && \
                      export CLC_REVIEWER_ID='{reviewer_id}' && \
@@ -893,8 +894,9 @@ impl Supervisor {
             eprintln!("supervisor: landing worker '{id}'");
 
             // Verify the worker has meaningful commits (not just pickup + finalize).
+            let project = crate::ssh_workspace::REMOTE_PROJECT_DIR;
             let commit_check = ws.exec(
-                &format!("cd /project && git log --oneline {}..HEAD --no-merges | grep -cv 'clc: pickup\\|clc: finalize'", self.main_branch),
+                &format!("cd {project} && git log --oneline {}..HEAD --no-merges | grep -cv 'clc: pickup\\|clc: finalize'", self.main_branch),
             );
             let meaningful_commits = commit_check
                 .ok()
@@ -913,7 +915,7 @@ impl Supervisor {
             //    Using raw tar + git rev-parse instead of `clc workspace export`
             //    because gix::open hangs in certain container environments.
             match ws.exec(
-                &format!("cd /project && tar czf /tmp/repo-export.tar.gz .git/"),
+                &format!("cd {project} && tar czf /tmp/repo-export.tar.gz .git/"),
             ) {
                 Ok(_) => {}
                 Err(e) => {
@@ -923,7 +925,7 @@ impl Supervisor {
             };
 
             let ref_output = match ws.exec(
-                &format!("cd /project && git rev-parse refs/heads/{id}"),
+                &format!("cd {project} && git rev-parse refs/heads/{id}"),
             ) {
                 Ok(data) => String::from_utf8_lossy(&data).trim().to_string(),
                 Err(e) => {

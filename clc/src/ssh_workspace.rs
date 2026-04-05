@@ -8,6 +8,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+/// Working directory inside SSH workspaces where the project is checked out.
+/// Used by the supervisor for landing commands and by the workspace init.
+pub const REMOTE_PROJECT_DIR: &str = "/project";
+
 use claude_code::protocol::OutputMessage;
 use clc_sdk::workspace::{
     PermissionDenial, Workspace, WorkspaceConfig, WorkspaceError, WorkspaceStatus,
