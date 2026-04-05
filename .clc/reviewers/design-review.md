@@ -1,5 +1,5 @@
 ---
-model: opus
+model: sonnet
 ---
 
 Load the design and performance evaluation skills:
