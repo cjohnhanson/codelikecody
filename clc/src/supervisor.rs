@@ -848,16 +848,23 @@ impl Supervisor {
                 // worker process's env, so we source the file explicitly.
                 let project = crate::ssh_workspace::REMOTE_PROJECT_DIR;
                 let oauth_export = self.oauth_token.as_deref()
-                    .map(|t| format!("export CLAUDE_CODE_OAUTH_TOKEN='{t}' && "))
+                    .map(|t| format!("export CLAUDE_CODE_OAUTH_TOKEN='{t}'\n"))
                     .unwrap_or_default();
-                let reviewer_cmd = format!(
-                    "cd {project} && \
-                     . /tmp/clc-env.sh 2>/dev/null && \
+                // Write the reviewer command to a script file, then execute it
+                // with nohup. Direct `nohup ... &` via SSH exec doesn't survive
+                // channel close — the script approach ensures the process persists.
+                let script = format!(
+                    "#!/bin/sh\ncd {project}\n. /tmp/clc-env.sh 2>/dev/null\n\
                      {oauth_export}\
-                     export CLC_REVIEW_TYPE='{agent_name}' && \
-                     export CLC_REVIEWER_ID='{reviewer_id}' && \
-                     nohup claude --model {model} --print '{escaped_prompt}' \
-                     > /tmp/reviewer-{agent_name}.log 2>&1 &"
+                     export CLC_REVIEW_TYPE='{agent_name}'\n\
+                     export CLC_REVIEWER_ID='{reviewer_id}'\n\
+                     claude --model {model} --print '{escaped_prompt}' \
+                     > /tmp/reviewer-{agent_name}.log 2>&1\n"
+                );
+                let reviewer_cmd = format!(
+                    "cat > /tmp/run-reviewer-{agent_name}.sh << 'SCRIPT'\n{script}SCRIPT\n\
+                     chmod +x /tmp/run-reviewer-{agent_name}.sh && \
+                     nohup /tmp/run-reviewer-{agent_name}.sh > /dev/null 2>&1 &"
                 );
 
                 match ws.exec(&reviewer_cmd) {
