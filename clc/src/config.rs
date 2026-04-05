@@ -1060,6 +1060,59 @@ rules:
         assert_eq!(rich.reviewers().len(), 2);
     }
 
+    #[test]
+    fn review_field_deserializes_single_string() {
+        let yaml = r#"
+workflows:
+  test:
+    phases:
+      - name: writing
+        transitions:
+          - target: done
+            review: docs-review
+      - done
+"#;
+        let config: Config = serde_yml::from_str(yaml).unwrap();
+        let wf = &config.workflows["test"];
+        let t = &wf.phases[0].transitions.as_ref().unwrap()[0];
+        assert_eq!(t.reviewers(), &["docs-review"]);
+    }
+
+    #[test]
+    fn review_field_deserializes_list() {
+        let yaml = r#"
+workflows:
+  test:
+    phases:
+      - name: writing
+        transitions:
+          - target: done
+            review: [scope-check, code-review]
+      - done
+"#;
+        let config: Config = serde_yml::from_str(yaml).unwrap();
+        let wf = &config.workflows["test"];
+        let t = &wf.phases[0].transitions.as_ref().unwrap()[0];
+        assert_eq!(t.reviewers(), &["scope-check", "code-review"]);
+    }
+
+    #[test]
+    fn review_field_absent_means_empty() {
+        let yaml = r#"
+workflows:
+  test:
+    phases:
+      - name: writing
+        transitions:
+          - target: done
+      - done
+"#;
+        let config: Config = serde_yml::from_str(yaml).unwrap();
+        let wf = &config.workflows["test"];
+        let t = &wf.phases[0].transitions.as_ref().unwrap()[0];
+        assert!(t.reviewers().is_empty());
+    }
+
     // --- Skills config tests ---
 
     #[test]

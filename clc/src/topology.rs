@@ -853,8 +853,9 @@ workspaces:
     agent: opus
 workflows:
   my-flow:
-    agents:
-      - scope-check
+    phases:
+      - draft
+      - done
 coordinators:
   c:
     workspace: w
@@ -862,5 +863,42 @@ coordinators:
 ";
         let topo = parse(yaml);
         assert!(topo.validate().is_ok());
+    }
+
+    #[test]
+    fn to_supervisor_config_includes_workflow_phases() {
+        let yaml = "
+workspaces:
+  w:
+    type: worker
+    agent: opus
+workflows:
+  docs:
+    description: Documentation
+    phases:
+      - name: outline
+        transitions:
+          - target: draft
+            review: docs-review
+      - name: draft
+        transitions: [done]
+      - done
+coordinators:
+  c:
+    workspace: w
+    workflow: docs
+";
+        let topo = parse(yaml);
+        let sup = topo.to_supervisor_config();
+
+        // Workflow should be in the supervisor config.
+        let wf = sup.workflows.get("docs").expect("docs workflow missing");
+        assert_eq!(wf.phases.len(), 3);
+        assert_eq!(wf.phases[0].name, "outline");
+        assert_eq!(wf.description.as_deref(), Some("Documentation"));
+
+        // The review gate should be preserved.
+        let t = &wf.phases[0].transitions.as_ref().unwrap()[0];
+        assert_eq!(t.reviewers(), &["docs-review"]);
     }
 }
