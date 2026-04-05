@@ -814,11 +814,14 @@ impl Supervisor {
                         action.next_phase
                     );
                     eprintln!("supervisor: resuming '{}' after review", action.worker_id);
-                    // Send resume message to the worker's stdin pipe.
-                    let _ = ws.exec(&format!(
-                        "cd {project} && echo '{}' > .clc/worker/stdin.pipe 2>/dev/null",
-                        resume_msg.replace('\'', "'\\''")
-                    ));
+                    // Write JSON-formatted InputMessage to the worker's stdin pipe.
+                    let input = claude_code::protocol::InputMessage::user(&resume_msg);
+                    if let Ok(json) = serde_json::to_string(&input) {
+                        let escaped = json.replace('\'', "'\\''");
+                        let _ = ws.exec(&format!(
+                            "printf '%s\\n' '{escaped}' > {project}/.clc/worker/stdin.pipe 2>/dev/null",
+                        ));
+                    }
                 }
             }
         }

@@ -90,7 +90,10 @@ pub fn run() -> Result<i32, Error> {
         }
         Event::PostToolUse { ref tool_name, .. } if !is_reviewer => {
             // If blocked on a review gate, tell the agent to stop.
-            let review_pending = std::env::var("CLC_API_URL").is_ok()
+            // Only check on Bash calls (where `clc status set` runs) to avoid
+            // HTTP overhead on every Read/Grep/Glob call.
+            let review_pending = tool_name == "Bash"
+                && std::env::var("CLC_API_URL").is_ok()
                 && phase_name.as_deref().is_some_and(|p| {
                     let worker_id = git_state.as_ref().map(|g| g.branch.as_str()).unwrap_or("");
                     crate::review::has_pending_review(cwd, worker_id, &workflow, p)
