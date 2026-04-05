@@ -183,6 +183,23 @@ pub fn check_review_requirements(
     }
 }
 
+/// Check if the worker is blocked at a review-gated phase transition.
+/// Returns true if the current phase has review-gated transitions and
+/// at least one required reviewer has not yet approved.
+pub fn has_pending_review(
+    cwd: &Path,
+    worker_id: &str,
+    workflow: &crate::workflow::Workflow,
+    phase: &str,
+) -> bool {
+    let reviewers = workflow.reviewers_from(phase);
+    if reviewers.is_empty() {
+        return false;
+    }
+    // If check_review_requirements fails (unapproved), review is pending.
+    check_review_requirements(cwd, worker_id, &reviewers).is_err()
+}
+
 /// Check if a reviewer session has pending review requests for a given worker.
 /// Returns the review types that have been requested but not yet resolved.
 pub fn pending_review_types(

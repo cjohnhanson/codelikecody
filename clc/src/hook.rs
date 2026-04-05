@@ -89,10 +89,28 @@ pub fn run() -> Result<i32, Error> {
             }
         }
         Event::PostToolUse { ref tool_name, .. } if !is_reviewer => {
-            let nudge = post_tool_nudge_workflow(tool_name, phase_name.as_deref(), &workflow);
-            nudge.map_or(Response::Passthrough, |text| Response::Allow {
-                context: Some(text),
-            })
+            // If blocked on a review gate, tell the agent to stop.
+            let review_pending = std::env::var("CLC_API_URL").is_ok()
+                && phase_name.as_deref().is_some_and(|p| {
+                    let worker_id = git_state.as_ref().map(|g| g.branch.as_str()).unwrap_or("");
+                    crate::review::has_pending_review(cwd, worker_id, &workflow, p)
+                });
+
+            if review_pending {
+                Response::Allow {
+                    context: Some(
+                        "Review pending for this phase transition. \
+                         Stop now — the supervisor will resume this session \
+                         after the review completes. Do not retry clc status set \
+                         or do further work until resumed.".to_string()
+                    ),
+                }
+            } else {
+                let nudge = post_tool_nudge_workflow(tool_name, phase_name.as_deref(), &workflow);
+                nudge.map_or(Response::Passthrough, |text| Response::Allow {
+                    context: Some(text),
+                })
+            }
         }
         Event::PreToolUse { ref tool_name, ref tool_input }
             if std::env::var("CLC_API_URL").is_ok() =>
@@ -127,6 +145,11 @@ pub fn run() -> Result<i32, Error> {
             );
             if matches!(guard_result, Response::Block { .. }) {
                 if has_pending_escalation(git_state.as_ref()) {
+                    Response::Passthrough
+                } else if phase_name.as_deref().is_some_and(|p| {
+                    let worker_id = git_state.as_ref().map(|g| g.branch.as_str()).unwrap_or("");
+                    crate::review::has_pending_review(cwd, worker_id, &workflow, p)
+                }) {
                     Response::Passthrough
                 } else {
                     guard_result
