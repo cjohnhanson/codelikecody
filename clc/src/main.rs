@@ -612,7 +612,8 @@ fn cmd_workspace(action: &cli::WorkspaceAction) -> Result<(), Error> {
                         if attempt > 0 {
                             std::thread::sleep(std::time::Duration::from_secs(2));
                         }
-                        if crate::phase::init_phase_via_api(url, branch, "tests-unwritten", None).is_ok() {
+                        let default_initial = crate::workflow::Workflow::default_tdd().initial_phase().to_string();
+                        if crate::phase::init_phase_via_api(url, branch, &default_initial, None).is_ok() {
                             set = true;
                             break;
                         }
@@ -621,7 +622,8 @@ fn cmd_workspace(action: &cli::WorkspaceAction) -> Result<(), Error> {
                         eprintln!("warning: could not set initial phase via API (may already exist)");
                     }
                 } else {
-                    crate::phase::init_phase_with_workflow(&cwd, "tests-unwritten", None)?;
+                    let default_initial = crate::workflow::Workflow::default_tdd().initial_phase().to_string();
+                    crate::phase::init_phase_with_workflow(&cwd, &default_initial, None)?;
                 }
             }
 

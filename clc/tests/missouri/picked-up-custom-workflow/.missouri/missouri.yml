@@ -23,7 +23,7 @@ assertions:
   - name: "phase is now draft"
     command: "cd .worktrees/write-docs && clc status 2>&1 | grep 'phase: draft'"
 
-  - name: "status set to done is blocked (requires writing review)"
+  - name: "status set to done is blocked (requires docs-review)"
     command: "cd .worktrees/write-docs && clc status set done 2>&1; test $? -ne 0"
 
   - name: "status set to implementing is rejected (not in this workflow)"

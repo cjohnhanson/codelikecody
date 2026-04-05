@@ -106,8 +106,8 @@ fn load_phase_name_from_api(api_url: &str, agent_id: &str) -> Result<Option<Stri
 
     match result {
         Ok(resp) => {
-            let name = resp["phase"].as_str().unwrap_or("tests-unwritten");
-            Ok(Some(name.to_string()))
+            let name = resp["phase"].as_str().map(|s| s.to_string());
+            Ok(name)
         }
         Err(_) => Ok(None),
     }

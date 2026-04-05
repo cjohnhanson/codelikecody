@@ -90,8 +90,9 @@ pub fn pickup(
     // Resolve workflow and initial phase from policy rules.
     // If no workflows are configured, use the built-in TDD workflow.
     let config = crate::config::load(project_dir).unwrap_or_default();
+    let default_tdd = crate::workflow::Workflow::default_tdd();
     let (initial_phase, workflow_name): (&str, Option<&str>) = if config.workflows.is_empty() {
-        ("tests-unwritten", None)
+        (default_tdd.initial_phase(), None)
     } else {
         let wf_def = config.resolve_workflow(&issue.frontmatter.labels, &issue.project);
         let phase = wf_def
