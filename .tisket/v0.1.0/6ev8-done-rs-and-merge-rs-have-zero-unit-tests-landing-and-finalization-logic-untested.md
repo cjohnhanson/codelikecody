@@ -1,12 +1,12 @@
 ---
 title: "done.rs and merge.rs have zero unit tests — landing and finalization logic untested"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [clc, testing, auto]
 depends_on: []
 created: 2026-04-06T13:22:27Z
-updated: "2026-04-06T13:22:50Z"
+updated: "2026-04-06T13:37:51Z"
 ---
 
 ## Problem
@@ -30,3 +30,5 @@ done.rs (116 lines) and merge.rs (182 lines) have zero unit tests. These handle 
 ## From review agent
 
 Testing Priority 6 from QA review. These files are operational code where bugs have the highest blast radius.
+
+## Scratch Notes
