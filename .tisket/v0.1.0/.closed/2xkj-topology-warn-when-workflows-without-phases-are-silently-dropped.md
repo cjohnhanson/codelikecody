@@ -1,12 +1,12 @@
 ---
 title: "topology: warn when workflows without phases are silently dropped"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: [clc, config, auto]
 depends_on: []
 created: 2026-04-06T13:22:26Z
-updated: "2026-04-06T13:30:00Z"
+updated: "2026-04-06T13:36:51Z"
 ---
 
 ## Problem
@@ -28,5 +28,3 @@ let workflows = self.workflows.iter()
     })
     .collect();
 ```
-
-## Scratch Notes
