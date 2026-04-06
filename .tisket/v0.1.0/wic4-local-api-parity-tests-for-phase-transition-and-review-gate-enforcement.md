@@ -1,12 +1,12 @@
 ---
 title: "local-API parity tests for phase transition and review gate enforcement"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [clc, testing, auto]
 depends_on: []
 created: 2026-04-06T13:22:28Z
-updated: "2026-04-06T13:22:56Z"
+updated: "2026-04-06T13:51:44Z"
 ---
 
 ## Problem
@@ -24,3 +24,5 @@ Same review-gated workflow. Both paths must reject unreviewed transitions and ac
 ## From review agent
 
 Testing Priority 4 from QA review. The API review gate bug was the critical finding that started the whole fix effort — parity tests prevent regression.
+
+## Scratch Notes
