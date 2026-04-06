@@ -1100,7 +1100,25 @@ impl Supervisor {
             }
             eprintln!("supervisor: imported pack from '{id}'");
 
-            // 3. Attempt merge to trunk.
+            // 3. Rebase the worker's branch onto latest trunk so ff-merge works
+            //    even when trunk has advanced (e.g. from prior landings).
+            let rebase_result = std::process::Command::new("git")
+                .args(["rebase", &self.main_branch, id])
+                .current_dir(&self.project_dir)
+                .output();
+            if let Ok(out) = &rebase_result {
+                if !out.status.success() {
+                    let stderr = String::from_utf8_lossy(&out.stderr);
+                    eprintln!("supervisor: rebase '{id}' onto {} failed: {stderr}", self.main_branch);
+                    // Abort the rebase to leave the repo clean.
+                    let _ = std::process::Command::new("git")
+                        .args(["rebase", "--abort"])
+                        .current_dir(&self.project_dir)
+                        .output();
+                    continue;
+                }
+            }
+
             match crate::gix_ops::ff_merge(&self.project_dir, id) {
                 Ok(()) => {
                     eprintln!("supervisor: landed '{id}' on trunk");
