@@ -1749,4 +1749,135 @@ mod tests {
         );
         assert_eq!(status, 200, "ReviewResult with valid auth should succeed: {}", status);
     }
+
+    // --- Local-API parity tests ---
+    //
+    // These verify that validate_transition (local path) and the API set_phase
+    // handler agree on whether a transition is accepted or rejected.
+
+    #[test]
+    fn parity_both_reject_invalid_transition() {
+        let wf_def = docs_workflow_def();
+        let wf = crate::workflow::Workflow::new(&wf_def).unwrap();
+        let noop = |_: &str, _: &[String]| -> Result<(), crate::error::Error> { Ok(()) };
+
+        // Local path: outline → done (skip-forward) should fail.
+        let local_result = crate::phase::validate_transition(
+            &wf, Some("outline"), "done", "worker-1", &noop,
+        );
+        assert!(local_result.is_err(), "local path should reject outline → done");
+        let local_err = local_result.unwrap_err().to_string();
+        assert!(local_err.contains("not a valid transition"), "local error: {local_err}");
+
+        // API path: same transition should also fail.
+        let workflows = std::collections::HashMap::from([("docs".into(), wf_def)]);
+        let (base_url, _db, _handle, _tmp) = start_test_api_with_workflows(workflows);
+        dispatch_with_workflow(&base_url, "worker-1", "docs");
+
+        let (status, body) = blocking_put(
+            &base_url,
+            "/agents/worker-1/phase",
+            &serde_json::json!({ "phase": "done" }),
+        );
+        assert_eq!(status, 400, "API should reject outline → done");
+        let api_err = body["error"].as_str().unwrap_or("");
+        assert!(api_err.contains("invalid transition"), "API error: {api_err}");
+    }
+
+    #[test]
+    fn parity_both_reject_unknown_phase() {
+        let wf_def = docs_workflow_def();
+        let wf = crate::workflow::Workflow::new(&wf_def).unwrap();
+        let noop = |_: &str, _: &[String]| -> Result<(), crate::error::Error> { Ok(()) };
+
+        // Local path.
+        let local_result = crate::phase::validate_transition(
+            &wf, Some("outline"), "nonexistent", "worker-1", &noop,
+        );
+        assert!(local_result.is_err(), "local should reject unknown phase");
+        let local_err = local_result.unwrap_err().to_string();
+        assert!(local_err.contains("unknown phase"), "local error: {local_err}");
+
+        // API path.
+        let workflows = std::collections::HashMap::from([("docs".into(), wf_def)]);
+        let (base_url, _db, _handle, _tmp) = start_test_api_with_workflows(workflows);
+        dispatch_with_workflow(&base_url, "worker-1", "docs");
+
+        let (status, body) = blocking_put(
+            &base_url,
+            "/agents/worker-1/phase",
+            &serde_json::json!({ "phase": "nonexistent" }),
+        );
+        assert_eq!(status, 400, "API should reject unknown phase");
+        let api_err = body["error"].as_str().unwrap_or("");
+        assert!(api_err.contains("unknown phase"), "API error: {api_err}");
+    }
+
+    #[test]
+    fn parity_both_enforce_review_gate() {
+        let wf_def = docs_workflow_def();
+        let wf = crate::workflow::Workflow::new(&wf_def).unwrap();
+
+        // Local path: outline → draft requires docs-review.
+        let review_blocker = |_: &str, reviewers: &[String]| -> Result<(), crate::error::Error> {
+            Err(crate::error::Error::ReviewRequired {
+                missing: reviewers.iter().map(|s| s.to_string()).collect(),
+            })
+        };
+        let local_result = crate::phase::validate_transition(
+            &wf, Some("outline"), "draft", "worker-1", &review_blocker,
+        );
+        assert!(local_result.is_err(), "local should block review-gated transition");
+        assert!(
+            local_result.unwrap_err().is_review_required(),
+            "local error should be ReviewRequired"
+        );
+
+        // API path: same transition without approval.
+        let workflows = std::collections::HashMap::from([("docs".into(), wf_def)]);
+        let (base_url, _db, _handle, _tmp) = start_test_api_with_workflows(workflows);
+        dispatch_with_workflow(&base_url, "worker-1", "docs");
+
+        let (status, body) = blocking_put(
+            &base_url,
+            "/agents/worker-1/phase",
+            &serde_json::json!({ "phase": "draft" }),
+        );
+        assert_eq!(status, 400, "API should block review-gated transition");
+        assert_eq!(body["code"].as_str(), Some("review_required"), "API error code: {body}");
+    }
+
+    #[test]
+    fn parity_both_allow_valid_forward_transition() {
+        let wf_def = docs_workflow_def();
+        let wf = crate::workflow::Workflow::new(&wf_def).unwrap();
+        let noop = |_: &str, _: &[String]| -> Result<(), crate::error::Error> { Ok(()) };
+
+        // Local path: draft → done (no review gate).
+        let local_result = crate::phase::validate_transition(
+            &wf, Some("draft"), "done", "worker-1", &noop,
+        );
+        assert!(local_result.is_ok(), "local should allow draft → done");
+
+        // API path: need worker at draft first.
+        let workflows = std::collections::HashMap::from([("docs".into(), wf_def)]);
+        let (base_url, db, _handle, _tmp) = start_test_api_with_workflows(workflows);
+        dispatch_with_workflow(&base_url, "worker-1", "docs");
+        // Approve docs-review so we can get from outline → draft.
+        send_approval(&db, "worker-1", "docs-review");
+        let (status, _) = blocking_put(
+            &base_url,
+            "/agents/worker-1/phase",
+            &serde_json::json!({ "phase": "draft" }),
+        );
+        assert_eq!(status, 200, "API should allow outline → draft after approval");
+
+        // Now draft → done.
+        let (status, _) = blocking_put(
+            &base_url,
+            "/agents/worker-1/phase",
+            &serde_json::json!({ "phase": "done" }),
+        );
+        assert_eq!(status, 200, "API should allow draft → done");
+    }
 }
