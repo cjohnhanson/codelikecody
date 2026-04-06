@@ -936,71 +936,80 @@ impl Supervisor {
                      Reply with APPROVED or CHANGES_REQUESTED followed by your comments.",
                 );
 
-                // Run the reviewer on the HOST via claude --print. No container
-                // resource contention — the reviewer doesn't share memory with
-                // the worker.
+                // Run the reviewer on the HOST in a background thread.
+                // The supervisor tick loop continues while the review runs.
                 let model = reviewer.spec.model.as_deref()
-                    .unwrap_or(crate::config::DEFAULT_REVIEWER_MODEL);
+                    .unwrap_or(crate::config::DEFAULT_REVIEWER_MODEL)
+                    .to_string();
                 let escaped = full_prompt.replace('\'', "'\\''");
-
                 let oauth_env = self.oauth_token.as_deref()
                     .map(|t| format!("CLAUDE_CODE_OAUTH_TOKEN={t} "))
                     .unwrap_or_default();
+                let project_dir = self.project_dir.clone();
+                let worker_id = action.worker_id.clone();
+                let agent_name_owned = agent_name.clone();
+                let reviewer_id_owned = reviewer_id.clone();
+                let hash = current_hash.clone();
 
-                let output = std::process::Command::new("sh")
-                    .arg("-c")
-                    .arg(format!("{oauth_env}claude --model {model} --print '{escaped}'"))
-                    .output();
+                std::thread::spawn(move || {
+                    let output = std::process::Command::new("sh")
+                        .arg("-c")
+                        .arg(format!("{oauth_env}claude --model {model} --print '{escaped}'"))
+                        .output();
 
-                match output {
-                    Ok(out) => {
-                        let response = String::from_utf8_lossy(&out.stdout);
-                        eprintln!(
-                            "supervisor: reviewer '{agent_name}' for '{}': {}",
-                            action.worker_id,
-                            response.chars().take(100).collect::<String>()
-                        );
+                    // Open a fresh coordination handle for this thread.
+                    let Ok(coord) = Coordination::open(&project_dir) else {
+                        eprintln!("supervisor: reviewer thread failed to open coordination DB");
+                        return;
+                    };
 
-                        // Parse verdict and write to coordination DB.
-                        let verdict = if response.to_uppercase().contains("APPROVED")
-                            && !response.to_uppercase().contains("CHANGES_REQUESTED")
-                        {
-                            clc_sdk::coordination::ReviewVerdict::Approved
-                        } else {
-                            clc_sdk::coordination::ReviewVerdict::ChangesRequested
-                        };
+                    match output {
+                        Ok(out) => {
+                            let response = String::from_utf8_lossy(&out.stdout);
+                            eprintln!(
+                                "supervisor: reviewer '{agent_name_owned}' for '{worker_id}': {}",
+                                response.chars().take(100).collect::<String>()
+                            );
 
-                        let _ = coord.send(clc_sdk::coordination::Message {
-                            id: format!("review-{agent_name}-{}", std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos()),
-                            from: reviewer_id.clone(),
-                            to: action.worker_id.clone(),
-                            kind: clc_sdk::coordination::MessageKind::ReviewResult {
-                                request_id: String::new(),
-                                review_type: agent_name.clone(),
-                                verdict,
-                                comments: response.chars().take(2000).collect(),
-                                diff_hash: Some(current_hash.clone()),
-                            },
+                            let verdict = if response.to_uppercase().contains("APPROVED")
+                                && !response.to_uppercase().contains("CHANGES_REQUESTED")
+                            {
+                                clc_sdk::coordination::ReviewVerdict::Approved
+                            } else {
+                                clc_sdk::coordination::ReviewVerdict::ChangesRequested
+                            };
+
+                            let _ = coord.send(clc_sdk::coordination::Message {
+                                id: format!("review-{agent_name_owned}-{}", std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos()),
+                                from: reviewer_id_owned.clone(),
+                                to: worker_id.clone(),
+                                kind: clc_sdk::coordination::MessageKind::ReviewResult {
+                                    request_id: String::new(),
+                                    review_type: agent_name_owned.clone(),
+                                    verdict,
+                                    comments: response.chars().take(2000).collect(),
+                                    diff_hash: Some(hash),
+                                },
                             timestamp: std::time::SystemTime::now(),
                         });
 
                         let _ = coord.set_status(
-                            &reviewer_id,
+                            &reviewer_id_owned,
                             clc_sdk::coordination::AgentStatus::Completed,
                         );
                     }
                     Err(e) => {
                         eprintln!(
-                            "supervisor: reviewer '{agent_name}' failed for '{}': {e}",
-                            action.worker_id
+                            "supervisor: reviewer '{agent_name_owned}' failed for '{worker_id}': {e}",
                         );
                         let _ = coord.set_status(
-                            &reviewer_id,
+                            &reviewer_id_owned,
                             clc_sdk::coordination::AgentStatus::Failed,
                         );
                     }
                 }
+                }); // end thread::spawn
             }
         }
     }
