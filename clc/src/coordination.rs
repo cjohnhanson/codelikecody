@@ -251,6 +251,27 @@ impl Coordination {
         }
     }
 
+    /// Get the registration timestamp for an agent as a `SystemTime`.
+    pub fn get_agent_created_at(
+        &self,
+        agent_id: &str,
+    ) -> Result<std::time::SystemTime, CoordinationError> {
+        match &self.inner {
+            Backend::Db { backend, rt } => {
+                let dt = rt.block_on(backend.get_agent_created_at(agent_id))?;
+                let secs = dt.timestamp();
+                let nanos = dt.timestamp_subsec_nanos();
+                Ok(std::time::UNIX_EPOCH
+                    + std::time::Duration::new(secs as u64, nanos))
+            }
+            Backend::Api(_) => {
+                Err(CoordinationError::Storage(
+                    "get_agent_created_at not available via API".into(),
+                ))
+            }
+        }
+    }
+
     #[allow(dead_code)]
     pub fn get_pid(
         &self,

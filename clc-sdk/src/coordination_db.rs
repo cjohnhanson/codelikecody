@@ -841,6 +841,20 @@ impl DbBackend {
         Ok(())
     }
 
+    /// Get the `created_at` timestamp for an agent.
+    pub async fn get_agent_created_at(
+        &self,
+        agent_id: &str,
+    ) -> Result<chrono::DateTime<chrono::Utc>, CoordinationError> {
+        let model = agent_entity::Entity::find_by_id(agent_id.to_string())
+            .one(&self.db)
+            .await
+            .map_err(|e| CoordinationError::Storage(e.to_string()))?
+            .ok_or_else(|| CoordinationError::NotFound(agent_id.to_string()))?;
+
+        Ok(model.created_at)
+    }
+
     /// Check if an agent has a permission grant matching the tool pattern.
     pub async fn check_permission(
         &self,
@@ -953,6 +967,25 @@ mod tests {
     db_contract_test!(output_message);
     db_contract_test!(message_ordering);
     db_contract_test!(send_returns_id);
+
+    #[tokio::test]
+    async fn get_agent_created_at_returns_registration_time() {
+        let backend = sqlite_backend().await;
+        let before = chrono::Utc::now();
+        backend.register_agent("w1", None).await.unwrap();
+        let after = chrono::Utc::now();
+
+        let created_at = backend.get_agent_created_at("w1").await.unwrap();
+        assert!(created_at >= before);
+        assert!(created_at <= after);
+    }
+
+    #[tokio::test]
+    async fn get_agent_created_at_not_found() {
+        let backend = sqlite_backend().await;
+        let err = backend.get_agent_created_at("ghost").await;
+        assert!(err.is_err());
+    }
 
     /// Postgres contract tests — requires DATABASE_URL env var.
     mod postgres {

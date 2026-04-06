@@ -15,6 +15,12 @@ use crate::coordination::Coordination;
 use crate::error::Error;
 use crate::git;
 
+/// Maximum time a reviewer can be in `Running` status before being considered
+/// dead (e.g. the host process crashed or was OOM-killed between registering
+/// the agent and recording its result). Host-side reviewers via `claude --print`
+/// typically complete in under 2 minutes; 10 minutes is generous.
+const REVIEWER_TIMEOUT: Duration = Duration::from_secs(600);
+
 struct CoordinatorState {
     scope: CoordinatorScope,
     pid: Option<u32>,
@@ -736,16 +742,40 @@ impl Supervisor {
                 continue;
             }
 
-            // Skip if reviewers already running for this worker.
-            let has_active_reviewers = all_agents
-                .iter()
-                .any(|(id, s)| {
-                    id.starts_with(&format!("{}-reviewer-", worker.tisket_id))
-                        && matches!(s,
-                            clc_sdk::coordination::AgentStatus::Running
-                            | clc_sdk::coordination::AgentStatus::Pending
-                        )
-                });
+            // Skip if reviewers already running for this worker, but mark
+            // timed-out reviewers as failed so they don't block forever.
+            let reviewer_prefix = format!("{}-reviewer-", worker.tisket_id);
+            let mut has_active_reviewers = false;
+            for (id, s) in &all_agents {
+                if !id.starts_with(&reviewer_prefix) {
+                    continue;
+                }
+                if !matches!(
+                    s,
+                    clc_sdk::coordination::AgentStatus::Running
+                        | clc_sdk::coordination::AgentStatus::Pending
+                ) {
+                    continue;
+                }
+                // Check if this reviewer has exceeded the timeout.
+                let timed_out = coord
+                    .get_agent_created_at(id)
+                    .ok()
+                    .and_then(|t| t.elapsed().ok())
+                    .is_some_and(|age| age > REVIEWER_TIMEOUT);
+                if timed_out {
+                    eprintln!(
+                        "supervisor: reviewer '{id}' timed out (>{} min), marking failed",
+                        REVIEWER_TIMEOUT.as_secs() / 60
+                    );
+                    let _ = coord.set_status(
+                        id,
+                        clc_sdk::coordination::AgentStatus::Failed,
+                    );
+                } else {
+                    has_active_reviewers = true;
+                }
+            }
             if has_active_reviewers {
                 continue;
             }
