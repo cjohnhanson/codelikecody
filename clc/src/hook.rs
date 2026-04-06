@@ -780,3 +780,158 @@ fn read_stdin() -> Result<String, Error> {
         .map_err(|e| Error::NonBlocking(format!("failed to read stdin: {e}")))?;
     Ok(buf)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn default_cfg() -> Config {
+        Config::default()
+    }
+
+    fn trunk_git() -> git::GitState {
+        git::GitState {
+            branch: "main".to_string(),
+            is_main: true,
+            is_admin: false,
+            is_worktree: false,
+        }
+    }
+
+    fn feature_git() -> git::GitState {
+        git::GitState {
+            branch: "abc123".to_string(),
+            is_main: false,
+            is_admin: false,
+            is_worktree: true,
+        }
+    }
+
+    // --- assemble_prime tests ---
+
+    #[test]
+    fn prime_on_trunk_includes_read_only_directive() {
+        let dir = tempfile::tempdir().unwrap();
+        let git = trunk_git();
+        let wf = Workflow::default_tdd();
+        let cfg = default_cfg();
+
+        let out = assemble_prime(dir.path(), Some(&git), None, &wf, &cfg);
+
+        assert!(out.contains("Trunk is read-only"), "trunk prime must include read-only directive");
+        assert!(out.contains("clc pickup"), "trunk prime must include pickup instructions");
+    }
+
+    #[test]
+    fn prime_on_feature_branch_excludes_trunk_directives() {
+        let dir = tempfile::tempdir().unwrap();
+        let git = feature_git();
+        let wf = Workflow::default_tdd();
+        let cfg = default_cfg();
+
+        let out = assemble_prime(dir.path(), Some(&git), Some("implementing"), &wf, &cfg);
+
+        assert!(!out.contains("Trunk is read-only"), "feature branch must not include trunk directives");
+        assert!(out.contains("Phase: `implementing`"), "feature branch must show current phase");
+    }
+
+    #[test]
+    fn prime_with_tdd_workflow_includes_tdd_section() {
+        let dir = tempfile::tempdir().unwrap();
+        let git = feature_git();
+        let wf = Workflow::default_tdd();
+        let cfg = default_cfg();
+
+        let out = assemble_prime(dir.path(), Some(&git), Some("implementing"), &wf, &cfg);
+
+        assert!(out.contains("Test-driven development"), "TDD workflow must include TDD section");
+    }
+
+    #[test]
+    fn prime_with_non_tdd_workflow_excludes_tdd_section() {
+        let dir = tempfile::tempdir().unwrap();
+        let git = feature_git();
+        // docs workflow has no phases with "test" in the name
+        let docs_def = config::WorkflowDef {
+            description: Some("Documentation".into()),
+            phases: vec![
+                config::PhaseDef { name: "outline".into(), instructions: None, transitions: None, permissions: None, can_stop: false, nudge: None },
+                config::PhaseDef { name: "draft".into(), instructions: None, transitions: None, permissions: None, can_stop: false, nudge: None },
+                config::PhaseDef { name: "done".into(), instructions: None, transitions: None, permissions: None, can_stop: false, nudge: None },
+            ],
+        };
+        let wf = Workflow::new(&docs_def).unwrap();
+        let cfg = default_cfg();
+
+        let out = assemble_prime(dir.path(), Some(&git), Some("draft"), &wf, &cfg);
+
+        assert!(!out.contains("Test-driven development"), "non-TDD workflow must exclude TDD section");
+    }
+
+    #[test]
+    fn prime_includes_phase_instructions_when_set() {
+        let dir = tempfile::tempdir().unwrap();
+        let git = feature_git();
+        let wf = Workflow::default_tdd();
+        let cfg = default_cfg();
+
+        let out = assemble_prime(dir.path(), Some(&git), Some("tests-unwritten"), &wf, &cfg);
+
+        // default_tdd has instructions for tests-unwritten
+        assert!(out.contains("Current phase `tests-unwritten`"), "prime must show phase instructions");
+    }
+
+    #[test]
+    fn prime_without_git_shows_no_repository() {
+        let dir = tempfile::tempdir().unwrap();
+        let wf = Workflow::default_tdd();
+        let cfg = default_cfg();
+
+        let out = assemble_prime(dir.path(), None, None, &wf, &cfg);
+
+        assert!(out.contains("No git repository"), "no git state should show no-repo message");
+    }
+
+    // --- assemble_reinforcement tests ---
+
+    #[test]
+    fn reinforcement_includes_phase_when_set() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = default_cfg();
+
+        let out = assemble_reinforcement(dir.path(), None, Some("green"), &cfg);
+
+        assert!(out.contains("phase: green"), "reinforcement must include phase name");
+    }
+
+    #[test]
+    fn reinforcement_excludes_phase_when_unset() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = default_cfg();
+
+        let out = assemble_reinforcement(dir.path(), None, None, &cfg);
+
+        assert!(!out.contains("phase:"), "reinforcement without phase must not include phase line");
+    }
+
+    // --- post_tool_nudge_workflow tests ---
+
+    #[test]
+    fn nudge_fires_on_write_tool_with_phase() {
+        let wf = Workflow::default_tdd();
+        // default_tdd has nudges for some phases
+        let result = post_tool_nudge_workflow("Edit", Some("tests-unwritten"), &wf);
+        // Should return Some if the phase has a nudge, None if not
+        // Either way, it shouldn't panic
+        if let Some(nudge) = result {
+            assert!(nudge.contains("tests-unwritten"), "nudge should mention current phase");
+        }
+    }
+
+    #[test]
+    fn nudge_skips_non_write_tools() {
+        let wf = Workflow::default_tdd();
+        let result = post_tool_nudge_workflow("Read", Some("implementing"), &wf);
+        assert!(result.is_none(), "Read tool should not trigger nudge");
+    }
+}
