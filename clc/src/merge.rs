@@ -130,6 +130,92 @@ fn has_finalization_commit(branch_ref: &gix::Reference<'_>, id: &str) -> Result<
     Ok(false)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gix::prelude::Write as _;
+
+    /// Create a temporary git repo on main branch with an initial commit.
+    fn make_main_repo() -> std::path::PathBuf {
+        #[allow(deprecated)]
+        let dir = tempfile::tempdir().unwrap().into_path();
+
+        gix::init(&dir).unwrap();
+
+        let config_path = dir.join(".git").join("config");
+        let mut config = std::fs::read_to_string(&config_path).unwrap_or_default();
+        config.push_str("[user]\n\tname = test\n\temail = test@test\n");
+        std::fs::write(&config_path, config).unwrap();
+
+        let repo = gix::open(&dir).unwrap();
+        let empty_tree = repo.write(&gix::objs::Tree::empty()).unwrap();
+        repo.commit("HEAD", "initial", empty_tree, gix::commit::NO_PARENT_IDS)
+            .unwrap();
+
+        dir
+    }
+
+    /// Create a repo on a named branch (not main).
+    fn make_repo_on_branch(branch: &str) -> std::path::PathBuf {
+        let dir = make_main_repo();
+        let repo = gix::open(&dir).unwrap();
+        let head_id = repo.head_id().unwrap().detach();
+        let ref_name = format!("refs/heads/{branch}");
+        repo.reference(
+            ref_name.clone(),
+            head_id,
+            gix::refs::transaction::PreviousValue::MustNotExist,
+            "create branch",
+        )
+        .unwrap();
+        let head_ref_path = dir.join(".git").join("HEAD");
+        std::fs::write(&head_ref_path, format!("ref: {ref_name}\n")).unwrap();
+        dir
+    }
+
+    #[test]
+    fn merge_rejects_when_not_on_main() {
+        let dir = make_repo_on_branch("feature-x");
+        let err = merge(&dir, "feature-x", "main", "admin").unwrap_err();
+        assert!(
+            err.to_string().contains("must be on the main branch"),
+            "expected main-branch error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn merge_rejects_nonexistent_branch() {
+        let dir = make_main_repo();
+        let err = merge(&dir, "nonexistent", "main", "admin").unwrap_err();
+        assert!(
+            err.to_string().contains("not found"),
+            "expected branch-not-found error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn merge_rejects_unfinalized_branch() {
+        let dir = make_main_repo();
+
+        // Create a feature branch with a commit but no finalization.
+        let repo = gix::open(&dir).unwrap();
+        let head_id = repo.head_id().unwrap().detach();
+        repo.reference(
+            "refs/heads/feat-abc",
+            head_id,
+            gix::refs::transaction::PreviousValue::MustNotExist,
+            "create branch",
+        )
+        .unwrap();
+
+        let err = merge(&dir, "feat-abc", "main", "admin").unwrap_err();
+        assert!(
+            err.to_string().contains("not been finalized"),
+            "expected not-finalized error, got: {err}"
+        );
+    }
+}
+
 /// Check that the tisket for `id` is closed. Uses worktree filesystem if available,
 /// otherwise reads from the branch's tree via gix.
 fn check_tisket_closed(

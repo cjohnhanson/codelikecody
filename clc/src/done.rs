@@ -102,6 +102,86 @@ pub fn done(project_dir: &Path, main_branch: &str, admin_branch: &str) -> Result
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gix::prelude::Write as _;
+
+    /// Create a temporary git repo on a named branch with an initial commit.
+    fn make_repo_on_branch(branch: &str) -> std::path::PathBuf {
+        #[allow(deprecated)]
+        let dir = tempfile::tempdir().unwrap().into_path();
+
+        gix::init(&dir).unwrap();
+
+        // Set git identity.
+        let config_path = dir.join(".git").join("config");
+        let mut config = std::fs::read_to_string(&config_path).unwrap_or_default();
+        config.push_str("[user]\n\tname = test\n\temail = test@test\n");
+        std::fs::write(&config_path, config).unwrap();
+
+        let repo = gix::open(&dir).unwrap();
+
+        // Create initial commit.
+        let empty_tree = repo.write(&gix::objs::Tree::empty()).unwrap();
+        repo.commit("HEAD", "initial", empty_tree, gix::commit::NO_PARENT_IDS)
+            .unwrap();
+
+        // Create and checkout target branch if not main.
+        if branch != "main" {
+            let head_id = repo.head_id().unwrap().detach();
+            let ref_name = format!("refs/heads/{branch}");
+            repo.reference(
+                ref_name.clone(),
+                head_id,
+                gix::refs::transaction::PreviousValue::MustNotExist,
+                "create branch",
+            )
+            .unwrap();
+
+            // Point HEAD at the new branch.
+            let head_ref_path = dir.join(".git").join("HEAD");
+            std::fs::write(&head_ref_path, format!("ref: {ref_name}\n")).unwrap();
+        }
+
+        dir
+    }
+
+    #[test]
+    fn done_rejects_on_main_branch() {
+        let dir = make_repo_on_branch("main");
+        let err = done(&dir, "main", "admin").unwrap_err();
+        assert!(
+            err.to_string().contains("main branch"),
+            "expected main branch error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn done_rejects_when_no_phase_set() {
+        let dir = make_repo_on_branch("feature-123");
+        let err = done(&dir, "main", "admin").unwrap_err();
+        assert!(
+            err.to_string().contains("no phase set"),
+            "expected no-phase error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn done_rejects_non_terminal_phase() {
+        let dir = make_repo_on_branch("feature-123");
+        let clc_dir = dir.join(".clc");
+        std::fs::create_dir_all(&clc_dir).unwrap();
+        std::fs::write(clc_dir.join("state"), "phase: implementing\n").unwrap();
+
+        let err = done(&dir, "main", "admin").unwrap_err();
+        assert!(
+            err.to_string().contains("must be terminal"),
+            "expected terminal-phase error, got: {err}"
+        );
+    }
+}
+
 /// Resolve the active workflow for done ceremony.
 fn resolve_done_workflow(project_dir: &Path, cfg: &config::Config) -> Workflow {
     let wf_name = phase::load_workflow_name(project_dir).unwrap_or(None);
