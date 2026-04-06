@@ -232,17 +232,23 @@ impl TopologyConfig {
             });
         }
 
-        let workflows = self
-            .workflows
-            .iter()
-            .filter_map(|(name, spec)| {
-                let phases = spec.phases.clone()?;
-                Some((name.clone(), config::WorkflowDef {
-                    description: spec.description.clone(),
-                    phases,
-                }))
-            })
-            .collect();
+        let mut workflows = HashMap::new();
+        for (name, spec) in &self.workflows {
+            match spec.phases.clone() {
+                Some(phases) => {
+                    workflows.insert(name.clone(), config::WorkflowDef {
+                        description: spec.description.clone(),
+                        phases,
+                    });
+                }
+                None => {
+                    eprintln!(
+                        "topology: workflow '{name}' has no phases — skipping \
+                         (add a 'phases:' list to include it)"
+                    );
+                }
+            }
+        }
 
         config::SupervisorConfig {
             poll_interval: self.supervisor.poll_interval,
@@ -863,6 +869,37 @@ coordinators:
 ";
         let topo = parse(yaml);
         assert!(topo.validate().is_ok());
+    }
+
+    #[test]
+    fn to_supervisor_config_excludes_workflow_without_phases() {
+        let yaml = "
+workspaces:
+  w:
+    type: worker
+    agent: opus
+workflows:
+  has-phases:
+    description: This one has phases
+    phases:
+      - draft
+      - done
+  no-phases:
+    description: This one has no phases
+coordinators:
+  c:
+    workspace: w
+";
+        let topo = parse(yaml);
+        let sup = topo.to_supervisor_config();
+
+        // The workflow with phases should be included.
+        assert!(sup.workflows.contains_key("has-phases"),
+            "workflow with phases should be in config");
+
+        // The workflow without phases should be excluded.
+        assert!(!sup.workflows.contains_key("no-phases"),
+            "workflow without phases should NOT be in config");
     }
 
     #[test]
