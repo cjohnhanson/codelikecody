@@ -111,6 +111,7 @@ workflows:
             review: scope-check
 
       - name: review-requested
+        instructions: "Reviews completed. Advance: clc status set in-review"
         can_stop: true
         transitions:
           - in-review
@@ -162,6 +163,7 @@ workflows:
             review: [scope-check, code-review, test-review, security-review]
 
       - name: review-requested
+        instructions: "Reviews completed. Advance: clc status set in-review"
         can_stop: true
         transitions:
           - in-review
@@ -192,6 +194,7 @@ workflows:
             review: [scope-check, docs-review]
 
       - name: review-requested
+        instructions: "Reviews completed. Advance: clc status set in-review"
         can_stop: true
         transitions:
           - in-review
@@ -220,6 +223,7 @@ workflows:
             review: [scope-check, code-review, design-review]
 
       - name: review-requested
+        instructions: "Reviews completed. Advance: clc status set in-review"
         can_stop: true
         transitions:
           - in-review
