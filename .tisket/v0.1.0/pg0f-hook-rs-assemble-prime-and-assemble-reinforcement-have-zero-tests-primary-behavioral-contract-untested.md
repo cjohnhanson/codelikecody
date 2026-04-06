@@ -1,12 +1,12 @@
 ---
 title: "hook.rs assemble_prime and assemble_reinforcement have zero tests — primary behavioral contract untested"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [clc, testing, blocking, standard]
 depends_on: []
 created: 2026-03-23T03:12:04Z
-updated: "2026-04-03T18:33:27Z"
+updated: "2026-04-06T13:45:26Z"
 ---
 
 ## Problem
@@ -24,3 +24,5 @@ updated: "2026-04-03T18:33:27Z"
 ## Why It Matters
 
 Prime text is the single strongest lever over agent behavior. Untested assembly means any refactor — config format changes, new phase gates, skill injection tweaks — can silently break the agent contract with no signal until a human notices workers misbehaving.
+
+## Scratch Notes
