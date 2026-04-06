@@ -164,6 +164,7 @@ async fn main() {
                 review_type: "code".into(),
                 verdict: ReviewVerdict::Approved,
                 comments: "lgtm".into(),
+                diff_hash: None,
             },
         ))
         .await

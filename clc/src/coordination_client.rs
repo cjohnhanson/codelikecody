@@ -329,15 +329,19 @@ fn kind_to_json(kind: &MessageKind) -> (&'static str, serde_json::Value) {
             review_type,
             verdict,
             comments,
-        } => (
-            "review_result",
-            serde_json::json!({
+            diff_hash,
+        } => {
+            let mut obj = serde_json::json!({
                 "request_id": request_id,
                 "review_type": review_type,
                 "verdict": format!("{verdict:?}"),
                 "comments": comments
-            }),
-        ),
+            });
+            if let Some(h) = diff_hash {
+                obj["diff_hash"] = serde_json::Value::String(h.clone());
+            }
+            ("review_result", obj)
+        }
         MessageKind::StatusUpdate { phase, detail } => (
             "status_update",
             serde_json::json!({ "phase": phase, "detail": detail }),

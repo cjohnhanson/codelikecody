@@ -86,6 +86,7 @@ pub fn approve(cwd: &Path, comments: &str) -> Result<(), Error> {
             review_type: review_type.clone(),
             verdict: clc_sdk::coordination::ReviewVerdict::Approved,
             comments: comments.to_string(),
+            diff_hash: None,
         },
         timestamp: std::time::SystemTime::now(),
     };
@@ -128,6 +129,7 @@ pub fn request_changes(cwd: &Path, comments: &str) -> Result<(), Error> {
             review_type: review_type.clone(),
             verdict: clc_sdk::coordination::ReviewVerdict::ChangesRequested,
             comments: comments.to_string(),
+            diff_hash: None,
         },
         timestamp: std::time::SystemTime::now(),
     };
@@ -308,6 +310,7 @@ mod tests {
                     review_type: "code".into(),
                     verdict: clc_sdk::coordination::ReviewVerdict::Approved,
                     comments: "lgtm".into(),
+                    diff_hash: None,
                 },
                 timestamp: std::time::SystemTime::now(),
             })
@@ -351,6 +354,7 @@ mod tests {
                     review_type: "code".into(),
                     verdict: clc_sdk::coordination::ReviewVerdict::ChangesRequested,
                     comments: "needs work".into(),
+                    diff_hash: None,
                 },
                 timestamp: std::time::SystemTime::now(),
             })
@@ -397,6 +401,7 @@ mod tests {
                     review_type: "code".into(),
                     verdict: clc_sdk::coordination::ReviewVerdict::Approved,
                     comments: "lgtm".into(),
+                    diff_hash: None,
                 },
                 timestamp: std::time::SystemTime::now(),
             })
@@ -530,6 +535,7 @@ mod tests {
                     review_type: "test-reviewer".into(),
                     verdict: clc_sdk::coordination::ReviewVerdict::Approved,
                     comments: "lgtm".into(),
+                    diff_hash: None,
                 },
                 timestamp: std::time::SystemTime::now(),
             })

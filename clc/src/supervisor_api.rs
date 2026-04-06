@@ -989,6 +989,7 @@ fn parse_message_kind(
                 _ => clc_sdk::coordination::ReviewVerdict::ChangesRequested,
             },
             comments: payload["comments"].as_str().unwrap_or_default().to_string(),
+            diff_hash: payload["diff_hash"].as_str().map(String::from),
         }),
         _ => None,
     }
@@ -1029,12 +1030,19 @@ fn kind_to_payload(kind: &clc_sdk::coordination::MessageKind) -> serde_json::Val
             review_type,
             verdict,
             comments,
-        } => serde_json::json!({
-            "request_id": request_id,
-            "review_type": review_type,
-            "verdict": format!("{verdict:?}"),
-            "comments": comments
-        }),
+            diff_hash,
+        } => {
+            let mut obj = serde_json::json!({
+                "request_id": request_id,
+                "review_type": review_type,
+                "verdict": format!("{verdict:?}"),
+                "comments": comments
+            });
+            if let Some(h) = diff_hash {
+                obj["diff_hash"] = serde_json::Value::String(h.clone());
+            }
+            obj
+        }
         clc_sdk::coordination::MessageKind::StatusUpdate { phase, detail } => {
             serde_json::json!({ "phase": phase, "detail": detail })
         }
@@ -1371,6 +1379,7 @@ mod tests {
                     review_type: reviewer_name.to_string(),
                     verdict: clc_sdk::coordination::ReviewVerdict::Approved,
                     comments: "approved in test".to_string(),
+                    diff_hash: None,
                 },
                 timestamp: std::time::SystemTime::now(),
             }).await.unwrap();

@@ -856,10 +856,48 @@ impl Supervisor {
             }
         }
 
+        // Fetch all messages once for diff-hash dedup checks. Reading
+        // from cursor 0 gives the full history — ReviewResult messages
+        // include diff_hash when the supervisor wrote the verdict.
+        let all_messages: Vec<clc_sdk::coordination::Message> = spawn_actions
+            .iter()
+            .flat_map(|a| {
+                coord
+                    .recv(&a.worker_id, &clc_sdk::coordination::Cursor::default())
+                    .map(|(msgs, _)| msgs)
+                    .unwrap_or_default()
+            })
+            .collect();
+
         // Spawn reviewers for workers that need them.
         for action in spawn_actions {
             let Some(ref mut ws) = self.workers[action.worker_idx].workspace else {
                 continue;
+            };
+
+            // Get the diff from the worker's container (once per worker,
+            // shared across all reviewer agents).
+            let project = crate::ssh_workspace::REMOTE_PROJECT_DIR;
+            let diff = ws.exec(
+                &format!("cd {project} && git diff {}..HEAD --stat && echo '---' && git diff {}..HEAD", self.main_branch, self.main_branch),
+            ).unwrap_or_default();
+
+            // Diff-hash dedup: if the diff hasn't changed since the last
+            // review, skip re-review — the verdict would be the same.
+            let current_hash = hash_diff(&diff);
+            if should_skip_review(&all_messages, &action.worker_id, &current_hash) {
+                eprintln!(
+                    "supervisor: skipping re-review for '{}' — diff unchanged since last review",
+                    action.worker_id
+                );
+                continue;
+            }
+
+            let diff_str = String::from_utf8_lossy(&diff);
+            let diff_truncated = if diff_str.len() > 50000 {
+                format!("{}...(truncated)", &diff_str[..50000])
+            } else {
+                diff_str.to_string()
             };
 
             eprintln!(
@@ -890,18 +928,6 @@ impl Supervisor {
                 let reviewer_id = format!("{}-reviewer-{agent_name}", action.worker_id);
                 let _ = coord.register_agent(&reviewer_id, Some(&action.worker_id));
                 let _ = coord.set_status(&reviewer_id, clc_sdk::coordination::AgentStatus::Running);
-
-                // Get the diff from the worker's container.
-                let project = crate::ssh_workspace::REMOTE_PROJECT_DIR;
-                let diff = ws.exec(
-                    &format!("cd {project} && git diff {}..HEAD --stat && echo '---' && git diff {}..HEAD", self.main_branch, self.main_branch),
-                ).unwrap_or_default();
-                let diff_str = String::from_utf8_lossy(&diff);
-                let diff_truncated = if diff_str.len() > 50000 {
-                    format!("{}...(truncated)", &diff_str[..50000])
-                } else {
-                    diff_str.to_string()
-                };
 
                 // Build the review prompt with the diff included.
                 let full_prompt = format!(
@@ -954,6 +980,7 @@ impl Supervisor {
                                 review_type: agent_name.clone(),
                                 verdict,
                                 comments: response.chars().take(2000).collect(),
+                                diff_hash: Some(current_hash.clone()),
                             },
                             timestamp: std::time::SystemTime::now(),
                         });
@@ -1097,4 +1124,218 @@ impl Supervisor {
 
 fn is_process_alive(pid: u32) -> bool {
     nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid.cast_signed()), None).is_ok()
+}
+
+/// Compute a SHA-1 hex digest of the given diff bytes. Used to detect
+/// when a worker's diff hasn't changed between supervisor ticks so
+/// re-reviewing can be skipped.
+fn hash_diff(diff: &[u8]) -> String {
+    use sha1::{Digest, Sha1};
+    let mut hasher = Sha1::new();
+    hasher.update(diff);
+    format!("{:x}", hasher.finalize())
+}
+
+/// Check whether re-review should be skipped for a worker. Returns true
+/// when the most recent `ReviewResult` addressed to this worker has a
+/// `diff_hash` that matches `current_diff_hash` — meaning the diff
+/// hasn't changed since the last review, so the verdict would be the
+/// same.
+///
+/// Only non-approved verdicts cause skipping. If the last verdict was
+/// `Approved`, the review gate logic will advance the worker and no
+/// re-review is spawned anyway.
+fn should_skip_review(
+    messages: &[clc_sdk::coordination::Message],
+    worker_id: &str,
+    current_diff_hash: &str,
+) -> bool {
+    // Walk messages in reverse to find the most recent ReviewResult
+    // addressed to this worker.
+    messages
+        .iter()
+        .rev()
+        .filter(|m| m.to == worker_id)
+        .find_map(|m| match &m.kind {
+            clc_sdk::coordination::MessageKind::ReviewResult { diff_hash, .. } => {
+                diff_hash.as_deref()
+            }
+            _ => None,
+        })
+        .is_some_and(|prev_hash| prev_hash == current_diff_hash)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clc_sdk::coordination::{Message, MessageKind, ReviewVerdict};
+    use std::time::SystemTime;
+
+    fn review_msg(
+        id: &str,
+        to: &str,
+        verdict: ReviewVerdict,
+        diff_hash: Option<&str>,
+    ) -> Message {
+        Message {
+            id: id.into(),
+            from: format!("{to}-reviewer-code"),
+            to: to.into(),
+            kind: MessageKind::ReviewResult {
+                request_id: String::new(),
+                review_type: "code".into(),
+                verdict,
+                comments: "test".into(),
+                diff_hash: diff_hash.map(String::from),
+            },
+            timestamp: SystemTime::now(),
+        }
+    }
+
+    /// Beck's desiderata: isolated, deterministic, fast, specific.
+    /// hash_diff produces a stable hex string for a given input.
+    #[test]
+    fn hash_diff_deterministic() {
+        let diff = b"diff --git a/foo.rs b/foo.rs\n+fn bar() {}\n";
+        let h1 = hash_diff(diff);
+        let h2 = hash_diff(diff);
+        assert_eq!(h1, h2, "same input should produce same hash");
+        assert_eq!(h1.len(), 40, "SHA-1 hex digest is 40 chars");
+    }
+
+    /// Beck's desiderata: behavioral, specific.
+    /// Different diffs produce different hashes.
+    #[test]
+    fn hash_diff_different_inputs() {
+        let h1 = hash_diff(b"diff A");
+        let h2 = hash_diff(b"diff B");
+        assert_ne!(h1, h2, "different inputs should produce different hashes");
+    }
+
+    /// Beck's desiderata: behavioral, specific.
+    /// Empty diff still produces a valid hash.
+    #[test]
+    fn hash_diff_empty() {
+        let h = hash_diff(b"");
+        assert_eq!(h.len(), 40);
+    }
+
+    /// Beck's desiderata: behavioral, specific.
+    /// When no prior review messages exist, re-review should not be skipped.
+    #[test]
+    fn should_skip_review_no_messages() {
+        let msgs: Vec<Message> = vec![];
+        assert!(
+            !should_skip_review(&msgs, "worker-1", "abc123"),
+            "no messages means nothing to dedup against"
+        );
+    }
+
+    /// Beck's desiderata: behavioral, specific.
+    /// When the most recent ReviewResult has a matching diff_hash,
+    /// re-review should be skipped.
+    #[test]
+    fn should_skip_review_matching_hash() {
+        let hash = hash_diff(b"diff content");
+        let msgs = vec![review_msg("r1", "worker-1", ReviewVerdict::ChangesRequested, Some(&hash))];
+        assert!(
+            should_skip_review(&msgs, "worker-1", &hash),
+            "matching hash should skip re-review"
+        );
+    }
+
+    /// Beck's desiderata: behavioral, specific.
+    /// When the diff has changed (different hash), re-review should proceed.
+    #[test]
+    fn should_skip_review_different_hash() {
+        let old_hash = hash_diff(b"old diff");
+        let new_hash = hash_diff(b"new diff");
+        let msgs = vec![review_msg("r1", "worker-1", ReviewVerdict::ChangesRequested, Some(&old_hash))];
+        assert!(
+            !should_skip_review(&msgs, "worker-1", &new_hash),
+            "different hash means diff changed, should re-review"
+        );
+    }
+
+    /// Beck's desiderata: behavioral, specific.
+    /// ReviewResult messages without diff_hash (from worker-side clc review)
+    /// should not trigger skip — those are legacy/manual verdicts.
+    #[test]
+    fn should_skip_review_no_hash_in_message() {
+        let msgs = vec![review_msg("r1", "worker-1", ReviewVerdict::ChangesRequested, None)];
+        assert!(
+            !should_skip_review(&msgs, "worker-1", "abc123"),
+            "no diff_hash in message means can't dedup"
+        );
+    }
+
+    /// Beck's desiderata: isolated, behavioral.
+    /// Messages addressed to a different worker should be ignored.
+    #[test]
+    fn should_skip_review_different_worker() {
+        let hash = hash_diff(b"diff");
+        let msgs = vec![review_msg("r1", "worker-2", ReviewVerdict::ChangesRequested, Some(&hash))];
+        assert!(
+            !should_skip_review(&msgs, "worker-1", &hash),
+            "messages for other workers should be ignored"
+        );
+    }
+
+    /// Beck's desiderata: behavioral, specific.
+    /// When there are multiple review results, only the most recent matters.
+    /// If the latest has a different hash, re-review should proceed even
+    /// if an earlier one matches.
+    #[test]
+    fn should_skip_review_uses_most_recent() {
+        let hash_v1 = hash_diff(b"diff v1");
+        let hash_v2 = hash_diff(b"diff v2");
+        let msgs = vec![
+            review_msg("r1", "worker-1", ReviewVerdict::ChangesRequested, Some(&hash_v1)),
+            review_msg("r2", "worker-1", ReviewVerdict::ChangesRequested, Some(&hash_v2)),
+        ];
+        // Current diff matches v1 (old), but latest review was against v2.
+        assert!(
+            !should_skip_review(&msgs, "worker-1", &hash_v1),
+            "should use most recent review, not older ones"
+        );
+        // Current diff matches v2 (latest review).
+        assert!(
+            should_skip_review(&msgs, "worker-1", &hash_v2),
+            "matching most recent review should skip"
+        );
+    }
+
+    /// Beck's desiderata: behavioral, specific.
+    /// Approved verdicts with matching diff_hash should still cause skip.
+    /// (The supervisor's own logic won't reach should_skip_review for
+    /// approved workers because check_review_requirements passes, but
+    /// the function itself should be purely hash-based — it doesn't
+    /// interpret the verdict.)
+    #[test]
+    fn should_skip_review_approved_with_matching_hash() {
+        let hash = hash_diff(b"approved diff");
+        let msgs = vec![review_msg("r1", "worker-1", ReviewVerdict::Approved, Some(&hash))];
+        assert!(
+            should_skip_review(&msgs, "worker-1", &hash),
+            "hash match is hash match regardless of verdict"
+        );
+    }
+
+    /// Beck's desiderata: behavioral.
+    /// Non-ReviewResult messages are ignored by should_skip_review.
+    #[test]
+    fn should_skip_review_ignores_non_review_messages() {
+        let hash = hash_diff(b"diff");
+        let msgs = vec![Message {
+            id: "m1".into(),
+            from: "supervisor".into(),
+            to: "worker-1".into(),
+            kind: MessageKind::Text("hello".into()),
+            timestamp: SystemTime::now(),
+        }];
+        assert!(
+            !should_skip_review(&msgs, "worker-1", &hash),
+            "non-review messages should be ignored"
+        );
+    }
 }

@@ -66,6 +66,11 @@ pub enum MessageKind {
         review_type: String,
         verdict: ReviewVerdict,
         comments: String,
+        /// SHA-1 hash of the diff that was reviewed. Used by the supervisor
+        /// to skip re-reviews when the diff hasn't changed since the last
+        /// verdict. `None` for verdicts rendered by worker-side `clc review`
+        /// commands (which don't have the diff context).
+        diff_hash: Option<String>,
     },
 
     /// Status update from an agent.
@@ -542,6 +547,7 @@ pub mod contract_tests {
                 review_type: "code".into(),
                 verdict: ReviewVerdict::Approved,
                 comments: "lgtm".into(),
+                diff_hash: None,
             },
         ))
         .await

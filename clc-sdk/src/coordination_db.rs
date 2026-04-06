@@ -344,14 +344,18 @@ fn kind_to_payload(kind: &MessageKind) -> String {
             review_type,
             verdict,
             comments,
+            diff_hash,
         } => {
             let v = match verdict {
                 ReviewVerdict::Approved => "approved",
                 ReviewVerdict::ChangesRequested => "changes_requested",
                 ReviewVerdict::Rejected => "rejected",
             };
-            serde_json::json!({ "request_id": request_id, "review_type": review_type, "verdict": v, "comments": comments })
-                .to_string()
+            let mut obj = serde_json::json!({ "request_id": request_id, "review_type": review_type, "verdict": v, "comments": comments });
+            if let Some(h) = diff_hash {
+                obj["diff_hash"] = serde_json::Value::String(h.clone());
+            }
+            obj.to_string()
         }
         MessageKind::StatusUpdate { phase, detail } => {
             serde_json::json!({ "phase": phase, "detail": detail }).to_string()
@@ -406,6 +410,7 @@ fn payload_to_kind(
                 review_type: v["review_type"].as_str().unwrap_or_default().to_string(),
                 verdict,
                 comments: v["comments"].as_str().unwrap_or_default().to_string(),
+                diff_hash: v["diff_hash"].as_str().map(String::from),
             })
         }
         "status_update" => Ok(MessageKind::StatusUpdate {
