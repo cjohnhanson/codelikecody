@@ -672,10 +672,9 @@ mod tests {
     }
 
     fn blocking_review_checker(_: &str, reviewers: &[String]) -> Result<(), Error> {
-        Err(Error::NonBlocking(format!(
-            "review required: {}",
-            reviewers.join(", ")
-        )))
+        Err(Error::ReviewRequired {
+            missing: reviewers.to_vec(),
+        })
     }
 
     #[test]
@@ -754,12 +753,12 @@ mod tests {
         })
         .unwrap();
 
-        // With blocking checker — should fail.
+        // With blocking checker — should fail with ReviewRequired.
         let result = validate_transition(
             &wf, Some("writing"), "done", "w", &blocking_review_checker,
         );
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("review required"));
+        let err = result.unwrap_err();
+        assert!(err.is_review_required(), "expected ReviewRequired, got: {err}");
 
         // With noop checker — should pass.
         let result = validate_transition(
@@ -802,5 +801,66 @@ mod tests {
             &wf, Some("done"), "writing", "w", &blocking_review_checker,
         );
         assert!(result.is_ok(), "backward transition should skip review gate");
+    }
+
+    #[test]
+    fn review_required_error_is_typed_not_string_matched() {
+        // Verifies that the review gate error is a typed variant that can be
+        // identified without string matching — the fix for the silent breakage
+        // that occurred when error messages changed.
+        use crate::config::{PhaseDef, TransitionDef, WorkflowDef};
+        let wf = Workflow::new(&WorkflowDef {
+            description: None,
+            phases: vec![
+                PhaseDef {
+                    name: "writing".into(),
+                    instructions: None,
+                    nudge: None,
+                    can_stop: false,
+                    permissions: None,
+                    transitions: Some(vec![TransitionDef::Rich {
+                        target: "done".into(),
+                        review: vec!["code-review".into(), "style-review".into()],
+                    }]),
+                },
+                PhaseDef {
+                    name: "done".into(),
+                    instructions: None,
+                    nudge: None,
+                    can_stop: false,
+                    permissions: None,
+                    transitions: None,
+                },
+            ],
+        })
+        .unwrap();
+
+        let err = validate_transition(
+            &wf, Some("writing"), "done", "w", &blocking_review_checker,
+        )
+        .unwrap_err();
+
+        // The error must be identifiable by variant, not by message text.
+        assert!(err.is_review_required(), "expected ReviewRequired variant, got: {err}");
+
+        // The missing reviewers must be accessible from the variant.
+        match err {
+            Error::ReviewRequired { ref missing } => {
+                assert_eq!(missing, &["code-review", "style-review"]);
+            }
+            _ => panic!("expected ReviewRequired variant"),
+        }
+
+        // The Display impl should still produce a human-readable message.
+        let msg = err.to_string();
+        assert!(msg.contains("code-review"), "display should name missing reviewers: {msg}");
+        assert!(msg.contains("style-review"), "display should name missing reviewers: {msg}");
+
+        // Other error variants must NOT be identified as review-required.
+        let non_review = Error::NonBlocking("review required: fake".into());
+        assert!(
+            !non_review.is_review_required(),
+            "NonBlocking with 'review required' in message must NOT match is_review_required()"
+        );
     }
 }

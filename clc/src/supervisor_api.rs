@@ -736,10 +736,12 @@ async fn set_phase(
 
                 if !missing.is_empty() {
                     return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({
+                        "code": "review_required",
                         "error": format!(
                             "review required: {}. Reviewers will be dispatched — wait for approval, then retry.",
                             missing.join(", ")
                         ),
+                        "missing_reviewers": missing,
                     }))));
                 }
             }
@@ -1451,9 +1453,14 @@ mod tests {
             &serde_json::json!({ "phase": "draft" }),
         );
         assert_eq!(status, 400, "review-gated transition should be rejected without approval: {body}");
+        assert_eq!(
+            body["code"].as_str(),
+            Some("review_required"),
+            "response should have code 'review_required': {body}"
+        );
         assert!(
-            body["error"].as_str().unwrap_or("").contains("review required"),
-            "error should mention review required: {body}"
+            body["missing_reviewers"].is_array(),
+            "response should include missing_reviewers array: {body}"
         );
     }
 
@@ -1677,7 +1684,7 @@ mod tests {
 
         // Register worker and reviewer.
         blocking_post(&base_url, "/agents", &serde_json::json!({ "id": "worker-1" }));
-        let (_, reviewer_body) = blocking_post(
+        let (_, _reviewer_body) = blocking_post(
             &base_url,
             "/agents",
             &serde_json::json!({ "id": "reviewer-1" }),

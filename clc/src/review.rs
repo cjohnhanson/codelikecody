@@ -176,10 +176,9 @@ pub fn check_review_requirements(
     if missing.is_empty() {
         Ok(())
     } else {
-        Err(Error::NonBlocking(format!(
-            "transition blocked — required reviews not yet approved: {}",
-            missing.join(", ")
-        )))
+        Err(Error::ReviewRequired {
+            missing: missing.into_iter().map(String::from).collect(),
+        })
     }
 }
 

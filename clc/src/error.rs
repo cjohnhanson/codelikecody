@@ -9,6 +9,9 @@ pub enum Error {
     #[error("{0}")]
     NonBlocking(String),
 
+    #[error("review required: {}", missing.join(", "))]
+    ReviewRequired { missing: Vec<String> },
+
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
 
@@ -22,5 +25,10 @@ impl Error {
             Self::Block(_) => 2,
             _ => 1,
         }
+    }
+
+    /// Returns `true` if this error represents a review gate blocking a transition.
+    pub const fn is_review_required(&self) -> bool {
+        matches!(self, Self::ReviewRequired { .. })
     }
 }

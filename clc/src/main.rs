@@ -303,7 +303,7 @@ fn cmd_status_set(target: &str) -> Result<(), Error> {
     // Try the transition. If blocked by a review gate, poll until approved.
     match phase::set_with_workflow(&cwd, target, cfg.required_attempts, &wf) {
         Ok(()) => Ok(()),
-        Err(e) if e.to_string().contains("review required") => {
+        Err(e) if e.is_review_required() => {
             eprintln!("{e}");
             eprintln!("Waiting for review approval...");
             // Poll every 15 seconds until the review gate opens.
@@ -314,7 +314,7 @@ fn cmd_status_set(target: &str) -> Result<(), Error> {
                         eprintln!("Review approved — phase advanced to '{target}'");
                         return Ok(());
                     }
-                    Err(ref retry_err) if retry_err.to_string().contains("review required") => {
+                    Err(ref retry_err) if retry_err.is_review_required() => {
                         continue;
                     }
                     Err(other) => return Err(other),
