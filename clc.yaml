@@ -58,9 +58,13 @@ workflows:
         transitions:
           - in-review
 
-      - in-review
+      - name: in-review
+        instructions: "Review complete. Advance to reviewed: `clc status set reviewed`"
+        transitions:
+          - reviewed
 
       - name: reviewed
+        instructions: "Finalize work: `clc done`"
         can_stop: true
         transitions:
           - done
@@ -111,7 +115,10 @@ workflows:
         transitions:
           - in-review
 
-      - in-review
+      - name: in-review
+        instructions: "Review complete. Advance: clc status set reviewed"
+        transitions:
+          - reviewed
       - reviewed
       - done
 
@@ -159,7 +166,10 @@ workflows:
         transitions:
           - in-review
 
-      - in-review
+      - name: in-review
+        instructions: "Review complete. Advance: clc status set reviewed"
+        transitions:
+          - reviewed
       - reviewed
       - done
 
@@ -186,7 +196,10 @@ workflows:
         transitions:
           - in-review
 
-      - in-review
+      - name: in-review
+        instructions: "Review complete. Advance: clc status set reviewed"
+        transitions:
+          - reviewed
       - reviewed
       - done
 
@@ -211,7 +224,10 @@ workflows:
         transitions:
           - in-review
 
-      - in-review
+      - name: in-review
+        instructions: "Review complete. Advance: clc status set reviewed"
+        transitions:
+          - reviewed
       - reviewed
       - done
 
