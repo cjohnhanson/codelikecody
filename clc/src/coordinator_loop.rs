@@ -254,6 +254,26 @@ enum TickResult {
     AllDone,
 }
 
+/// Count workers occupying a slot: both Pending (dispatched, waiting for
+/// supervisor to start container) and Running (actively working). Terminal
+/// states (Stopped, Completed, Failed) don't occupy slots.
+///
+/// Without counting Pending, a coordinator could dispatch N workers per tick
+/// — each tick sees 0 Running (supervisor hasn't started them yet) and
+/// dispatches another batch, bypassing max_workers entirely.
+fn count_active_workers(agents: &[(String, clc_sdk::coordination::AgentStatus)]) -> usize {
+    agents
+        .iter()
+        .filter(|(_, s)| {
+            matches!(
+                s,
+                clc_sdk::coordination::AgentStatus::Pending
+                    | clc_sdk::coordination::AgentStatus::Running
+            )
+        })
+        .count()
+}
+
 fn tick(
     project_dir: &Path,
     main_branch: &str,
@@ -273,16 +293,13 @@ fn tick(
     let agents = coord
         .list_agents(Some(&scope.id))
         .unwrap_or_default();
-    let running = agents
-        .iter()
-        .filter(|(_, s)| *s == clc_sdk::coordination::AgentStatus::Running)
-        .count();
+    let active = count_active_workers(&agents);
 
-    eprintln!("coordinator '{}': tick — {} agents, {} running, max {}", scope.id, agents.len(), running, scope.max_workers);
+    eprintln!("coordinator '{}': tick — {} agents, {} active, max {}", scope.id, agents.len(), active, scope.max_workers);
 
-    if running < scope.max_workers {
+    if active < scope.max_workers {
         let pickable = find_undispatched(project_dir, scope, coord)?;
-        let slots = scope.max_workers - running;
+        let slots = scope.max_workers - active;
         eprintln!("coordinator '{}': {} pickable, {} slots", scope.id, pickable.len(), slots);
 
         for id in pickable.iter().take(slots) {
@@ -319,7 +336,7 @@ fn tick(
                     .ok()
                     .and_then(|p| p.parse().ok())
                     .unwrap_or(19100);
-                let tunnel_port = 19200 + (running + pickable.iter().position(|x| x == id).unwrap_or(0)) as u16;
+                let tunnel_port = 19200 + (active + pickable.iter().position(|x| x == id).unwrap_or(0)) as u16;
                 Some(crate::dispatch::SSHDispatchConfig {
                     image: image.clone(),
                     ca,
@@ -753,4 +770,66 @@ pub(crate) fn filter_pickable_ids(
         })
         .map(|i| i.id.clone())
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clc_sdk::coordination::AgentStatus;
+
+    // --- count_active_workers tests ---
+
+    #[test]
+    fn count_active_workers_counts_running() {
+        let agents = vec![
+            ("w1".to_string(), AgentStatus::Running),
+            ("w2".to_string(), AgentStatus::Running),
+        ];
+        assert_eq!(count_active_workers(&agents), 2);
+    }
+
+    #[test]
+    fn count_active_workers_counts_pending() {
+        let agents = vec![
+            ("w1".to_string(), AgentStatus::Pending),
+            ("w2".to_string(), AgentStatus::Pending),
+        ];
+        assert_eq!(count_active_workers(&agents), 2);
+    }
+
+    #[test]
+    fn count_active_workers_mixed_states() {
+        // The race condition from tisket oe45: a coordinator has just
+        // dispatched workers (Pending) while older ones are Running.
+        // Both must count toward the max_workers cap.
+        let agents = vec![
+            ("w1".to_string(), AgentStatus::Running),
+            ("w2".to_string(), AgentStatus::Pending),
+            ("w3".to_string(), AgentStatus::Pending),
+            ("w4".to_string(), AgentStatus::Completed),
+            ("w5".to_string(), AgentStatus::Failed),
+            ("w6".to_string(), AgentStatus::Stopped),
+        ];
+        assert_eq!(
+            count_active_workers(&agents),
+            3,
+            "should count Pending + Running, not terminal states"
+        );
+    }
+
+    #[test]
+    fn count_active_workers_ignores_terminal_states() {
+        let agents = vec![
+            ("w1".to_string(), AgentStatus::Completed),
+            ("w2".to_string(), AgentStatus::Failed),
+            ("w3".to_string(), AgentStatus::Stopped),
+        ];
+        assert_eq!(count_active_workers(&agents), 0);
+    }
+
+    #[test]
+    fn count_active_workers_empty() {
+        let agents: Vec<(String, AgentStatus)> = vec![];
+        assert_eq!(count_active_workers(&agents), 0);
+    }
 }
