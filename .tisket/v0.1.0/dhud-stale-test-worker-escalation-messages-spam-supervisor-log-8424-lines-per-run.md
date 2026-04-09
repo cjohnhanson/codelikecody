@@ -1,12 +1,12 @@
 ---
 title: "stale 'test-worker' escalation messages spam supervisor log (8424 lines per run)"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [clc, supervisor, bug]
 depends_on: []
 created: 2026-04-09T03:21:02Z
-updated: "2026-04-09T03:21:56Z"
+updated: "2026-04-09T03:52:07Z"
 ---
 
 ## Problem
@@ -42,3 +42,5 @@ Two parts:
 
 - Log volume from a clean clc up run has no test-worker entries
 - If a message is shown to a human (escalation printed), it gets marked as shown so it doesn't repeat
+
+## Scratch Notes
