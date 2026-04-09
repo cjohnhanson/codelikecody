@@ -54,6 +54,11 @@ pub struct Supervisor {
     workflow_defs: std::collections::HashMap<String, crate::config::WorkflowDef>,
     /// OAuth token for Claude API authentication (passed to reviewers).
     oauth_token: Option<String>,
+    /// Message IDs of escalations already printed this supervisor run. Used
+    /// to dedupe the `[ESCALATION]` output — without this, every tick
+    /// re-prints all pending escalations from the DB, including stale ones
+    /// from prior test runs, filling the log with repeated messages.
+    shown_escalations: std::collections::HashSet<String>,
 }
 
 impl Supervisor {
@@ -93,6 +98,7 @@ impl Supervisor {
                     let token_path = dirs::home_dir()?.join(".claude").join("token");
                     std::fs::read_to_string(token_path).ok().map(|t| t.trim().to_string())
                 }),
+            shown_escalations: std::collections::HashSet::new(),
         }
     }
 
@@ -273,9 +279,15 @@ impl Supervisor {
             // container, import into the host repo, and attempt ff-merge.
             self.land_completed_workers(&coord);
 
-            // Surface escalations.
+            // Surface escalations. Dedupe via `shown_escalations`: each
+            // message ID is printed at most once per supervisor run, so
+            // stale messages from prior test runs don't flood the log
+            // every polling tick.
             if let Ok(escalations) = coord.pending_permissions("admin") {
                 for msg in &escalations {
+                    if !is_new_escalation(&mut self.shown_escalations, &msg.id) {
+                        continue;
+                    }
                     if let clc_sdk::coordination::MessageKind::PermissionRequest {
                         ref tool_name,
                         ref reason,
@@ -1186,6 +1198,18 @@ fn should_skip_review(
         .is_some_and(|prev_hash| prev_hash == current_diff_hash)
 }
 
+/// Returns true if this escalation message ID hasn't been printed yet in
+/// the current supervisor run. Inserts the ID into `shown` as a side effect,
+/// so repeated calls with the same ID return false.
+///
+/// Used by the main supervisor loop to dedupe the `[ESCALATION]` output.
+/// Without this, every tick would re-print every pending escalation in the
+/// coordination DB, including stale messages from prior runs or test
+/// harnesses that leaked agent IDs into the DB.
+fn is_new_escalation(shown: &mut std::collections::HashSet<String>, msg_id: &str) -> bool {
+    shown.insert(msg_id.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1358,5 +1382,42 @@ mod tests {
             !should_skip_review(&msgs, "worker-1", &hash),
             "non-review messages should be ignored"
         );
+    }
+
+    // --- is_new_escalation tests ---
+
+    #[test]
+    fn is_new_escalation_first_call_returns_true() {
+        let mut shown = std::collections::HashSet::new();
+        assert!(is_new_escalation(&mut shown, "msg-1"));
+    }
+
+    #[test]
+    fn is_new_escalation_repeat_returns_false() {
+        let mut shown = std::collections::HashSet::new();
+        is_new_escalation(&mut shown, "msg-1");
+        assert!(!is_new_escalation(&mut shown, "msg-1"));
+    }
+
+    #[test]
+    fn is_new_escalation_different_ids_all_return_true() {
+        let mut shown = std::collections::HashSet::new();
+        assert!(is_new_escalation(&mut shown, "msg-1"));
+        assert!(is_new_escalation(&mut shown, "msg-2"));
+        assert!(is_new_escalation(&mut shown, "msg-3"));
+        assert_eq!(shown.len(), 3);
+    }
+
+    #[test]
+    fn is_new_escalation_dedups_across_many_repeats() {
+        let mut shown = std::collections::HashSet::new();
+        // Simulate 1000 polling ticks all seeing the same stale message.
+        let mut printed = 0;
+        for _ in 0..1000 {
+            if is_new_escalation(&mut shown, "stale-msg") {
+                printed += 1;
+            }
+        }
+        assert_eq!(printed, 1, "should print stale message exactly once");
     }
 }
