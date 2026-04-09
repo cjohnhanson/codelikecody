@@ -717,6 +717,17 @@ impl Supervisor {
                 continue;
             }
 
+            // Only process workers whose branch exists locally. A missing
+            // branch means either (a) the worker hasn't committed anything
+            // yet, or (b) stale DB state from a prior run on another machine.
+            // Either way, there's nothing to review and reviewers would just
+            // fail with "branch does not exist locally". Skip silently —
+            // handle_reviews runs every tick, so we'll retry once the worker
+            // actually pushes work.
+            if !crate::gix_ops::branch_exists(&self.project_dir, &worker.tisket_id) {
+                continue;
+            }
+
             // Get current phase and workflow.
             let phase_info = coord.get_phase(&worker.tisket_id).ok().flatten();
             let Some((ref phase, _, ref workflow_name)) = phase_info else {

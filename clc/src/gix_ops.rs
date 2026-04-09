@@ -437,6 +437,26 @@ pub fn checkout_branch(project_dir: &Path, branch_name: &str) -> Result<(), Erro
     Ok(())
 }
 
+/// Check whether a local branch exists in the project's git repo.
+///
+/// Returns `false` if:
+/// - The branch ref does not exist
+/// - The project directory is not a git repository
+/// - Any gix error occurs during the lookup
+///
+/// Used by the supervisor to gate operations that require a worker's branch
+/// to have been pushed to the host (e.g. spawning reviewers). Without this
+/// check, the supervisor would happily spawn reviewers against branches that
+/// don't exist locally (because the worker hasn't committed anything yet, or
+/// because the DB has stale state from a prior run on another machine).
+pub fn branch_exists(project_dir: &Path, branch_name: &str) -> bool {
+    let Ok(repo) = open(project_dir) else {
+        return false;
+    };
+    let ref_name = format!("refs/heads/{branch_name}");
+    repo.find_reference(&ref_name).is_ok()
+}
+
 // --- Internal helpers ---
 
 fn open(project_dir: &Path) -> Result<gix::Repository, Error> {
@@ -1284,6 +1304,65 @@ mod tests {
             );
             current = parents[0];
         }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // --- branch_exists tests ---
+
+    #[test]
+    fn branch_exists_returns_true_for_existing_branch() {
+        let dir = make_test_repo(&[("a.txt", "a")]);
+        let repo = gix::open(&dir).unwrap();
+        let head_id = repo.head_id().unwrap().detach();
+        repo.reference(
+            "refs/heads/feature-xyz",
+            head_id,
+            PreviousValue::MustNotExist,
+            "create test branch",
+        )
+        .unwrap();
+
+        assert!(branch_exists(&dir, "feature-xyz"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn branch_exists_returns_false_for_missing_branch() {
+        let dir = make_test_repo(&[("a.txt", "a")]);
+
+        assert!(!branch_exists(&dir, "nonexistent-branch"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn branch_exists_returns_false_for_non_git_dir() {
+        #[allow(deprecated)]
+        let dir = tempfile::tempdir().unwrap().into_path();
+
+        assert!(!branch_exists(&dir, "any-branch"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn branch_exists_distinguishes_similar_names() {
+        let dir = make_test_repo(&[("a.txt", "a")]);
+        let repo = gix::open(&dir).unwrap();
+        let head_id = repo.head_id().unwrap().detach();
+        repo.reference(
+            "refs/heads/abc",
+            head_id,
+            PreviousValue::MustNotExist,
+            "create test branch",
+        )
+        .unwrap();
+
+        assert!(branch_exists(&dir, "abc"));
+        assert!(!branch_exists(&dir, "abcd"));
+        assert!(!branch_exists(&dir, "ab"));
 
         let _ = std::fs::remove_dir_all(&dir);
     }
