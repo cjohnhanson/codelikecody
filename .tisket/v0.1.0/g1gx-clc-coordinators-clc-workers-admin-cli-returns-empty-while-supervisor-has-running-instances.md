@@ -1,12 +1,12 @@
 ---
 title: "clc coordinators / clc workers admin CLI returns empty while supervisor has running instances"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [clc, admin, bug]
 depends_on: []
 created: 2026-04-09T03:21:04Z
-updated: "2026-04-09T03:22:17Z"
+updated: "2026-04-09T13:10:45Z"
 ---
 
 ## Problem
@@ -44,3 +44,5 @@ The admin CLI should query the supervisor API (`GET /coordinators`, `GET /worker
 
 - While clc up is running: `clc coordinators` shows the active coordinators; `clc workers` shows the active workers
 - When no supervisor is running: the commands report either 'no supervisor running' or fall back to last-known state
+
+## Scratch Notes
