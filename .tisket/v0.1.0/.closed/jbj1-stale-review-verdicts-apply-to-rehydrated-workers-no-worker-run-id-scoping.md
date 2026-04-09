@@ -1,12 +1,12 @@
 ---
 title: "stale review verdicts apply to rehydrated workers — no worker_run_id scoping"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: [clc, supervisor, bug]
 depends_on: []
 created: 2026-04-09T03:21:02Z
-updated: "2026-04-09T03:38:39Z"
+updated: "2026-04-09T03:51:50Z"
 ---
 
 ## Problem
@@ -39,5 +39,3 @@ Option 2 is the cleanest — it also handles in-flight scenarios where a worker 
 
 - Unit test: rehydrating an agent with stale ReviewResult messages in DB → pending_reviews returns empty (or matches only current-run verdicts)
 - Regression: kq0i-style advancement from stale approvals should not happen
-
-## Scratch Notes
