@@ -1,12 +1,12 @@
 ---
 title: "max_workers not enforced — 14 workers ran with config cap of 5"
-status: todo
+status: in_progress
 priority:
 assignee:
 labels: [clc, supervisor, bug]
 depends_on: []
 created: 2026-04-09T03:21:03Z
-updated: "2026-04-09T03:22:07Z"
+updated: "2026-04-09T04:00:06Z"
 ---
 
 ## Problem
@@ -40,3 +40,5 @@ Reproduce on a clean coordination DB (see ghzk for why the DB was dirty). If 14 
 
 - Write a test that verifies a coordinator with max_workers=1 never dispatches a second worker while the first is running
 - Fix any path that bypasses the cap
+
+## Scratch Notes
