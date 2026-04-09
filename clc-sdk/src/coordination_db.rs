@@ -641,6 +641,25 @@ impl CoordinationBackend for DbBackend {
 }
 
 impl DbBackend {
+    /// Delete all messages addressed to the given agent.
+    ///
+    /// Used by dispatch_worker to clear stale state when re-dispatching an
+    /// existing agent. Without this, ReviewResult messages from a prior run
+    /// (possibly on another machine, with a since-deleted branch) still count
+    /// toward "all reviews approved" on the fresh dispatch. Returns the number
+    /// of messages deleted.
+    pub async fn delete_messages_to_agent(
+        &self,
+        agent_id: &str,
+    ) -> Result<u64, CoordinationError> {
+        let res = message_entity::Entity::delete_many()
+            .filter(message_entity::Column::ToAgent.eq(agent_id))
+            .exec(&self.db)
+            .await
+            .map_err(|e| CoordinationError::Storage(e.to_string()))?;
+        Ok(res.rows_affected)
+    }
+
     /// Store a process ID for an agent. Not part of the trait — specific to
     /// process-based agent implementations.
     pub async fn set_pid(
@@ -990,6 +1009,106 @@ mod tests {
         let backend = sqlite_backend().await;
         let err = backend.get_agent_created_at("ghost").await;
         assert!(err.is_err());
+    }
+
+    // --- delete_messages_to_agent tests ---
+
+    #[tokio::test]
+    async fn delete_messages_to_agent_removes_only_matching_recipient() {
+        let backend = sqlite_backend().await;
+        backend.register_agent("worker", None).await.unwrap();
+        backend.register_agent("other", None).await.unwrap();
+
+        // Send two messages to worker.
+        backend
+            .send(Message {
+                id: "m1".into(),
+                from: "reviewer".into(),
+                to: "worker".into(),
+                kind: MessageKind::Text("stale review".into()),
+                timestamp: std::time::SystemTime::now(),
+            })
+            .await
+            .unwrap();
+        backend
+            .send(Message {
+                id: "m2".into(),
+                from: "reviewer2".into(),
+                to: "worker".into(),
+                kind: MessageKind::Text("another stale".into()),
+                timestamp: std::time::SystemTime::now(),
+            })
+            .await
+            .unwrap();
+
+        // Send one message to 'other' — should NOT be deleted.
+        backend
+            .send(Message {
+                id: "m3".into(),
+                from: "someone".into(),
+                to: "other".into(),
+                kind: MessageKind::Text("keep me".into()),
+                timestamp: std::time::SystemTime::now(),
+            })
+            .await
+            .unwrap();
+
+        let deleted = backend.delete_messages_to_agent("worker").await.unwrap();
+        assert_eq!(deleted, 2);
+
+        // Verify worker messages are gone.
+        let (worker_msgs, _) = backend.recv("worker", &Cursor::default()).await.unwrap();
+        assert!(worker_msgs.is_empty());
+
+        // Verify 'other' messages are untouched.
+        let (other_msgs, _) = backend.recv("other", &Cursor::default()).await.unwrap();
+        assert_eq!(other_msgs.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn delete_messages_to_agent_returns_zero_for_no_messages() {
+        let backend = sqlite_backend().await;
+        backend.register_agent("worker", None).await.unwrap();
+
+        let deleted = backend.delete_messages_to_agent("worker").await.unwrap();
+        assert_eq!(deleted, 0);
+    }
+
+    #[tokio::test]
+    async fn delete_messages_to_agent_clears_stale_review_verdicts() {
+        let backend = sqlite_backend().await;
+        backend.register_agent("kq0i", None).await.unwrap();
+        backend.register_agent("kq0i-reviewer-test-review", None).await.unwrap();
+
+        // Simulate a stale ReviewResult from a prior run.
+        backend
+            .send(Message {
+                id: "stale-rev-1".into(),
+                from: "kq0i-reviewer-test-review".into(),
+                to: "kq0i".into(),
+                kind: MessageKind::ReviewResult {
+                    request_id: String::new(),
+                    review_type: "test-review".into(),
+                    verdict: ReviewVerdict::Approved,
+                    comments: "stale approval from prior run".into(),
+                    diff_hash: Some("oldhash".into()),
+                },
+                timestamp: std::time::SystemTime::now(),
+            })
+            .await
+            .unwrap();
+
+        // Verify it's there.
+        let (msgs, _) = backend.recv("kq0i", &Cursor::default()).await.unwrap();
+        assert_eq!(msgs.len(), 1);
+
+        // Clear on re-dispatch.
+        let deleted = backend.delete_messages_to_agent("kq0i").await.unwrap();
+        assert_eq!(deleted, 1);
+
+        // Stale verdict is gone.
+        let (msgs, _) = backend.recv("kq0i", &Cursor::default()).await.unwrap();
+        assert!(msgs.is_empty());
     }
 
     /// Postgres contract tests — requires DATABASE_URL env var.

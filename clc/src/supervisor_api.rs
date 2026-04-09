@@ -390,12 +390,17 @@ async fn dispatch_worker(
     Json(req): Json<DispatchRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), StatusCode> {
     // Register or re-activate. If the agent exists from a prior run (status
-    // Stopped/Failed), reset it to Pending instead of failing.
-    if let Err(_) = state
+    // Stopped/Failed), reset it to Pending instead of failing. Also clear
+    // stale messages addressed to the agent — without this, ReviewResult
+    // verdicts from a prior run would still count toward "all reviews
+    // approved" on the fresh dispatch, causing the supervisor to advance
+    // phases for a worker that has done no real work.
+    let was_reactivated = state
         .db
         .register_agent(&req.tisket_id, Some(&req.coordinator_id))
         .await
-    {
+        .is_err();
+    if was_reactivated {
         state
             .db
             .set_status(
@@ -404,6 +409,9 @@ async fn dispatch_worker(
             )
             .await
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        // Clear stale message queue from prior runs. Only do this on
+        // re-activation — a fresh registration has no prior state.
+        let _ = state.db.delete_messages_to_agent(&req.tisket_id).await;
     }
 
     // Seed baseline tool grants so the worker can function.
@@ -1495,6 +1503,63 @@ mod tests {
         // Verify the phase was actually set
         let (_, phase_body) = blocking_get(&base_url, "/agents/worker-1/phase");
         assert_eq!(phase_body["phase"].as_str(), Some("draft"));
+    }
+
+    #[test]
+    fn redispatch_clears_stale_review_verdicts() {
+        let workflows = std::collections::HashMap::from([
+            ("docs".into(), docs_workflow_def()),
+        ]);
+        let (base_url, db, _handle, _tmp) = start_test_api_with_workflows(workflows);
+
+        // First dispatch — creates the worker agent.
+        dispatch_with_workflow(&base_url, "worker-1", "docs");
+
+        // Simulate a stale approval sitting in the DB from a prior run.
+        send_approval(&db, "worker-1", "docs-review");
+
+        // Sanity check: the stale approval is in the DB and the
+        // outline → draft transition would succeed because of it.
+        let (status, _) = blocking_put(
+            &base_url,
+            "/agents/worker-1/phase",
+            &serde_json::json!({ "phase": "draft" }),
+        );
+        assert_eq!(
+            status, 200,
+            "sanity: stale approval should satisfy review gate"
+        );
+
+        // Reset phase to outline for the next check.
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            db.set_phase("worker-1", "outline", 0, Some("docs"))
+                .await
+                .unwrap();
+        });
+
+        // Re-dispatch the same worker (as would happen on clc up restart).
+        dispatch_with_workflow(&base_url, "worker-1", "docs");
+
+        // The stale ReviewResult should now be gone — the re-dispatch should
+        // have cleared the worker's message queue.
+        let (status, body) = blocking_put(
+            &base_url,
+            "/agents/worker-1/phase",
+            &serde_json::json!({ "phase": "draft" }),
+        );
+        assert_eq!(
+            status, 400,
+            "review gate should block after stale verdicts cleared: {body}"
+        );
+        assert_eq!(
+            body["code"].as_str(),
+            Some("review_required"),
+            "error should be review_required: {body}"
+        );
     }
 
     #[test]
