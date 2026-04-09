@@ -34,14 +34,45 @@ struct WorkerInfo {
 pub fn list_workers(project_dir: &Path, all: bool) -> Result<(), Error> {
     let mut workers = collect_workers(project_dir)?;
 
-    // Enrich with coordination DB status if available.
+    // Enrich with coordination DB status if available, and add Docker-hosted
+    // workers that exist in the DB but have no local worktree.
     let has_api = std::env::var("CLC_API_URL").is_ok();
     let has_db = project_dir.join(".clc").join("coordination.db").exists();
     if has_api || has_db {
         if let Ok(coord) = Coordination::open(project_dir) {
+            // Update existing workers' alive status from DB.
             for w in &mut workers {
                 if let Ok(status) = coord.get_status(&w.id) {
                     w.alive = status == clc_sdk::coordination::AgentStatus::Running;
+                }
+            }
+
+            // Add DB-only agents (Docker workers with no local worktree).
+            let existing_ids: Vec<String> = workers.iter().map(|w| w.id.clone()).collect();
+            if let Ok(all_agents) = coord.list_agents(None) {
+                for (id, status) in &all_agents {
+                    if existing_ids.iter().any(|eid| eid == id.as_str()) {
+                        continue;
+                    }
+                    // Skip system agents.
+                    if id == "supervisor" || id.contains("-reviewer-") {
+                        continue;
+                    }
+                    let is_active = matches!(
+                        status,
+                        clc_sdk::coordination::AgentStatus::Running
+                            | clc_sdk::coordination::AgentStatus::Pending
+                    );
+                    if !is_active && !all {
+                        continue;
+                    }
+                    workers.push(WorkerInfo {
+                        id: id.clone(),
+                        pid: None,
+                        alive: is_active,
+                        line_count: 0,
+                        last_activity: format!("[docker] {status:?}"),
+                    });
                 }
             }
         }

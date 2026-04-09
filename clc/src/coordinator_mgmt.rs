@@ -26,7 +26,50 @@ struct CoordinatorInfo {
 
 /// List coordinators. By default only shows live ones; pass `all=true` to include dead.
 pub fn list_coordinators(project_dir: &Path, all: bool) -> Result<(), Error> {
-    let coordinators = collect_coordinators(project_dir)?;
+    let mut coordinators = collect_coordinators(project_dir)?;
+
+    // Add Docker-hosted coordinators from the coordination DB that have no
+    // local state directory. When `clc up` starts coordinators in Docker
+    // containers, they exist only in the DB — not in `.clc/coordinators/`.
+    let has_db = project_dir.join(".clc").join("coordination.db").exists();
+    if has_db {
+        if let Ok(coord) = crate::coordination::Coordination::open(project_dir) {
+            // Get coordinator names from the topology config so we can
+            // identify which agents in the DB are coordinators.
+            let topo_names: Vec<String> = crate::topology::load(project_dir)
+                .ok()
+                .flatten()
+                .map(|t| t.coordinators.keys().cloned().collect())
+                .unwrap_or_default();
+
+            let existing_ids: Vec<String> = coordinators.iter().map(|c| c.id.clone()).collect();
+            if let Ok(all_agents) = coord.list_agents(None) {
+                for (id, status) in &all_agents {
+                    if !topo_names.iter().any(|n| n == id) {
+                        continue;
+                    }
+                    if existing_ids.iter().any(|eid| eid == id.as_str()) {
+                        continue;
+                    }
+                    let is_active = matches!(
+                        status,
+                        clc_sdk::coordination::AgentStatus::Running
+                            | clc_sdk::coordination::AgentStatus::Pending
+                    );
+                    if !is_active && !all {
+                        continue;
+                    }
+                    coordinators.push(CoordinatorInfo {
+                        id: id.clone(),
+                        pid: None,
+                        alive: is_active,
+                        line_count: 0,
+                        last_activity: format!("[docker] {status:?}"),
+                    });
+                }
+            }
+        }
+    }
 
     let visible: Vec<&CoordinatorInfo> = coordinators.iter().filter(|c| all || c.alive).collect();
 
