@@ -1,12 +1,12 @@
 ---
 title: "supervisor rehydrates agents without validating local branch exists"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: [clc, supervisor, bug]
 depends_on: []
 created: 2026-04-09T03:21:00Z
-updated: "2026-04-09T03:22:26Z"
+updated: "2026-04-09T03:36:16Z"
 ---
 
 ## Problem
@@ -41,5 +41,3 @@ In supervisor startup, before rehydrating an agent from the DB:
 
 - Unit test: supervisor helper that decides whether to rehydrate an agent, with cases for (a) branch exists, (b) branch missing, (c) worktree missing
 - Integration: a coordination DB with a stale agent whose branch doesn't exist should NOT cause a container to be started on next `clc up`
-
-## Scratch Notes
