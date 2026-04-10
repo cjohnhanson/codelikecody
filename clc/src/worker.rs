@@ -49,13 +49,22 @@ pub fn list_workers(project_dir: &Path, all: bool) -> Result<(), Error> {
 
             // Add DB-only agents (Docker workers with no local worktree).
             let existing_ids: Vec<String> = workers.iter().map(|w| w.id.clone()).collect();
+            let topo_coordinator_names: Vec<String> =
+                crate::topology::load(project_dir)
+                    .ok()
+                    .flatten()
+                    .map(|t| t.coordinators.keys().cloned().collect())
+                    .unwrap_or_default();
             if let Ok(all_agents) = coord.list_agents(None) {
                 for (id, status) in &all_agents {
                     if existing_ids.iter().any(|eid| eid == id.as_str()) {
                         continue;
                     }
-                    // Skip system agents.
+                    // Skip system agents and coordinators.
                     if id == "supervisor" || id.contains("-reviewer-") {
+                        continue;
+                    }
+                    if topo_coordinator_names.iter().any(|n| n == id.as_str()) {
                         continue;
                     }
                     let is_active = matches!(

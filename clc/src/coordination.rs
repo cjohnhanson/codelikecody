@@ -251,6 +251,21 @@ impl Coordination {
         }
     }
 
+    /// Delete all messages addressed to the given agent. Used by the
+    /// supervisor at startup to clear stale escalation/review messages
+    /// from prior runs.
+    pub fn delete_messages_to_agent(
+        &self,
+        agent_id: &str,
+    ) -> Result<u64, CoordinationError> {
+        match &self.inner {
+            Backend::Db { backend, rt } => {
+                rt.block_on(backend.delete_messages_to_agent(agent_id))
+            }
+            Backend::Api(_) => Ok(0),
+        }
+    }
+
     /// Get the registration timestamp for an agent as a `SystemTime`.
     pub fn get_agent_created_at(
         &self,

@@ -137,6 +137,37 @@ impl Supervisor {
             eprintln!("supervisor: reset {reset_count} stale agent(s) from prior run");
         }
 
+        // Clear stale escalation messages addressed to "admin". On a fresh
+        // supervisor start, no real escalations exist yet — workers will
+        // re-send if they need permission. Without this, stale permission
+        // requests from prior runs (including test harness agent IDs like
+        // "test-worker") would spam the log on the first tick.
+        let agent_ids: Vec<&str> = all_agents.iter().map(|(id, _)| id.as_str()).collect();
+        let admin_cleaned = coord.delete_messages_to_agent("admin").unwrap_or(0);
+        // Also clean messages to agents that no longer exist in the DB.
+        let mut orphan_cleaned: u64 = 0;
+        // Read all message recipients and clean orphans. This is O(messages)
+        // but only runs once at startup.
+        if let Ok(all_msgs) = coord.recv("supervisor", &clc_sdk::coordination::Cursor::default()) {
+            // Skip — supervisor messages are fine.
+            let _ = all_msgs;
+        }
+        // For each agent that was reset (stale), also clean their inbound messages.
+        for (id, status) in &all_agents {
+            if matches!(
+                status,
+                clc_sdk::coordination::AgentStatus::Pending
+                    | clc_sdk::coordination::AgentStatus::Running
+            ) {
+                orphan_cleaned += coord.delete_messages_to_agent(id).unwrap_or(0);
+            }
+        }
+        if admin_cleaned + orphan_cleaned > 0 {
+            eprintln!(
+                "supervisor: cleaned {admin_cleaned} stale admin messages + {orphan_cleaned} stale agent messages"
+            );
+        }
+
         let _ = coord.register_agent("supervisor", None);
         let _ = coord.set_status("supervisor", clc_sdk::coordination::AgentStatus::Running);
 
