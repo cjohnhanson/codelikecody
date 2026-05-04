@@ -1,12 +1,12 @@
 ---
 title: "moose: synthetic cursor with path tracing, native hover, and click/type states for screencast recordings"
-status: discovery
+status: cancelled
 priority:
 assignee:
 labels: [moose, ux]
 depends_on: []
-created: "2026-03-26T12:56:04Z"
-updated: "2026-03-26T12:56:04Z"
+created: 2026-03-26T12:56:04Z
+updated: "2026-05-04T00:43:30Z"
 ---
 
 ## Problem

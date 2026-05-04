@@ -1,12 +1,12 @@
 ---
 title: "add moose + chromium to worker Docker image for frontend visual verification"
-status: todo
+status: cancelled
 priority: 2
 assignee:
 labels: [clc, auto]
 depends_on: []
-created: "2026-04-03T19:37:05Z"
-updated: "2026-04-03T19:37:05Z"
+created: 2026-04-03T19:37:05Z
+updated: "2026-05-04T00:43:30Z"
 ---
 
 ## Problem

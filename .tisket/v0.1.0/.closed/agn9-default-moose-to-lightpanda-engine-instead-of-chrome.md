@@ -1,12 +1,12 @@
 ---
 title: "default moose to lightpanda engine instead of chrome"
-status: todo
+status: cancelled
 priority:
 assignee:
 labels: [enhancement, moose]
 depends_on: []
 created: 2026-04-04T12:31:00Z
-updated: "2026-04-04T12:53:22Z"
+updated: "2026-05-04T00:43:30Z"
 ---
 
 ## Problem

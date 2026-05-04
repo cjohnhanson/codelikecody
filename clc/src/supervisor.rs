@@ -142,7 +142,6 @@ impl Supervisor {
         // re-send if they need permission. Without this, stale permission
         // requests from prior runs (including test harness agent IDs like
         // "test-worker") would spam the log on the first tick.
-        let agent_ids: Vec<&str> = all_agents.iter().map(|(id, _)| id.as_str()).collect();
         let admin_cleaned = coord.delete_messages_to_agent("admin").unwrap_or(0);
         // Also clean messages to agents that no longer exist in the DB.
         let mut orphan_cleaned: u64 = 0;

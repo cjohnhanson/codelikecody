@@ -1,12 +1,12 @@
 ---
 title: "migrate missouri browser tests from playwright to moose — replace playwright-missouri skill and patterns"
-status: discovery
+status: cancelled
 priority: 3
 assignee:
 labels: [missouri, moose, skills]
 depends_on: []
-created: "2026-03-27T02:21:40Z"
-updated: "2026-03-27T02:21:40Z"
+created: 2026-03-27T02:21:40Z
+updated: "2026-05-04T00:43:30Z"
 ---
 
 ## Problem

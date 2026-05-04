@@ -85,19 +85,6 @@ and promote them.
 
 `zettel docs getting-started` · [zettel/](zettel/)
 
-### 🫎 moose
-
-> Predominantly a browser, the moose's diet consists of both terrestrial
-> and aquatic vegetation, depending on the season, with branches, twigs
-> and dead wood making up a large portion of their winter diet. —Wikipedia
-
-Browser automation for AI agents. Forked from
-[agent-browser](https://github.com/vercel-labs/agent-browser). Connects
-to Chrome via CDP, handles screenshots, form filling, navigation, and
-session recording.
-
-`moose --help` · [moose/](moose/)
-
 ### ✌️ clc
 
 The workflow engine that ties everything together. Picks up tisket issues,
