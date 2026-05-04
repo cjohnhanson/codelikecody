@@ -1,12 +1,12 @@
 ---
 title: "split standalone tools into their own git repos"
-status: in_progress
+status: done
 priority: 1
 assignee:
 labels: [refactor]
 depends_on: []
 created: 2026-05-04T00:47:42Z
-updated: "2026-05-04T00:50:51Z"
+updated: "2026-05-04T04:21:59Z"
 ---
 
 Split tisket, missouri, almanac, belmont, zettel, mdstore, claude-code into their own git repos. Codelikecody will consume them via git deps. Order: leaf crates first (mdstore, claude-code, belmont, almanac), then dependents (tisket, zettel, missouri).
@@ -24,5 +24,3 @@ Each tool is independently useful. Separate repos enable independent release cyc
 ## Out of scope
 - clc, clc-sdk, clc-api, clc-web stay in this repo (orchestration core)
 - crates.io publishing (later)
-
-## Scratch Notes
