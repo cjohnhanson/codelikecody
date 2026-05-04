@@ -16,7 +16,7 @@ missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 
 [dependencies]
-almanac = { path = "../almanac", default-features = false }
+almanac = { git = "https://github.com/cjohnhanson/almanac", rev = "a2cdbd1af9a8a0f01c4cfc745d242a43d9a6e334", default-features = false }
 belmont = { git = "https://github.com/cjohnhanson/belmont", rev = "90e4f7e0401aba2bc1fdfeca1f01088b80f668f0" }
 async-trait = "0.1"
 axum = "0.8"

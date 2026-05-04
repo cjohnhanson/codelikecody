@@ -122,6 +122,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 [[package]]
 name = "almanac"
 version = "0.2.0"
+source = "git+https://github.com/cjohnhanson/almanac?rev=a2cdbd1af9a8a0f01c4cfc745d242a43d9a6e334#a2cdbd1af9a8a0f01c4cfc745d242a43d9a6e334"
 dependencies = [
  "clap",
  "dirs",
@@ -129,7 +130,6 @@ dependencies = [
  "serde_json",
  "serde_yml",
  "sigpipe",
- "tempfile",
  "thiserror 2.0.18",
 ]
 
