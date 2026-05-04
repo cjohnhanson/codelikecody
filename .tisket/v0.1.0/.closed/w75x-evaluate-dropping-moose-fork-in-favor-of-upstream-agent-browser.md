@@ -1,12 +1,12 @@
 ---
 title: "evaluate dropping moose fork in favor of upstream agent-browser"
-status: in_progress
+status: done
 priority:
 assignee:
 labels: [decision, moose]
 depends_on: []
 created: 2026-04-04T12:51:02Z
-updated: "2026-05-04T00:36:12Z"
+updated: "2026-05-04T00:46:21Z"
 ---
 
 ## Problem
@@ -40,5 +40,3 @@ burden drops to zero and the broader ecosystem benefits.
 If the answer is "drop the fork," moose goes away and the project
 depends on agent-browser directly. The moose name and README would
 be replaced with integration documentation.
-
-## Scratch Notes
