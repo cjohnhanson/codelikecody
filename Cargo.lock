@@ -511,6 +511,7 @@ dependencies = [
 [[package]]
 name = "belmont"
 version = "0.1.0"
+source = "git+https://github.com/cjohnhanson/belmont?rev=90e4f7e0401aba2bc1fdfeca1f01088b80f668f0#90e4f7e0401aba2bc1fdfeca1f01088b80f668f0"
 dependencies = [
  "camino",
  "clap",
@@ -519,7 +520,6 @@ dependencies = [
  "serde",
  "serde_yml",
  "sigpipe",
- "tempfile",
  "thiserror 2.0.18",
 ]
 
