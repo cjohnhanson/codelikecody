@@ -41,7 +41,7 @@ serde_json = "1"
 serde_yml = "0.0.12"
 toml = "0.8"
 missouri = { path = "../missouri", default-features = false }
-tisket = { path = "../tisket", default-features = false }
+tisket = { git = "https://github.com/cjohnhanson/tisket", rev = "43c95d63a78219ee14ec22bbee1758a43210b9e2", default-features = false }
 zettel = { git = "https://github.com/cjohnhanson/zettel", rev = "a44e60cdbfb5add545f626ffa76d9173a4c9b11e", default-features = false }
 thiserror = "2"
 tokio = { version = "1", features = ["rt", "rt-multi-thread"] }

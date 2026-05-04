@@ -1,3 +1,0 @@
-assertions:
-  - name: "labels unchanged after removing nonexistent label"
-    command: "tisket issue show alpha-task | grep -q 'a, b'"
