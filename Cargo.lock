@@ -8129,6 +8129,7 @@ dependencies = [
 [[package]]
 name = "zettel"
 version = "0.2.0"
+source = "git+https://github.com/cjohnhanson/zettel?rev=a44e60cdbfb5add545f626ffa76d9173a4c9b11e#a44e60cdbfb5add545f626ffa76d9173a4c9b11e"
 dependencies = [
  "camino",
  "chrono",

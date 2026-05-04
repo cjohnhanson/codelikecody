@@ -42,7 +42,7 @@ serde_yml = "0.0.12"
 toml = "0.8"
 missouri = { path = "../missouri", default-features = false }
 tisket = { path = "../tisket", default-features = false }
-zettel = { path = "../zettel", default-features = false }
+zettel = { git = "https://github.com/cjohnhanson/zettel", rev = "a44e60cdbfb5add545f626ffa76d9173a4c9b11e", default-features = false }
 thiserror = "2"
 tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
 bollard = "0.18"
