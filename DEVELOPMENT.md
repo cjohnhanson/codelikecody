@@ -6,7 +6,6 @@ How to work on this codebase.
 
 - Rust (stable)
 - [nix](https://nixos.org/) (optional, for sandboxed test execution)
-- Chrome or [Lightpanda](https://lightpanda.io/) (for moose/browser tests)
 
 ## Build
 
@@ -30,7 +29,6 @@ missouri/            # test framework binary
 almanac/             # skill aggregator binary
 belmont/             # secret manager binary
 zettel/              # knowledge base binary
-moose/               # browser automation binary
 mdstore/             # markdown document store library
 claude-code/         # Claude Code protocol types library
 skills/              # product skills (ship with the binary)

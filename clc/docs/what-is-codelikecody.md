@@ -105,19 +105,13 @@ tags, links, and status. Agents create draft notes during research;
 humans review and promote them. See the [CLI
 reference](/zettel/cli-reference).
 
-### moose — browser automation
-
-Browser automation for AI agents. Forked from Vercel Labs'
-agent-browser. Connects to Chrome via CDP, with support for Lightpanda
-as an alternative engine and WebDriver/Appium for native mobile testing.
-
 ## How they fit together
 
 Tisket holds work as issues. clc picks up an issue, creates a workspace,
 and sets the initial workflow phase. Missouri tests run inside the
 workspace to verify behavior. When the workflow completes, `clc done`
-closes the tisket and cleans up. Almanac, belmont, zettel, and moose
-fill supporting roles: skills, secrets, notes, and browser automation.
+closes the tisket and cleans up. Almanac, belmont, and zettel fill
+supporting roles: skills, secrets, and notes.
 
 clc detects which tools are present in the project directory and injects
 their status into the agent's context at session start and on every

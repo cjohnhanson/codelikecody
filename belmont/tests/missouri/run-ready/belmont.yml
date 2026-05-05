@@ -1,3 +1,0 @@
-backends: {}
-secrets:
-  MY_SECRET: "ref+env://BELMONT_TEST_SECRET"

@@ -16,11 +16,10 @@ clc ─────┬── tisket ──── mdstore
 clc-api ──── tisket ──── mdstore
 
 clc-web      (no workspace deps, talks to clc-api over HTTP)
-moose        (no workspace deps)
 ```
 
-Six crates have no workspace dependencies: almanac, belmont,
-claude-code, clc-web, mdstore, moose. These are leaves. Everything
+Five crates have no workspace dependencies: almanac, belmont,
+claude-code, clc-web, mdstore. These are leaves. Everything
 else builds upward from them.
 
 ## Layers
@@ -36,7 +35,7 @@ the shared parser they build on.
 protocol. It's a pure data crate with no runtime behavior. clc-sdk
 re-exports its types.
 
-### Standalone tools: almanac, belmont, moose
+### Standalone tools: almanac, belmont
 
 These have no workspace dependencies and no dependents within the
 workspace. They solve one problem each and interact with the rest of
@@ -48,9 +47,6 @@ know about clc.
 
 **belmont** manages secrets. clc detects `belmont.yml` and injects
 status, but belmont doesn't know about clc.
-
-**moose** automates browsers. It's used by agents during testing but
-has no compile-time relationship to anything else in the workspace.
 
 ### Data tools: tisket, zettel
 
@@ -158,7 +154,7 @@ cargo build --workspace
 cargo test --workspace
 ```
 
-clc is the main binary. tisket, missouri, almanac, belmont, zettel,
-and moose are also binaries. clc bundles them as subcommands (`clc
+clc is the main binary. tisket, missouri, almanac, belmont, and
+zettel are also binaries. clc bundles them as subcommands (`clc
 tisket`, `clc missouri`, etc.) but they can be built and run
 independently.
