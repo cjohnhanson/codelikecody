@@ -1,7 +1,8 @@
 //! Documentation generation from missouri test suites.
 //!
-//! Renders a test path as a markdown tutorial or JSON document, interleaving
-//! state prose, file trees, transition prose, commands, and expected output.
+//! Renders a test path as a markdown tutorial or as a JSON document. The
+//! output mixes the state prose, the file trees, the transition prose, the
+//! commands, and the expected output.
 
 use camino::Utf8Path;
 use ignore::gitignore::Gitignore;
@@ -136,7 +137,8 @@ pub fn render_json(graph: &StateGraph, path: &TestPath) -> Value {
     // Include the final state (no outgoing transition)
     let last_t = &graph.transitions[*path.steps.last().unwrap()];
     let final_state = &graph.states[last_t.target.0];
-    let final_files = walk_state_files_with_content(&final_state.path, &graph.config_dir, &graph.ignore);
+    let final_files =
+        walk_state_files_with_content(&final_state.path, &graph.config_dir, &graph.ignore);
 
     json!({
         "steps": steps,
@@ -148,9 +150,13 @@ pub fn render_json(graph: &StateGraph, path: &TestPath) -> Value {
     })
 }
 
-/// Walk a state directory and return relative file paths, sorted, excluding
-/// the config directory and any paths matched by the ignore patterns.
-pub fn walk_state_files(state_path: &Utf8Path, config_dir: &str, ignore: &Gitignore) -> Vec<String> {
+/// Walk a state directory and return the relative file paths, sorted. Skips
+/// the config directory and every path that an ignore pattern matches.
+pub fn walk_state_files(
+    state_path: &Utf8Path,
+    config_dir: &str,
+    ignore: &Gitignore,
+) -> Vec<String> {
     let mut files = Vec::new();
     collect_files(state_path, state_path, config_dir, ignore, &mut files);
     files.sort();
@@ -404,7 +410,10 @@ transitions:
 
         // Should not panic — just produces output without prose
         let md = render_markdown(&graph, &paths[0]);
-        assert!(md.contains("echo hello"), "command should still appear:\n{md}");
+        assert!(
+            md.contains("echo hello"),
+            "command should still appear:\n{md}"
+        );
     }
 
     #[test]
@@ -419,9 +428,7 @@ transitions:
         let prose_pos = md
             .find("The repository starts empty.")
             .expect("start prose missing");
-        let cmd_pos = md
-            .find("init --name myproject")
-            .expect("command missing");
+        let cmd_pos = md.find("init --name myproject").expect("command missing");
         assert!(
             prose_pos < cmd_pos,
             "state prose should appear before command (prose at {prose_pos}, cmd at {cmd_pos})"
@@ -455,8 +462,14 @@ transitions:
 
         let md = render_markdown(&graph, &paths[0]);
 
-        assert!(md.contains("output.txt"), "output.txt should appear in tree:\n{md}");
-        assert!(!md.contains("debug.log"), "debug.log should be ignored:\n{md}");
+        assert!(
+            md.contains("output.txt"),
+            "output.txt should appear in tree:\n{md}"
+        );
+        assert!(
+            !md.contains("debug.log"),
+            "debug.log should be ignored:\n{md}"
+        );
     }
 
     // --- walk_state_files tests ---
@@ -473,12 +486,17 @@ transitions:
         fs::write(state_dir.join("foo.txt"), "content").unwrap();
         fs::write(state_dir.join("bar.md"), "# bar").unwrap();
 
-        let (builder, _) = ignore::gitignore::GitignoreBuilder::new(root)
-            .build_global();
+        let (builder, _) = ignore::gitignore::GitignoreBuilder::new(root).build_global();
         let files = walk_state_files(&state_dir, ".missouri", &builder);
 
-        assert!(files.contains(&"foo.txt".to_string()), "foo.txt missing: {files:?}");
-        assert!(files.contains(&"bar.md".to_string()), "bar.md missing: {files:?}");
+        assert!(
+            files.contains(&"foo.txt".to_string()),
+            "foo.txt missing: {files:?}"
+        );
+        assert!(
+            files.contains(&"bar.md".to_string()),
+            "bar.md missing: {files:?}"
+        );
         // .missouri/ itself should not appear
         assert!(
             !files.iter().any(|f| f.starts_with(".missouri")),
@@ -506,8 +524,14 @@ transitions:
 
         let files = walk_state_files(&state_dir, ".missouri", &gitignore);
 
-        assert!(files.contains(&"app.rs".to_string()), "app.rs should be present: {files:?}");
-        assert!(!files.contains(&"app.log".to_string()), "app.log should be ignored: {files:?}");
+        assert!(
+            files.contains(&"app.rs".to_string()),
+            "app.rs should be present: {files:?}"
+        );
+        assert!(
+            !files.contains(&"app.log".to_string()),
+            "app.log should be ignored: {files:?}"
+        );
     }
 
     // --- render_json tests ---
@@ -538,7 +562,10 @@ transitions:
         let steps = json["steps"].as_array().unwrap();
         let first_step = &steps[0];
 
-        assert!(first_step.get("state").is_some(), "step missing 'state': {first_step}");
+        assert!(
+            first_step.get("state").is_some(),
+            "step missing 'state': {first_step}"
+        );
         assert!(
             first_step.get("transition").is_some(),
             "step missing 'transition': {first_step}"
@@ -561,7 +588,10 @@ transitions:
             "state name wrong: {state}"
         );
         assert!(
-            state["doc"].as_str().unwrap_or("").contains("repository starts empty"),
+            state["doc"]
+                .as_str()
+                .unwrap_or("")
+                .contains("repository starts empty"),
             "state doc missing: {state}"
         );
         assert!(

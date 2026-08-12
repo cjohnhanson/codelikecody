@@ -1,4 +1,4 @@
-//! Recording module: captures transition output to asciicast v2.
+//! Recording module. It captures the transition output as asciicast v2.
 //!
 //! Asciicast v2 format:
 //!   Line 1: JSON header `{"version":2,"width":80,"height":24,...}`
@@ -19,9 +19,9 @@ const TERM_HEIGHT: u16 = 24;
 
 /// Record a command execution, producing a .cast file.
 ///
-/// `command` is run via `sh -c` in `work_dir` with the given env.
-/// Returns the process Output (status, stdout, stderr) and writes
-/// a `.cast` file to `cast_path`.
+/// Runs `command` through `sh -c` in `work_dir` with the given
+/// environment. Returns the process Output, which holds the status, the
+/// stdout, and the stderr. Writes a `.cast` file to `cast_path`.
 pub fn record_command(
     command: &str,
     shell: bool,
@@ -69,7 +69,8 @@ pub fn record_command(
         all_lines.push(format!("{line}\r\n"));
     }
 
-    // Spread lines across the recording duration (min 3s or 150ms/line).
+    // Spread the lines across the recording. The recording lasts 3s at
+    // least, or 150ms for each line.
     let min_by_lines = all_lines.len() as f64 * 0.15;
     let replay_duration = elapsed.max(min_by_lines).max(3.0);
 
@@ -223,7 +224,8 @@ pub fn read_results(results_path: &Utf8Path) -> std::io::Result<RunResults> {
     Ok(results)
 }
 
-/// Find the latest (or specified) run directory under `<root>/<config_dir>/runs/`.
+/// Find a run directory under `<root>/<config_dir>/runs/`. Returns the
+/// named run, or the latest run when the caller names none.
 pub fn find_run_dir(
     root: &Utf8Path,
     config_dir: &str,

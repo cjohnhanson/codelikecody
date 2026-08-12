@@ -4,8 +4,8 @@ use std::time::Duration;
 use crate::compare::{EnvDiff, FileDiff, OutputDiff};
 use crate::executor::{AssertionResult, PathResult, ProgressEvent, SetupResult, StepResult};
 
-/// Reports test execution progress via simple line output on stderr.
-/// No terminal manipulation, no cursor hiding, no echo suppression.
+/// Reports test progress as plain lines on stderr. It does not move the
+/// cursor, hide the cursor, or suppress echo.
 pub struct ProgressReporter {
     total: usize,
 }

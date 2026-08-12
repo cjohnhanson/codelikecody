@@ -2,28 +2,30 @@
 
 Code like Cody (that's me). Opinionated workflow enforcement for coding agents.
 
-codelikecody is a set of CLI tools that enforce discipline on autonomous
-coding agents. Three principles drive the design: agent work should be
-verifiable, not trusted; undesired behavior should be mechanically
-impossible, not merely discouraged; and the tools compose through text
-streams and the filesystem.
+codelikecody is a set of CLI tools. The tools enforce discipline on
+autonomous coding agents. Three principles drive the design:
+
+1. Verify agent work. Do not trust it.
+2. Make undesired behavior impossible. Do not discourage it.
+3. Compose the tools through text streams and the filesystem.
 
 ## Tools
 
-Each tool is a standalone CLI. `clc` bundles them into a single binary
-(`clc tisket`, `clc missouri`, etc.) and adds workflow orchestration
-on top, but they work independently.
+Each tool is a standalone CLI. `clc` bundles the tools into one binary
+(`clc tisket`, `clc missouri`, and so on) and adds workflow
+orchestration. Each tool also runs on its own.
 
 ### 🔀 missouri
 
 > Show-me state. Model-based testing where system behavior is represented
 > as finite state automata.
 
-Tests CLI tools by modeling their behavior as directed graphs of filesystem
-states. Each state is a real directory. Transitions are shell commands.
-Assertions are byte-for-byte diffs between the directory after a command
-runs and the directory you said it should produce. No assertion DSL, no
-mocking. The expected state is the directory.
+missouri tests CLI tools. It models their behavior as directed graphs of
+filesystem states. Each state is a real directory. Each transition is a
+shell command. Each assertion is a byte-for-byte diff. The diff compares
+the directory that a command produces against the directory you declared.
+There is no assertion language and no mocking. The expected state is the
+directory.
 
 `missouri docs getting-started` · [missouri/](missouri/)
 
@@ -32,10 +34,11 @@ mocking. The expected state is the directory.
 > 🎶 _A tisket, a tasket_ 🎶 A plaintext git-tracked CLI-first project
 > management system for people that use coding agents.
 
-Issues are markdown files with YAML frontmatter, stored in `.tisket/` in
-git. Status lifecycle, labels, dependencies, per-issue scratch notes for
-agent working memory. Agents read and write issues as filesystem
-operations. No external service, no API tokens, works offline.
+tisket stores each issue as a markdown file with YAML frontmatter. The
+files live in `.tisket/` in git. Each issue has a status, labels,
+dependencies, and scratch notes for agent working memory. Agents read and
+write issues as filesystem operations. tisket needs no external service
+and no API token. It works offline.
 
 `tisket docs getting-started` · [tisket/](tisket/)
 
@@ -44,18 +47,19 @@ operations. No external service, no API tokens, works offline.
 > _What is a man? A miserable little pile of secrets._ Insecure
 > 'best-effort' secret management for supplying credentials to LLM agents.
 
-Resolves secrets from pluggable backends (OS keychain, environment
-variables) and injects them into commands at runtime. Scrubs secret values
-from command output in real time so agents can use credentials without
-seeing them.
+belmont resolves secrets from pluggable backends, such as the OS keychain
+and environment variables. It injects the secrets into commands at
+runtime. It also removes secret values from command output as the output
+appears. Agents can then use credentials without reading them.
 
-The threat model is narrow: prevent the most common LLM agent exfiltration
-patterns, like an agent cat'ing a `.env` file or echoing an environment
-variable while troubleshooting. An agent that actively tries to extract
-secrets through side channels (subshell env inspection, localhost echo
-servers) can probably succeed. **This is a solo-developed codebase. I am not a security researcher.
-Do not use this for anything security-critical. I do not use this in
-my own professional work.**
+The threat model is narrow. belmont stops the most common LLM agent
+exfiltration patterns. Two examples: an agent prints a `.env` file, or an
+agent echoes an environment variable during troubleshooting. An agent that
+attacks side channels can probably still get the secrets. Side channels
+include subshell environment inspection and localhost echo servers.
+**One developer wrote this codebase. I am not a security researcher. Do
+not use belmont for anything security-critical. I do not use it in my own
+professional work.**
 
 `belmont --help` · [belmont/](belmont/)
 
@@ -65,11 +69,12 @@ my own professional work.**
 > listing of a set of current information about one or multiple subjects.
 > —Wikipedia
 
-Aggregates agent skills from local directories and built-in sources.
-A skill is a directory with a SKILL.md file: YAML frontmatter declares
-name and description, the body holds instructions. Almanac indexes
-all available skills and prints their content on demand, so agents
-load only the skills relevant to the current task.
+almanac collects agent skills from local directories and built-in
+sources. A skill is a directory with a SKILL.md file. The YAML
+frontmatter declares the name and the description. The body holds the
+instructions. almanac indexes every available skill and prints its
+content on request. An agent then loads only the skills it needs for the
+current task.
 
 `almanac docs` · [almanac/](almanac/)
 
@@ -78,68 +83,69 @@ load only the skills relevant to the current task.
 > Zettelkasten for repos. Atomic notes, linked ideas, plain markdown
 > in git.
 
-A flat directory of notes in `.zettel/`, each with frontmatter for tags,
-links, and status. Forward links, backlinks, orphan detection, graph
-traversal. Agents create draft notes during research; humans review
-and promote them.
+zettel keeps a flat directory of notes in `.zettel/`. Each note has
+frontmatter for tags, links, and status. zettel shows forward links and
+backlinks, finds orphan notes, and walks the graph. Agents create draft
+notes during research. People review the drafts and promote them.
 
 `zettel docs getting-started` · [zettel/](zettel/)
 
 ### ✌️ clc (mothballed)
 
-The workflow engine that tied everything together: tisket pickup,
-isolated workspaces, a phase system gating edits per TDD stage, and
-supervisor/coordinator/worker orchestration. Development is paused and
-this repo no longer runs under it. The hook and context-lifecycle half
-of its job lives on in [gaff](https://github.com/cjohnhanson/gaff); a
-possible future revival would be as a coding-agent harness composing
-with gaff rather than containing it.
+clc is the workflow engine that connected the other tools. It handled
+tisket pickup, isolated workspaces, and supervisor, coordinator, and
+worker orchestration. Its phase system also restricted edits at each TDD
+stage. Development is paused, and this repo no longer runs under clc.
+[gaff](https://github.com/cjohnhanson/gaff) now does the hook and
+context-lifecycle work. A future version of clc would be a coding-agent
+harness that composes with gaff instead of containing it.
 
 `clc docs getting-started` · [clc/](clc/)
 
 ## Libraries
 
-Internal crates that factor out shared concerns.
+These internal crates hold concerns that the tools share.
 
-- **[mdstore](mdstore/)** — Parses and serializes YAML-frontmatter
-  markdown documents. The storage layer underneath tisket and zettel.
-  Generic over frontmatter type, so any tool that stores structured
-  data as markdown files in git can use it.
+- **[mdstore](mdstore/)** — Parses and serializes markdown documents
+  with YAML frontmatter. It is the storage layer under tisket and
+  zettel. It is generic over the frontmatter type. Any tool that stores
+  structured data as markdown files in git can use it.
 
-- **[clc-sdk](clc-sdk/)** — Traits for workspace lifecycle, agent
-  tool integration, and coordination. The Workspace trait abstracts
-  over isolation backends (git worktrees, Docker, others). Defines
-  how tools report status and phase-aware directives to the workflow
-  engine.
+- **[clc-sdk](clc-sdk/)** — Defines traits for workspace lifecycle,
+  agent tool integration, and coordination. The Workspace trait covers
+  isolation backends such as git worktrees and Docker. The SDK also
+  defines how a tool reports status and phase-aware directives to the
+  workflow engine.
 
-- **[claude-code](claude-code/)** — Protocol types for Claude Code's
-  NDJSON streaming output. Deserializes assistant messages, tool use,
-  results, and session metadata.
+- **[claude-code](claude-code/)** — Defines protocol types for Claude
+  Code's NDJSON streaming output. It parses assistant messages, tool
+  use, results, and session metadata.
 
-- **[clc-api](clc-api/)** — Axum HTTP API wrapping tisket's file-based
-  issue repository. REST endpoints for listing, creating, and editing
-  issues.
+- **[clc-api](clc-api/)** — Wraps tisket's file-based issue repository
+  in an Axum HTTP API. It provides REST endpoints to list, create, and
+  edit issues.
 
-- **[clc-web](clc-web/)** — Leptos client-side rendered frontend for
-  the issue tracker. Board view and issue detail, served as static
-  files by clc-api.
+- **[clc-web](clc-web/)** — Renders the issue tracker in the browser
+  with Leptos. It provides a board view and an issue detail view.
+  clc-api serves it as static files.
 
 ## Principles
 
-**Show me, don't tell me.** The proof of the pudding is in the eating.
-To be able to work autonomously at a high level of abstraction, agent
-outputs need to be easily verifiable.
+**Show me, don't tell me.** An agent works at a high level of
+abstraction. To trust that work, you must be able to check the output
+quickly. So every output must be easy to verify.
 
-**Undesired behavior should be impossible to perform.** If you don't
-want something to happen, make it impossible. If you want something
-to happen, make it impossible not to happen.
+**Undesired behavior should be impossible to perform.** If you do not
+want something to happen, make it impossible. If you want something to
+happen, make it impossible to skip.
 
-**Text streams are the universal interface.** [Unix philosophy](https://en.wikipedia.org/wiki/Unix_philosophy)
-applied to agent tooling.
+**Text streams are the universal interface.** These tools apply the
+[Unix philosophy](https://en.wikipedia.org/wiki/Unix_philosophy) to
+agent tooling.
 
 ## Documentation
 
-Each tool ships bundled docs accessible via `<tool> docs [topic]`:
+Each tool ships bundled docs. Read them with `<tool> docs [topic]`:
 
 ```
 missouri docs writing-tests
