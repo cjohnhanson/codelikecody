@@ -85,21 +85,15 @@ and promote them.
 
 `zettel docs getting-started` · [zettel/](zettel/)
 
-### ✌️ clc
+### ✌️ clc (mothballed)
 
-The workflow engine that ties everything together. Picks up tisket issues,
-creates isolated workspaces, enforces a phase system that gates what agents
-can edit at each stage of test-driven development, and optionally
-orchestrates multiple agents working in parallel with a
-supervisor/coordinator/worker hierarchy. Workspace isolation is
-pluggable: git worktrees and Docker containers are the current
-backends.
-
-Workflows are configurable. The default is a TDD sequence, but any
-phase graph can be defined in `clc.yml`, with per-phase permissions,
-review gates, and policy rules that select workflows based on issue
-labels or project. A guard intercepts every tool call and rejects
-disallowed operations before they reach the filesystem.
+The workflow engine that tied everything together: tisket pickup,
+isolated workspaces, a phase system gating edits per TDD stage, and
+supervisor/coordinator/worker orchestration. Development is paused and
+this repo no longer runs under it. The hook and context-lifecycle half
+of its job lives on in [gaff](https://github.com/cjohnhanson/gaff); a
+possible future revival would be as a coding-agent harness composing
+with gaff rather than containing it.
 
 `clc docs getting-started` · [clc/](clc/)
 

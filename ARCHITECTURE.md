@@ -2,6 +2,14 @@
 
 How the crates relate and what depends on what.
 
+> **Status (2026-08):** clc is mothballed and this repo no longer
+> self-hosts under its hooks — session context and reminders come from
+> [gaff](https://github.com/cjohnhanson/gaff). The dependency graph
+> below predates the repo split (almanac, belmont, tisket, zettel, and
+> mdstore now live in their own repos and are consumed as git
+> dependencies) and is kept as a description of the code that remains
+> here: clc, clc-sdk, clc-api, clc-web, claude-code, missouri.
+
 ## Dependency graph
 
 ```

@@ -1,0 +1,9 @@
+reminders:
+  - name: tisket-scratch
+    every:
+      tool_calls: 25
+    text: "Update the active tisket's scratch if state has moved since the last append."
+  - name: build-clean
+    every:
+      prompts: 15
+    text: "cargo build --workspace must be warning-free and tests green before any done-claim."
