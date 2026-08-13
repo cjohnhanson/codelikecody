@@ -1,12 +1,12 @@
 ---
 title: "tisket::serialize_issue hand-rolls YAML bypassing serde — silent data loss on new frontmatter fields"
-status: todo
+status: done
 priority:
 assignee:
 labels: [tisket, correctness, blocking, standard]
 depends_on: []
 created: 2026-03-23T03:11:53Z
-updated: "2026-04-03T18:33:27Z"
+updated: "2026-08-13T17:47:00Z"
 ---
 
 ## Problem

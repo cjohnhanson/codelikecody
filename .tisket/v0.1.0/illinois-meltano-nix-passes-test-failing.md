@@ -84,3 +84,6 @@ that ignores the `authors` line in pyproject.toml.
 
 Scope correction: this issue is titled meltano-only, but the cause is shared by
 all four tests. Retitle or widen it.
+
+## Precise finding 2026-08-13
+Ran cargo test -p missouri illinois_uv_nix_passes: FAIL, 'differs: exit_code.txt' on the nested before->after step. Not the src-vs-flat layout the earlier review saw — in THIS environment uv init --no-readme produces flat main.py correctly. The mismatch is an exit code, almost certainly 'uv add cowsay==6.1' resolving/downloading differently (network or version availability) under the nix scenario. This is environment/network-coupled, so regenerating the fixture here would bake in this machine's state. Do NOT blind-regenerate (the authors-field trap compounds it). Fix belongs in a controlled CI environment with pinned uv + offline cowsay, or by making the scenario network-independent (vendor the wheel). All four illinois_* tests share this shape.
