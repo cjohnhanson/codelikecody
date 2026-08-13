@@ -92,3 +92,9 @@ Full ship sequence executed:
 - Pushed public: github.com/cjohnhanson/gaff (matching sibling repos). flake.nix (crane) added; co.d flake input + home package added, committed, pushed; hms running.
 - codelikecody un-clc-ified locally: 14 clc hook stanzas removed from .claude/settings.local.json (backup at .claude/settings.local.json.pre-gaff), gaff registered on 5 events via nix-profile path. Tracked clc files (clc.yaml, clc.yml, .clc/reviewers) still in tree — removal needs a PR, pending permission. Stale .worktrees/ left untouched (may hold unmerged work).
 - Dogfood config .gaff/gaff.yml NOT written — reminder/section text is prompt content, needs approval per repo rule. Draft presented in chat.
+
+## 2026-08-12 — post-ship closeout, and live-fire confirmation
+
+Closeout: draft PR #1 (retire-clc-config) removes tracked clc config; 24 merged worktrees pruned (7 kept: 4 with unmerged commits, 3 with uncommitted changes needing human triage); gaff repo seeded with its own tisket + 3 follow-ups; dogfood .gaff/gaff.yml live with two reminders.
+
+Dogfood proof arrived unprompted: the tisket-scratch reminder fired via PostToolBatch in the very session that shipped it — first production injection observed end to end. The counters, the arm-on-threshold/flush-on-batch split, and the attribution prefix all behaved as designed.

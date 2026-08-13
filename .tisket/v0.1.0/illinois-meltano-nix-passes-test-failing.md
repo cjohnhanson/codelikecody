@@ -6,7 +6,7 @@ assignee:
 labels: []
 depends_on: []
 created: 2026-03-19T21:35:45Z
-updated: "2026-03-23T02:14:13Z"
+updated: 2026-03-23T02:14:13Z
 ---
 
 ## Problem
@@ -26,3 +26,61 @@ A prior closed issue (`a858`) fixed GNU sed syntax incompatibility on macOS. Ano
 ## Why It Matters
 
 Illinois meta-tests are the primary verification that missouri can orchestrate real-world tool workflows. A persistently failing meltano test means the nix integration path is unverified and may be broken for users relying on meltano fixtures.
+
+## Scratch Notes
+
+## Root cause found (2026-08-12)
+
+Four illinois tests fail, all from ONE shared cause:
+
+- illinois_uv_nix_passes
+- illinois_dbt_nix_passes
+- illinois_meltano_nix_passes
+- illinois_record_dbt_nix_passes
+
+Cause: `uv init` output drifted. Current nixpkgs uv (uv_build 0.12.x) generates a
+`src/<name>/__init__.py` package layout. The fixtures expect the older flat
+`main.py` layout.
+
+Reproduced directly, no test harness:
+
+    cd missouri/tests/fixtures/10-uv && missouri run -v
+
+    FAIL empty -> initialized (uv init)
+      missing: main.py
+      differs: pyproject.toml
+      extra: src
+      extra: src/myproject
+      extra: src/myproject/__init__.py
+
+Probe of the current tool in the same nix shell
+(`nix shell nixpkgs#python3 nixpkgs#uv`):
+
+    files:  .python-version, pyproject.toml, src/myproject/__init__.py
+    (no main.py)
+
+    pyproject.toml now also emits:
+      authors = [ { name = "...", email = "..." } ]
+      [project.scripts]
+      myproject = "myproject:main"
+      [build-system]
+      requires = ["uv_build>=0.12.1,<0.13.0"]
+      build-backend = "uv_build"
+
+Affected fixture transitions (all run bare `uv init`):
+- missouri/tests/fixtures/10-uv/empty/.missouri/missouri.yml
+- missouri/tests/fixtures/08-dbt/empty/.missouri/missouri.yml
+- missouri/tests/fixtures/09-meltano/empty/.missouri/missouri.yml
+
+Note: dbt and meltano only fail on their FIRST path (the `uv init` step). Their
+later paths (`dbt run`, `meltano run`) still pass. So this is not a nix or
+meltano version problem, which the issue body listed as an open question.
+
+Portability trap for whoever fixes this: the generated `authors` field is read
+from the local git config, so regenerating the fixture as-is bakes in one
+developer's name and email and breaks on every other machine and in CI. Two ways
+out: pass a flag to `uv init` that restores the flat layout, or add a comparator
+that ignores the `authors` line in pyproject.toml.
+
+Scope correction: this issue is titled meltano-only, but the cause is shared by
+all four tests. Retitle or widen it.
