@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Artifact mgmt</title>
+<style>
+  :root { --bg:#f7f6f3; --fg:#1a1a1a; --muted:#6b6b6b; --accent:#0b6e4f; --border:#e2e0da; --code:#eeede8; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#191917; --fg:#e8e6e1; --muted:#9a9891; --accent:#4fc596; --border:#3a3934; --code:#2a2a26; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0 auto; max-width:820px; padding:2.5rem 1.5rem 5rem;
+    font:16px/1.6 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif; background:var(--bg); color:var(--fg); }
+  h1,h2,h3 { line-height:1.25; } h2 { border-bottom:2px solid var(--border); padding-bottom:.3rem; }
+  code { background:var(--code); padding:.1em .35em; border-radius:4px;
+    font-family:ui-monospace,Menlo,monospace; font-size:.875em; }
+  pre { background:var(--code); padding:1rem; border-radius:8px; overflow-x:auto; }
+  pre code { background:none; padding:0; }
+  a { color:var(--accent); }
+  md-section { display:block; }
+  md-section[data-unresolved]::before { content:"unresolved: " attr(data-unresolved);
+    display:block; color:#b3261e; font-size:.8rem; border:1px dashed #b3261e;
+    padding:.25rem .5rem; border-radius:6px; margin-bottom:.5rem; }
+  form[data-respond] { border:1px solid var(--border); border-radius:10px; padding:1rem 1.25rem; }
+  select, button { font: inherit; color: var(--fg); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 8px; padding: .45em .9em; }
+  select { appearance: none; -webkit-appearance: none; padding-right: 2.1em;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right .7em center; }
+  button { background: var(--accent); color: #fff; border-color: transparent;
+    cursor: pointer; font-weight: 600; }
+  button:hover { filter: brightness(1.08); }
+  select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  form[data-respond] { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
+  form[data-respond] label { display: flex; align-items: center; gap: .6rem; }
+  [data-respond-status] { color:var(--muted); font-size:.9rem; }
+</style>
+</head>
+<body>
+<h1>Artifact mgmt</h1>
+
+<p>This page transcludes its own design record — the sections below are
+the tisket issue's scratch, rendered by reference. Edit the issue,
+refresh, and this page follows. Nothing here is a copy.</p>
+
+<h2>Decisions</h2>
+<md-section ref="../../.tisket/v0.1.0/3e0v-artifact-management-for-the-ecosystem-interactive-artifacts-alongside-plaintext-for-tisket-and-zettel.md#2026-08-12-build-start-decisions-locked">
+<h2>2026-08-12 — build start, decisions locked</h2>
+<p>Name: vitrine. Layout: .vitrine/<!-- raw HTML omitted -->/ (fixed ../../ depth to .tisket/.zettel). Serving: per-repo vitrine serve (daemon later). Extraction in vitrine via comrak AST (mdstore has no AST; migrate only if it grows one). Artifact = self-contained dir (index.html + vitrine-runtime.js); file:// tier renders from baked DSD without JS. Render profile: plain CommonMark both sides (no header-id ext in output — anchors computed internally) so comrak/commonmark.js parity is achievable and bake vs hydrate DOMs match. CLI: new, sync, serve, resolve, extract, render, docs. Response inbox: POST /respond/<!-- raw HTML omitted --> → responses/ + latest.json; deterministic-stamp env knob for tests.</p>
+</md-section>
+
+<h2>Ship record</h2>
+<md-section ref="../../.tisket/v0.1.0/3e0v-artifact-management-for-the-ecosystem-interactive-artifacts-alongside-plaintext-for-tisket-and-zettel.md#2026-08-12-vitrine-v0-1-0-shipped">
+<h2>2026-08-12 — vitrine v0.1.0 shipped</h2>
+<p>Built and shipped in full: extract (fence-aware ATX slugging, dupe suffixes), refs (scheme→relative-path at authoring time, ambiguity errors), bake (light-DOM fill, idempotent, specific errors), serve (static + inbox, traversal-hardened, watcher stdout line, VITRINE_STAMP determinism knob), scaffold (self-contained dir: template + vendored commonmark.js 0.31.2 + component runtime), CLI (new/sync/serve/resolve/extract/render/docs), bundled docs.</p>
+<p>Tests: 15 cargo + 5 missouri paths, zero clippy warnings. The renderer-parity property is a missouri path: comrak and commonmark.js byte-identical on the fixture. Two test bugs found and fixed during green-up: shell quoting collapsed the node parity helper; curl silently normalized the /respond/../etc traversal probe (needs --path-as-is), meaning the first 'passing' traversal check had never reached the server.</p>
+<p>Shipped: github.com/cjohnhanson/vitrine (public), nix flake, co.d input + hms — vitrine on PATH. Remaining for the vision: tisket/zettel integration conveniences (artifact attach/show), daemon-with-registry, explicit block anchors. This repo's first vitrine artifact is the natural next dogfood.</p>
+</md-section>
+
+<h2>Was this the right shape?</h2>
+<form data-respond>
+  <label>Verdict for <code>3e0v</code>:
+    <select name="3e0v#verdict"><option>keep going</option><option>rethink</option></select>
+  </label>
+  <button>Submit</button>
+</form>
+
+<script src="./vitrine-runtime.js"></script>
+</body>
+</html>

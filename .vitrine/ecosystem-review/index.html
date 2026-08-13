@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ecosystem review</title>
+<style>
+  :root { --bg:#f7f6f3; --fg:#1a1a1a; --muted:#6b6b6b; --accent:#0b6e4f; --border:#e2e0da; --code:#eeede8; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#191917; --fg:#e8e6e1; --muted:#9a9891; --accent:#4fc596; --border:#3a3934; --code:#2a2a26; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0 auto; max-width:820px; padding:2.5rem 1.5rem 5rem;
+    font:16px/1.6 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif; background:var(--bg); color:var(--fg); }
+  h1,h2,h3 { line-height:1.25; } h2 { border-bottom:2px solid var(--border); padding-bottom:.3rem; }
+  code { background:var(--code); padding:.1em .35em; border-radius:4px;
+    font-family:ui-monospace,Menlo,monospace; font-size:.875em; }
+  pre { background:var(--code); padding:1rem; border-radius:8px; overflow-x:auto; }
+  pre code { background:none; padding:0; }
+  a { color:var(--accent); }
+  md-section { display:block; }
+  md-section[data-unresolved]::before { content:"unresolved: " attr(data-unresolved);
+    display:block; color:#b3261e; font-size:.8rem; border:1px dashed #b3261e;
+    padding:.25rem .5rem; border-radius:6px; margin-bottom:.5rem; }
+  form[data-respond] { border:1px solid var(--border); border-radius:10px; padding:1rem 1.25rem; }
+  select, button { font: inherit; color: var(--fg); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 8px; padding: .45em .9em; }
+  select { appearance: none; -webkit-appearance: none; padding-right: 2.1em;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right .7em center; }
+  button { background: var(--accent); color: #fff; border-color: transparent;
+    cursor: pointer; font-weight: 600; }
+  button:hover { filter: brightness(1.08); }
+  select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  form[data-respond] { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
+  form[data-respond] label { display: flex; align-items: center; gap: .6rem; }
+  [data-respond-status] { color:var(--muted); font-size:.9rem; }
+</style>
+</head>
+<body>
+<h1>Ecosystem review v2</h1>
+<p>The hard look, verified. Nineteen agents deep-read every repo, cross-cut the seams, and refuted every v1 claim. Five of six v1 claims were partly or wholly wrong. The content below is the tisket issue <code>pg63</code>, transcluded — edit the issue, refresh, and this page follows.</p>
+
+<h2>How to read this</h2>
+<md-section ref="../../.tisket/v0.1.0/pg63-ecosystem-review-2026-08-12-the-hard-holistic-look.md#how-to-read-the-status-marks">
+<h2>How to read the status marks</h2>
+<p>Each claim carries one mark.</p>
+<ul>
+<li><code>[verified]</code> — a checker reproduced the claim.</li>
+<li><code>[corrected]</code> — the claim was wrong or overstated. The correct statement follows.</li>
+<li><code>[new]</code> — the finding is new in this pass.</li>
+<li><code>[open]</code> — nobody checked it in this pass. Treat it as unproven.</li>
+</ul>
+</md-section>
+
+<h2>Verdict</h2>
+<md-section ref="../../.tisket/v0.1.0/pg63-ecosystem-review-2026-08-12-the-hard-holistic-look.md#verdict">
+<h2>Verdict</h2>
+<p>The ecosystem is eight repos: six living tools, one library, and one host repo in decline. The build is clean everywhere. Every green suite that a checker ran is green for real, with one exception, and that exception is on the tool that holds all work records.</p>
+<p>Version 1 said the largest problems were structural, not in any one tool. That was half right. The structural problems are real and are confirmed below. But the deep reads found nine defects in the three newest tools that a user can hit today, two of which read files into the model's context or onto the network that no user asked for. The new tools are not the safe part of the ecosystem. They are the part with the newest bugs and the least field time.</p>
+<p>The pattern under most findings is the same. Each tool tests the design its author already worried about. Almost nothing tests what the environment does to the tool: parallel calls, hostile input, another machine, another checkout, scale. Every critical defect below lives in that gap.</p>
+</md-section>
+
+<h2>Correctness: critical defects in the new tools</h2>
+<md-section ref="../../.tisket/v0.1.0/pg63-ecosystem-review-2026-08-12-the-hard-holistic-look.md#correctness-the-new-tools-carry-critical-defects">
+<h2>Correctness: the new tools carry critical defects</h2>
+<p>This section is new. Version 1 reviewed the ecosystem and did not read the code.</p>
+<h3>gaff</h3>
+<p><code>[new]</code> A repo config can read any file on the machine into the model's context. <code>src/engine.rs:148</code> joins <code>section.file</code> onto <code>.gaff/</code> and reads it. The join is not normalized. <code>..</code> traversal and absolute paths both work. A checker put a canary in <code>/tmp</code> and in a parent directory. Both came back inside <code>additionalContext</code>. <code>gaff check</code> printed <code>config ok</code> for both. <code>README.md:45-47</code> states the opposite trust boundary in its own words. <code>.gaff/gaff.yml</code> is a committed repo file, so this is a supply-chain path into a session.</p>
+<p><code>[new]</code> Concurrent hooks corrupt the ledger and lose cadence crossings. <code>src/state.rs:108</code> uses <code>writeln!</code> on a bare file, which issues several write calls, so append atomicity does not cover the line. <code>src/state.rs:117-131</code> counts by reading the whole ledger and then appending, with no lock. Claude Code fires tool hooks in parallel. A checker ran 20 concurrent <code>gaff hook</code> calls against a cadence of 20. The reminder failed to arm in 5 of 10 rounds. The ledger picked up interleaved garbage lines, which the reader then discards without a message. The core function of the tool fails about half the time under the normal case.</p>
+<p><code>[new]</code> <code>gaff check</code> accepts four configs that are dead at runtime and calls each one OK: unknown or misspelled keys (no <code>deny_unknown_fields</code>), <code>max_inject_bytes: 0</code>, a <code>/</code> in an entry name, and a section body larger than the 4 KiB cap. The last one is what a new user hits first. A normal conventions file is larger than one page. The only symptom is the token <code>[gaff:truncated]</code>.</p>
+<p><code>[new]</code> A one-shot id that already fired cannot be reused. <code>gaff remind --id ci</code> overwrites the file, exits 0, and never fires, because the <code>fired-ci</code> marker survives. The agent's own scheduling call reports success on a dead reminder.</p>
+<p><code>[verified]</code> gaff is live and works. A checker received real injections from the installed binary during the read. The build is clean. 33 unit tests and 15 missouri paths pass.</p>
+<p><code>[new]</code> Three README claims are false: a Profiles feature with a transition policy that exists in no line of code, counters over &quot;turns&quot; and tool-name filters that were never built, and the statement that the cargo tests enforce the never-exit-2 rule. <code>src/main.rs</code> owns every exit path and has zero tests. No test spawns the binary. The one missouri assertion on exit codes compares a value to itself.</p>
+<h3>vitrine</h3>
+<p><code>[new]</code> The parity guarantee is false, and the live path is an injection sink. <code>src/render.rs:15</code> uses comrak defaults, which strip raw HTML and blank dangerous URLs. <code>assets/vitrine.js:64</code> uses commonmark.js defaults, which emit both. A checker confirmed the divergence directly on <code>&lt;div&gt;</code> and on a <code>javascript:</code> link. So the baked page and the served page show different content, which is the exact drift the product exists to prevent. <code>assets/vitrine.js:83</code> then assigns that unsanitized output to <code>innerHTML</code>, so markup inside a referenced tisket issue runs in the served page, same origin as the response inbox. <code>README.md:60-61</code> and <code>docs/authoring.md:41-45</code> both state the parity as fact.</p>
+<p><code>[new]</code> <code>vitrine serve</code> publishes the whole repo root. A checker read <code>.env</code> and <code>.git/HEAD</code> over HTTP. Nothing limits serving to <code>.vitrine/</code> and the referenced markdown. The response inbox accepts a cross-origin simple POST with no Origin check; a checker overwrote <code>latest.json</code> with a <code>text/plain</code> request. Neither behavior appears in any document.</p>
+<p><code>[new]</code> Three silent wrong-content bugs, each confirmed with a repro, each exiting 0. A <code>#</code> line inside a four-space indented code block is read as a heading and truncates the section (<code>src/extract.rs:25</code>); this project's own docs use indented code blocks. The bake-time attribute reader matches <code>data-ref</code> as if it were <code>ref</code> and bakes the wrong file (<code>src/bake.rs:97</code>). Duplicate heading slugs collide, so <code># Alpha</code> / <code># Alpha 1</code> / <code># Alpha</code> emits the anchor <code>alpha-1</code> twice and resolves it to the wrong heading (<code>src/extract.rs:44</code>).</p>
+<p><code>[verified]</code> The build is clean under a deny-level lint set. 15 unit tests and 5 missouri paths pass.</p>
+<p><code>[new]</code> The README status line says the suites cover live transclusion and the bundled docs. Neither is tested at all. The shipped JavaScript runtime is never loaded by any test. The one parity test writes its own front-matter stripper instead of loading the runtime, then compares the renderers on a fixture that contains no raw HTML, so it cannot fail.</p>
+<h3>almanac</h3>
+<p><code>[new]</code> <code>almanac add</code> deletes the staged tree before a human can look at it, for git sources. <code>src/ops.rs:127-133</code> prints &quot;inspect this path and run again&quot;, and the temporary directory drops on return. A checker followed the printed path and got ENOENT. That message is the trust-on-first-use gate the README leads with.</p>
+<p><code>[new]</code> <code>almanac sync</code> writes unverified content and then reports failure. <code>src/ops.rs:200-216</code> fetches, vendors, and only then compares the hash. <code>src/vendor.rs:175</code> removes the existing directory first. A checker set a wrong pin, saw <code>FAIL</code>, exit 1, and found the new content on disk with a fresh stamp. The good content was destroyed on the way. This contradicts &quot;no change lands without a report&quot;.</p>
+<p><code>[new]</code> The red-flag scanner misses tool-granting frontmatter in a file with CRLF line endings. <code>src/flags.rs:100</code> searches for <code>\n---\n</code>. A checker scanned a file with <code>allowed-tools: Bash(rm -rf /)</code> in CRLF frontmatter and got <code>clean</code>.</p>
+<p><code>[new]</code> <code>add</code> hand-parses the skill name and keeps the YAML quotes, so a quoted name creates a directory whose name contains quote characters, and every later <code>list</code> prints a mismatch warning. <code>index --md --max-bytes</code> is not a budget below 78 bytes and degrades per entry rather than in steps, which contradicts four documents and the flag's stated purpose of fitting a gaff cap.</p>
+<p><code>[verified]</code> The build is clean. 53 unit tests and 6 missouri paths pass. The hash tests are the strongest tests in the ecosystem. The docs are otherwise accurate and have no dead links, and <code>docs/curation.md</code> states the tool's central limit honestly.</p>
+</md-section>
+
+<h2>— gaff</h2>
+<md-section ref="../../.tisket/v0.1.0/pg63-ecosystem-review-2026-08-12-the-hard-holistic-look.md#gaff">
+<h3>gaff</h3>
+<p><code>[new]</code> A repo config can read any file on the machine into the model's context. <code>src/engine.rs:148</code> joins <code>section.file</code> onto <code>.gaff/</code> and reads it. The join is not normalized. <code>..</code> traversal and absolute paths both work. A checker put a canary in <code>/tmp</code> and in a parent directory. Both came back inside <code>additionalContext</code>. <code>gaff check</code> printed <code>config ok</code> for both. <code>README.md:45-47</code> states the opposite trust boundary in its own words. <code>.gaff/gaff.yml</code> is a committed repo file, so this is a supply-chain path into a session.</p>
+<p><code>[new]</code> Concurrent hooks corrupt the ledger and lose cadence crossings. <code>src/state.rs:108</code> uses <code>writeln!</code> on a bare file, which issues several write calls, so append atomicity does not cover the line. <code>src/state.rs:117-131</code> counts by reading the whole ledger and then appending, with no lock. Claude Code fires tool hooks in parallel. A checker ran 20 concurrent <code>gaff hook</code> calls against a cadence of 20. The reminder failed to arm in 5 of 10 rounds. The ledger picked up interleaved garbage lines, which the reader then discards without a message. The core function of the tool fails about half the time under the normal case.</p>
+<p><code>[new]</code> <code>gaff check</code> accepts four configs that are dead at runtime and calls each one OK: unknown or misspelled keys (no <code>deny_unknown_fields</code>), <code>max_inject_bytes: 0</code>, a <code>/</code> in an entry name, and a section body larger than the 4 KiB cap. The last one is what a new user hits first. A normal conventions file is larger than one page. The only symptom is the token <code>[gaff:truncated]</code>.</p>
+<p><code>[new]</code> A one-shot id that already fired cannot be reused. <code>gaff remind --id ci</code> overwrites the file, exits 0, and never fires, because the <code>fired-ci</code> marker survives. The agent's own scheduling call reports success on a dead reminder.</p>
+<p><code>[verified]</code> gaff is live and works. A checker received real injections from the installed binary during the read. The build is clean. 33 unit tests and 15 missouri paths pass.</p>
+<p><code>[new]</code> Three README claims are false: a Profiles feature with a transition policy that exists in no line of code, counters over &quot;turns&quot; and tool-name filters that were never built, and the statement that the cargo tests enforce the never-exit-2 rule. <code>src/main.rs</code> owns every exit path and has zero tests. No test spawns the binary. The one missouri assertion on exit codes compares a value to itself.</p>
+</md-section>
+
+<h2>— vitrine</h2>
+<md-section ref="../../.tisket/v0.1.0/pg63-ecosystem-review-2026-08-12-the-hard-holistic-look.md#vitrine">
+<h3>vitrine</h3>
+<p><code>[new]</code> The parity guarantee is false, and the live path is an injection sink. <code>src/render.rs:15</code> uses comrak defaults, which strip raw HTML and blank dangerous URLs. <code>assets/vitrine.js:64</code> uses commonmark.js defaults, which emit both. A checker confirmed the divergence directly on <code>&lt;div&gt;</code> and on a <code>javascript:</code> link. So the baked page and the served page show different content, which is the exact drift the product exists to prevent. <code>assets/vitrine.js:83</code> then assigns that unsanitized output to <code>innerHTML</code>, so markup inside a referenced tisket issue runs in the served page, same origin as the response inbox. <code>README.md:60-61</code> and <code>docs/authoring.md:41-45</code> both state the parity as fact.</p>
+<p><code>[new]</code> <code>vitrine serve</code> publishes the whole repo root. A checker read <code>.env</code> and <code>.git/HEAD</code> over HTTP. Nothing limits serving to <code>.vitrine/</code> and the referenced markdown. The response inbox accepts a cross-origin simple POST with no Origin check; a checker overwrote <code>latest.json</code> with a <code>text/plain</code> request. Neither behavior appears in any document.</p>
+<p><code>[new]</code> Three silent wrong-content bugs, each confirmed with a repro, each exiting 0. A <code>#</code> line inside a four-space indented code block is read as a heading and truncates the section (<code>src/extract.rs:25</code>); this project's own docs use indented code blocks. The bake-time attribute reader matches <code>data-ref</code> as if it were <code>ref</code> and bakes the wrong file (<code>src/bake.rs:97</code>). Duplicate heading slugs collide, so <code># Alpha</code> / <code># Alpha 1</code> / <code># Alpha</code> emits the anchor <code>alpha-1</code> twice and resolves it to the wrong heading (<code>src/extract.rs:44</code>).</p>
+<p><code>[verified]</code> The build is clean under a deny-level lint set. 15 unit tests and 5 missouri paths pass.</p>
+<p><code>[new]</code> The README status line says the suites cover live transclusion and the bundled docs. Neither is tested at all. The shipped JavaScript runtime is never loaded by any test. The one parity test writes its own front-matter stripper instead of loading the runtime, then compares the renderers on a fixture that contains no raw HTML, so it cannot fail.</p>
+</md-section>
+
+<h2>— almanac</h2>
+<md-section ref="../../.tisket/v0.1.0/pg63-ecosystem-review-2026-08-12-the-hard-holistic-look.md#almanac">
+<h3>almanac</h3>
+<p><code>[new]</code> <code>almanac add</code> deletes the staged tree before a human can look at it, for git sources. <code>src/ops.rs:127-133</code> prints &quot;inspect this path and run again&quot;, and the temporary directory drops on return. A checker followed the printed path and got ENOENT. That message is the trust-on-first-use gate the README leads with.</p>
+<p><code>[new]</code> <code>almanac sync</code> writes unverified content and then reports failure. <code>src/ops.rs:200-216</code> fetches, vendors, and only then compares the hash. <code>src/vendor.rs:175</code> removes the existing directory first. A checker set a wrong pin, saw <code>FAIL</code>, exit 1, and found the new content on disk with a fresh stamp. The good content was destroyed on the way. This contradicts &quot;no change lands without a report&quot;.</p>
+<p><code>[new]</code> The red-flag scanner misses tool-granting frontmatter in a file with CRLF line endings. <code>src/flags.rs:100</code> searches for <code>\n---\n</code>. A checker scanned a file with <code>allowed-tools: Bash(rm -rf /)</code> in CRLF frontmatter and got <code>clean</code>.</p>
+<p><code>[new]</code> <code>add</code> hand-parses the skill name and keeps the YAML quotes, so a quoted name creates a directory whose name contains quote characters, and every later <code>list</code> prints a mismatch warning. <code>index --md --max-bytes</code> is not a budget below 78 bytes and degrades per entry rather than in steps, which contradicts four documents and the flag's stated purpose of fitting a gaff cap.</p>
+<p><code>[verified]</code> The build is clean. 53 unit tests and 6 missouri paths pass. The hash tests are the strongest tests in the ecosystem. The docs are otherwise accurate and have no dead links, and <code>docs/curation.md</code> states the tool's central limit honestly.</p>
+</md-section>
+
+<h2>Identity</h2>
+<md-section ref="../../.tisket/v0.1.0/pg63-ecosystem-review-2026-08-12-the-hard-holistic-look.md#identity-the-host-repo-has-no-clear-purpose">
+<h2>Identity: the host repo has no clear purpose</h2>
+<p><code>[verified]</code> codelikecody names the ecosystem and holds the least of it. <code>tisket/</code> and <code>belmont/</code> do not exist in the tree. <code>almanac/</code> and <code>zettel/</code> exist as empty directories with zero tracked files. <code>README.md</code> still links to all four. The links are dead.</p>
+<p><code>[verified]</code> Local main is 16 commits ahead of origin/main and 0 behind. There is no fork. Version 1's second correction stands. The push still has not happened.</p>
+<p><code>[new]</code> <code>AGENTS.md</code> never mentions gaff or vitrine, the two tools that actually run in this repo today. It still describes <code>skills/</code> as documentation for missouri, tisket, and clc, and still tells agents that tisket comes from the nix bundle. <code>ARCHITECTURE.md</code> carries an honest status banner but still says in the present tense that clc injects prime text on every prompt.</p>
+<p><code>[new]</code> <code>codelikecody/missouri/tisket.yml</code> is tracked, declares <code>tisket_dir: .tisket</code>, and points at a directory that does not exist. A session that starts in that subdirectory gets an empty backlog and exit 0. The tracker's own convention says tisket is the source of truth for cross-session context, and this file silently empties it.</p>
+<p><code>[new]</code> The repo root carries untracked and unignored tool state: <code>.clc/</code>, <code>.vitrine/</code>, <code>.zettel/</code>, <code>skills/</code>, <code>belmont.yml</code>, <code>.gaff/sections/</code>, three test binaries, and a file literally named <code>--full-page</code> from a misparsed flag.</p>
+</md-section>
+
+<h2>Testing</h2>
+<md-section ref="../../.tisket/v0.1.0/pg63-ecosystem-review-2026-08-12-the-hard-holistic-look.md#testing-the-map-was-wrong-and-the-gaps-are-elsewhere">
+<h2>Testing: the map was wrong, and the gaps are elsewhere</h2>
+<p><code>[corrected]</code> Version 1 said testing is inverted against risk, and named tisket and belmont as the least tested. That is wrong on both names. A checker counted.</p>
+<p>| tool | unit tests | missouri paths | src lines | lines per unit test |
+|---|---|---|---|---|
+| almanac | 53 | 6 | 2520 | 48 |
+| belmont | 44 | 1 | 1166 | 27 |
+| gaff | 33 | 15 | 1924 | 58 |
+| tisket | 6 | 27 | 2474 | 412 |
+| vitrine | 15 | 5 | 1047 | 70 |
+| zettel | 0 | 8 | 1688 | none |</p>
+<p>Belmont has the highest unit-test density in the ecosystem, about twice almanac's. Its scrubber and both secret backends are covered. Version 1 measured the new tools with both numbers and the old tools with one number each, which produced the inversion.</p>
+<p><code>[corrected]</code> Tisket's hand-rolled serializer is not unverified. Missouri compares whole directories, and tisket ships 45 golden state directories over 27 paths and 263 assertions. Each golden file holds the full serialized frontmatter. The byte output is checked across create, edit, close, reopen, label, tag, due date, body, scratch, and project moves. The real gap is narrower: there is no round-trip property test, so a newly added field that the writer drops would pass, because golden files get regenerated with the schema.</p>
+<p><code>[new]</code> The least-tested tool is zettel. It has zero unit tests over 1688 lines and nine source files. Version 1 did not name this.</p>
+<p><code>[new]</code> Tisket's missouri suite is currently red: 8 passed, 19 failed, 114 failing assertions. Every failure is the same stderr comparison polluted by missouri's sandbox wrapper deprecation warning. No file comparison fails. This is the same root cause version 1 attributed to zettel alone.</p>
+<p><code>[new]</code> Tisket's suite is also green against the wrong binary when it is green. <code>tests/missouri/.missouri/bin/tisket</code> is tracked in git as a symlink to <code>/Users/codyhanson/Projects/codelikecody/target/debug/tisket</code>, an April binary in the monorepo tisket no longer lives in, and the suite has no build step. A checker copied the tests tree elsewhere and ran it: 27 passed, and the symlink was dangling. With PATH trimmed, 0 passed. The suite has been validating the installed binary, not the working tree, since the split. This is the highest-consequence finding in the review.</p>
+<p><code>[verified]</code> Belmont's fixture is fixed and its suite is green. Version 1 contradicted itself on this point and is now consistent.</p>
+<p><code>[new]</code> No missouri suite runs in any CI anywhere. gaff, vitrine, and codelikecody have no workflows. almanac, tisket, zettel, and belmont each run <code>cargo build</code> and <code>cargo test</code> and nothing else. The only end-to-end coverage in the ecosystem, and the only coverage of the shipped binary for gaff and vitrine, runs when a human types the command.</p>
+<p><code>[new]</code> No suite in any repo invokes a second tool. Every documented seam has zero end-to-end coverage.</p>
+<p><code>[new]</code> <code>missouri validate</code> and <code>missouri list</code> at the codelikecody root both exit 2 with a bare &quot;No such file or directory&quot;. <code>missouri.yml</code> still lists <code>belmont/tests/missouri</code> and <code>tisket/tests/missouri</code>, which the split removed, and omits six suites that exist. The first missing member aborts the run. The whole-repo test entry point has been broken since the split.</p>
+<p>Direction: fix the tisket binary link and the sandbox stderr pollution first. Then add missouri to CI in every repo. Then give tisket's serializer a round-trip property test, and give zettel its first unit test.</p>
+</md-section>
+
+<h2>Enforcement</h2>
+<md-section ref="../../.tisket/v0.1.0/pg63-ecosystem-review-2026-08-12-the-hard-holistic-look.md#enforcement-one-accidental-enforcer-and-it-is-switched-off">
+<h2>Enforcement: one accidental enforcer, and it is switched off</h2>
+<p><code>[corrected]</code> Version 1 said no repo blocks trunk writes mechanically. One does. <code>ringer/.claude/settings.local.json</code> still wires the deployed <code>clc hook</code> on every event including PreToolUse, ringer is on main, and a checker confirmed exit 2 and a block message on a Write and on <code>rm -rf</code>. That is a leftover, not a decision.</p>
+<p>Three facts keep the conclusion intact.</p>
+<p><code>[new]</code> It is one repo out of eighteen.</p>
+<p><code>[new]</code> Nothing anywhere blocks a push to trunk. The guard's command allowlist contains the bare prefix <code>git </code>, so <code>git push origin main</code> passes through with exit 0.</p>
+<p><code>[new]</code> <code>CLC_GUARD_OFF=1</code> is set in this environment by a shell alias. With it set, even ringer's guard returns pass-through. Sessions launched the usual way have no guard at all.</p>
+<p><code>[verified]</code> No branch protection exists on any of the 13 remote repos. No rulesets. No git hooks. No deny or ask permission rules in any repo settings file or in the user settings. No CI job anywhere checks prose. With no branch protection, no CI gates a merge in any case.</p>
+<p><code>[new]</code> The only live mechanical enforcer in the ecosystem is user-level and enforces a different rule: a pre-tool hook that blocks <code>git add -A</code> and <code>git add .</code>.</p>
+<p>Direction: unchanged. Restore the load-bearing rules with native permission rules and hooks per repo. Add branch protection on the remotes, which is free and blocks the push case the guard never covered. Do not grow the guard back inside gaff.</p>
+</md-section>
+
+<h2>Integration</h2>
+<md-section ref="../../.tisket/v0.1.0/pg63-ecosystem-review-2026-08-12-the-hard-holistic-look.md#integration-composition-on-paper-solos-in-practice">
+<h2>Integration: composition on paper, solos in practice</h2>
+<p><code>[verified]</code> All three sub-claims from version 1 survived a checker that tried to refute them.</p>
+<p><code>[verified]</code> The almanac-to-gaff loop is not wired. <code>.gaff/sections/skills.md</code> exists in this repo, carries the generating command in its header, and is untracked. <code>.gaff/gaff.yml</code> has no <code>sections:</code> key and has never had one in any commit. The live binary reports <code>0 section(s)</code>. gaff mentions almanac in zero files.</p>
+<p><code>[verified]</code> The vitrine attach conveniences exist only as a tisket issue. Neither CLI has an <code>attach</code> or <code>artifact</code> subcommand.</p>
+<p><code>[verified]</code> No <code>almanac.yml</code> exists anywhere on the machine. The co.d library is 64 directories, not 63, and none of it is under the manifest, so the scanner has never run over it.</p>
+<p><code>[new]</code> The migration is not merely unwired. It is contradicted. <code>co.d/claude.d/CLAUDE.md</code> currently instructs the agent to use skills.sh rather than almanac. The instruction and the plan must be reconciled before the migration means anything.</p>
+<p><code>[new]</code> The only real code seam in the ecosystem is clc, and it is unplugged. clc links almanac, belmont, tisket, zettel, and missouri as library crates and assembles one prime text from all of them. This repo now registers only <code>gaff hook</code>, on five events, where the saved predecessor file registered <code>clc hook</code> on fourteen. The commit that deleted <code>clc.yml</code> also emptied the source list that feeds the almanac section. The integration code still ships in the binary.</p>
+<p><code>[new]</code> The second real seam is mdstore, pinned to the identical revision in tisket and zettel. That one is consistent and healthy. Every other tool declares zero internal dependencies. belmont, almanac, gaff, and vitrine are leaves.</p>
+<p><code>[new]</code> clc's prime text tells agents to run <code>almanac search</code>, which does not exist and which almanac's own README removed months ago. The same block cites <code>clc.yml</code>, a file this repo deleted.</p>
+<p><code>[new]</code> The vitrine to tisket and zettel link is a filename coincidence, not an interface. <code>src/refs.rs:60</code> hardcodes <code>.tisket</code> and <code>.zettel</code>, and both stores make those directories configurable. <code>refs::resolve</code> is called from exactly one place, the <code>resolve</code> subcommand. <code>bake</code> freezes a literal relative path that includes the tisket version directory, so closing an issue breaks the artifact.</p>
+<p><code>[new]</code> All 12 live transclusions in this repo are byte-identical to their sources today. Nothing can prove that tomorrow. <code>vitrine sync</code> has no <code>--check</code> flag. almanac has exactly that flag for exactly that problem.</p>
+<p>Direction: unchanged in shape. Wire one loop end to end. Resolve the skills.sh instruction first. Add <code>vitrine sync --check</code> and run it in CI. Delete or fix clc's prime text, since it now describes commands that do not exist.</p>
+</md-section>
+
+<h2>Duplication and drift</h2>
+<md-section ref="../../.tisket/v0.1.0/pg63-ecosystem-review-2026-08-12-the-hard-holistic-look.md#duplication-and-drift">
+<h2>Duplication and drift</h2>
+<p><code>[corrected]</code> Version 1 said the claude-code protocol crate duplicates gaff's envelope parsing. It does not. That crate types the <code>--output-format stream-json</code> NDJSON stream: messages, content blocks, cost, and denials. It never touches hooks.</p>
+<p><code>[new]</code> The real duplicate pair is <code>gaff/src/event.rs</code> and <code>clc/src/adapter/claude_code.rs</code>. Both read <code>hook_event_name</code> from stdin and both emit <code>hookSpecificOutput.additionalContext</code>. Both are installed right now. They already disagree on a safety rule, not a detail: clc injects on PostToolUse, and gaff refuses to, with a comment naming that as a known bug class. They also write competing handler lists into the same settings file, 14 events against 5. One of them must stop being a hook handler.</p>
+<p><code>[new]</code> gaff duplicates the injection rule inside itself. A capability table encodes which events may receive context, and a hardcoded match in the engine encodes it again. Nothing outside the table's own tests calls the table. Eight of gaff's 33 unit tests assert the copy that has no effect.</p>
+<p><code>[corrected]</code> Slugify is already deduplicated where version 1 implied it was not: tisket and zettel both re-export mdstore at the same pinned revision. The live duplication is inside vitrine, which ships a Rust and a JavaScript implementation of the same extraction contract. They have already diverged on tab-separated headings and share an identical bug on indented code blocks. The JavaScript half has no behavioral test.</p>
+<p><code>[new]</code> missouri exists twice. The standalone repo is version 0.1.0 and last moved in February. The copy inside codelikecody is 0.2.0, carries three modules the standalone lacks, and is the one installed on PATH. The two source trees differ by thousands of lines. The test harness that every repo depends on is the only tool that was never actually split out, and the abandoned copy is the one a person browsing by repo name will find.</p>
+<p><code>[new]</code> The nix layer papers over stale copies rather than removing them. co.d's flake carries a comment saying the codelikecody bundle contains old copies of four tools and that a priority function makes the new tools win. Anything that resolves a binary by store path rather than by PATH priority gets the stale copy.</p>
+<p><code>[new]</code> Six near-identical flake templates are locked to identical inputs, which is fine. The duplicated version literal is not fine and has already drifted. tisket and zettel declare 0.2.0 in Cargo.toml and 0.1.0 in the flake, and the nix store path proves the flake wins.</p>
+</md-section>
+
+<h2>Distribution</h2>
+<md-section ref="../../.tisket/v0.1.0/pg63-ecosystem-review-2026-08-12-the-hard-holistic-look.md#distribution">
+<h2>Distribution</h2>
+<p><code>[corrected]</code> Version 1 said the clc bundle still builds wrapper binaries for four tools. At HEAD it does not. Cargo reports binary targets only for clc-api, clc-web, clc, and missouri. The installed bundle contains the wrappers because co.d pins codelikecody at a revision from 9 April, before the split; the presence of <code>moose</code> in that store path proves it. A pin bump removes those binaries on its own.</p>
+<p><code>[verified]</code> The skew itself is real and larger than version 1 stated. clc pins all four tools at 3 May revisions, 8 to 10 commits behind. The almanac pin predates the entire curation layer: that revision has no manifest, vendor, hash, flags, or ops module. <code>clc almanac --help</code> lists four subcommands; <code>almanac --help</code> lists ten. For tisket, zettel, and belmont, the skew is prose only, one source-touching commit each.</p>
+<p><code>[new]</code> The remaining defect is the four git dependencies and the four subcommands they feed. No pin bump touches those. The fix is to delete the four variants from <code>clc/src/cli.rs</code> and the four dependencies from <code>clc/Cargo.toml</code>, or to track the tools' main branches. Version 1's item would have been marked done after a pin bump while <code>clc almanac</code> still shipped a 3 May skill layer.</p>
+<p><code>[verified]</code> gaff and vitrine have no CI. The uncommitted demerit input still blocks co.d locks.</p>
+</md-section>
+
+<h2>Security</h2>
+<md-section ref="../../.tisket/v0.1.0/pg63-ecosystem-review-2026-08-12-the-hard-holistic-look.md#security">
+<h2>Security</h2>
+<p><code>[corrected]</code> Version 1 called vitrine's inbox acceptable for its threat model. It is not. The inbox has no Origin check, and the server publishes the whole repo root including <code>.env</code> and <code>.git</code>. Both were reproduced.</p>
+<p><code>[verified]</code> The co.d library has never been scanned. 64 directories, no manifest.</p>
+<p><code>[new]</code> The scanner itself has a hole: CRLF frontmatter defeats the tool-granting check.</p>
+<p><code>[new]</code> The two paths that inject unreviewed bytes into a model's context are the gaff section traversal and the vitrine renderer. Both were shipped today. Both were reported clean by their own validators.</p>
+<p>Direction: fix the three injection paths before the migration. Then migrate the library under the manifest and let the fixed scanner run.</p>
+</md-section>
+
+<h2>Conventions</h2>
+<md-section ref="../../.tisket/v0.1.0/pg63-ecosystem-review-2026-08-12-the-hard-holistic-look.md#conventions-eight-tools-no-shared-contract">
+<h2>Conventions: eight tools, no shared contract</h2>
+<p><code>[new]</code> This section is new. A lens compared every surface across all eight tools.</p>
+<ul>
+<li>Root selection has three forms: <code>--root</code> with default <code>.</code> in four tools, <code>-C</code> plus <code>--config-dir</code> in missouri, and nothing at all in gaff and vitrine, which read the current directory and cannot be pointed elsewhere.</li>
+<li>Help and version are not a contract. Five tools exit 0 on <code>--help</code> and answer <code>--version</code>. gaff and vitrine exit 1 on <code>--help</code> and have no <code>--version</code> at all.</li>
+<li>missouri inverts the exit-code contract: 2 for any error, including a missing directory. Everywhere else 2 means a usage error. This matters because 2 is the blocking code in the hook contract, which is the reason gaff hand-rolls its argument parser. Any hook that shells out to missouri inherits a blocking exit from a missing file.</li>
+<li>Config naming has three schemes, and missouri accepts two of its own, which the six test suites then split on.</li>
+<li>Four error-message shapes for the same condition, with different prefixes, different streams, and only two carrying a remediation hint.</li>
+<li>Strict lints and CI are mutually exclusive. The three repos with deny-level clippy have no CI. The four repos with CI have no lint block, and their CI dropped clippy and fmt.</li>
+<li>missouri has no LICENSE anywhere and no license field. Every other tool ships MIT, in two different copyright variants.</li>
+<li>gaff and vitrine use a different README template with no Related section, so the two newest tools appear in no sibling's cross-link list. Neither is publishable to crates.io, because both omit the standard package fields.</li>
+<li>Six missouri suites use three or more incompatible ways to put the binary under test on PATH. Only one of them, the relative wrapper script used by zettel and belmont, survives a fresh clone on another machine. Two repos track machine-absolute symlinks; one of those is the tisket failure above.</li>
+<li>Four distinct gitignore states, including two repos with no gitignore file at all.</li>
+</ul>
+<p>Direction: pick the one right answer for each surface and write it down once, in a single conventions document. Start with the three that cause real failures: the binary-on-PATH convention, missouri's exit codes, and <code>--help</code> exiting 0.</p>
+</md-section>
+
+<h2>Coordination</h2>
+<md-section ref="../../.tisket/v0.1.0/pg63-ecosystem-review-2026-08-12-the-hard-holistic-look.md#coordination">
+<h2>Coordination</h2>
+<p><code>[open]</code> Version 1 recorded three collisions between parallel sessions and argued they are the strongest case for a harness revival. No checker examined this in the current pass. The direction stands as written: treat shared trees as append-only during parallel work, put session claims in tisket scratch, and take the harness question to its own discovery.</p>
+</md-section>
+
+<h2>Unexamined</h2>
+<md-section ref="../../.tisket/v0.1.0/pg63-ecosystem-review-2026-08-12-the-hard-holistic-look.md#unexamined">
+<h2>Unexamined</h2>
+<p><code>[open]</code> mdstore is still not cloned locally and was not reviewed, though both its dependents pin it consistently. clc-api, clc-web, and clc-sdk were not read. The standalone missouri repo was identified but not diffed for behavior. belmont's code was not deep-read, only counted.</p>
+</md-section>
+
+<h2>Priorities</h2>
+<md-section ref="../../.tisket/v0.1.0/pg63-ecosystem-review-2026-08-12-the-hard-holistic-look.md#priorities">
+<h2>Priorities</h2>
+<p>Ranked by what can hurt a user today, then by what makes the ecosystem honest.</p>
+<ol>
+<li>Close the two context-injection paths. gaff must normalize the section path and refuse anything outside <code>.gaff/</code>, in both the engine and <code>check</code>. vitrine must match its two renderers on the safe setting and stop assigning unsanitized markup to <code>innerHTML</code>.</li>
+<li>Fix gaff's ledger. One write of a pre-rendered line, and a lock around count-and-append. Add a concurrency test that runs 20 hooks at once and asserts the crossing.</li>
+<li>Fix vitrine's server. Limit serving to <code>.vitrine/</code> and the referenced files. Add an Origin check to the inbox. Document both limits.</li>
+<li>Fix tisket's test harness. Replace the tracked absolute symlink with the relative wrapper script, add a build step, and confirm the suite fails when the working tree is broken. Then fix the sandbox stderr pollution that has both tisket and zettel red.</li>
+<li>Fix almanac's two trust-gate defects. <code>add</code> must keep the staged tree until the user acts on it. <code>sync</code> must verify before it writes, never after.</li>
+<li>Repair the repo entry points. Fix <code>codelikecody/missouri.yml</code> so <code>missouri validate</code> runs. Delete or fix the orphan <code>missouri/tisket.yml</code>. Ignore or remove the untracked root state and the <code>--full-page</code> file.</li>
+<li>Push local main, which is a 16-commit fast-forward and still needs the user's word, then bump the co.d pin. This also removes the stale wrapper binaries.</li>
+<li>Delete the four tool subcommands and the four git dependencies from clc, or point them at main. A pin bump does not fix this.</li>
+<li>Add missouri to CI in every repo, and add CI to gaff and vitrine. No end-to-end test in the ecosystem runs unattended today.</li>
+<li>Make the validators tell the truth. <code>gaff check</code> must reject unknown keys, a zero cap, a path separator in a name, and a section larger than the cap. <code>almanac</code>'s scanner must handle CRLF.</li>
+<li>Restore trunk protection: branch protection on the remotes, plus native permission rules in the repos that need them.</li>
+<li>Reconcile the skills.sh instruction with the almanac plan. Then wire the almanac-to-gaff loop and migrate the 64 skills under the manifest, which runs the scanner as a side effect.</li>
+<li>Reconcile the two missouri trees and decide the codelikecody endgame.</li>
+<li>Write the conventions document and converge the three surfaces that cause real failures.</li>
+<li>Correct the false claims in the gaff and vitrine READMEs. A tool that documents a feature it does not have costs more trust than a missing feature.</li>
+</ol>
+</md-section>
+
+<script src="./vitrine-runtime.js"></script>
+</body>
+</html>
