@@ -1,4 +1,0 @@
-transitions:
-  - name: "uv init"
-    command: "uv init --name myproject --no-readme"
-    target: "../initialized"

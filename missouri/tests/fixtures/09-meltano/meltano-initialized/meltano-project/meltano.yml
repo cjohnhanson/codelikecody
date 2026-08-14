@@ -1,7 +1,0 @@
-default_environment: dev
-project_id: fixed
-environments:
-- name: dev
-- name: staging
-- name: prod
-send_anonymous_usage_stats: false

@@ -1,3 +1,0 @@
-assertions:
-  - name: "output directory has data"
-    command: "test -d meltano-project/output && ls meltano-project/output/*.jsonl >/dev/null 2>&1"

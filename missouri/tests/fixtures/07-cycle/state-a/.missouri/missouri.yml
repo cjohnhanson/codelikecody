@@ -1,4 +1,0 @@
-transitions:
-  - name: "a to b"
-    command: "echo b > value.txt"
-    target: "../state-b"

@@ -1,4 +1,0 @@
-transitions:
-  - name: "increment to 2"
-    command: "echo 2 > count.txt"
-    target: "../state-b"

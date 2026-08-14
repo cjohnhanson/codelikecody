@@ -1,3 +1,0 @@
-setup:
-  - name: "create marker"
-    command: "echo 'setup ran' > setup-marker.txt"

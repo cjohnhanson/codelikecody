@@ -1,5 +1,0 @@
-# Created by cargo init, not relevant to state comparison
-.git/
-
-# Build artifacts
-target/

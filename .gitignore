@@ -9,3 +9,7 @@ almanac/tests/missouri/.missouri/bin/almanac
 clc/tests/missouri/.missouri/bin/clc
 clc/tests/missouri/bare-user-init/fake-home/placeholder
 moose/tests/missouri/.missouri/bin/moose
+
+# Local clc runtime state. It holds a CA key and a coordination database.
+.clc/
+--full-page

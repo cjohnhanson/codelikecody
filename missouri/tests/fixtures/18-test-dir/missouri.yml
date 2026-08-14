@@ -1,4 +1,0 @@
-test_dir: tests/smoke
-
-env:
-  FROM_ROOT: "yes"

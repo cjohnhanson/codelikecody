@@ -1,3 +1,0 @@
-setup:
-  - name: "build missouri"
-    command: "cargo build --quiet -p missouri --manifest-path ../../Cargo.toml"

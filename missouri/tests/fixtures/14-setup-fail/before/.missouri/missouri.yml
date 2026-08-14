@@ -1,4 +1,0 @@
-transitions:
-  - name: "should not run"
-    command: "echo nope"
-    target: "../after"

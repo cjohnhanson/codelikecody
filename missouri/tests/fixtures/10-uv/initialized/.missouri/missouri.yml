@@ -1,4 +1,0 @@
-transitions:
-  - name: "uv add cowsay"
-    command: "uv add cowsay==6.1"
-    target: "../dep-added"

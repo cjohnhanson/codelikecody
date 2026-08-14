@@ -1,5 +1,0 @@
-packages:
-  - coreutils
-
-env:
-  MAGIC_TOKEN: "comparator-sees-this"

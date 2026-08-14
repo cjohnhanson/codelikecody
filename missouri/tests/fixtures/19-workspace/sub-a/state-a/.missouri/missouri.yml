@@ -1,4 +1,0 @@
-transitions:
-  - name: "create data"
-    command: "echo hello > data.txt"
-    target: "../state-b"
