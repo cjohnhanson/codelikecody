@@ -137,8 +137,14 @@ impl Backend for BareBackend {
 ///
 /// During warm-up, this backend resolves `nixpkgs` to a pinned flake URL
 /// that holds a commit hash. Every later command then uses
-/// `--no-registries`. Parallel paths therefore never compete for the flake
-/// registry file.
+/// `--no-use-registries`. Parallel paths therefore never compete for the
+/// flake registry file.
+///
+/// The flag must be the non-deprecated form. The deprecated
+/// `--no-registries` makes nix print a deprecation warning on stderr,
+/// and that warning merges into the stderr of the command under test,
+/// which breaks every stderr assertion in a suite that declares
+/// packages.
 #[derive(Debug)]
 pub struct NixBackend {
     /// Absolute path to the `nix` binary.
@@ -156,7 +162,7 @@ impl NixBackend {
         args.push("--extra-experimental-features".into());
         args.push("nix-command flakes".into());
         if self.pinned_nixpkgs.is_some() {
-            args.push("--no-registries".into());
+            args.push("--no-use-registries".into());
         }
         let flake_ref = self.pinned_nixpkgs.as_deref().unwrap_or("nixpkgs");
         for pkg in &self.packages {
@@ -168,7 +174,7 @@ impl NixBackend {
 
     /// Resolve nixpkgs to a pinned flake URL. Then run a command that does
     /// nothing, to fill the nix store. After that, every parallel call uses
-    /// the pinned URL with `--no-registries` and never reads the flake
+    /// the pinned URL with `--no-use-registries` and never reads the flake
     /// registry.
     fn warm_cache(&mut self) -> Result<(), String> {
         // Resolve nixpkgs → pinned URL with commit hash
