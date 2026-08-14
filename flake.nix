@@ -98,6 +98,18 @@
                 export MISSOURI_SANDBOX=preinstalled
                 cargo test --profile release --locked
               '';
+              # Man pages and shell completions come from the built
+              # missouri binary itself, so they always match the real CLI.
+              postInstall = ''
+                mkdir -p $out/share/man/man1
+                $out/bin/missouri gen-man $out/share/man/man1
+                mkdir -p $out/share/zsh/site-functions
+                mkdir -p $out/share/bash-completion/completions
+                mkdir -p $out/share/fish/vendor_completions.d
+                $out/bin/missouri gen-completions zsh > $out/share/zsh/site-functions/_missouri
+                $out/bin/missouri gen-completions bash > $out/share/bash-completion/completions/missouri
+                $out/bin/missouri gen-completions fish > $out/share/fish/vendor_completions.d/missouri.fish
+              '';
             }
           );
         in

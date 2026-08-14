@@ -5,6 +5,7 @@ pub mod cli;
 pub mod compare;
 pub mod config;
 pub mod docgen;
+pub mod mangen;
 pub mod docs;
 pub mod error;
 pub mod executor;

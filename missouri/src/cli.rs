@@ -30,6 +30,20 @@ pub enum Command {
     /// Run all test paths
     Run(RunArgs),
 
+    /// Write the man pages into a directory (the package build uses this)
+    #[command(hide = true)]
+    GenMan {
+        /// Output directory for the section-1 pages
+        dir: Utf8PathBuf,
+    },
+
+    /// Print a shell completion script (the package build uses this)
+    #[command(hide = true)]
+    GenCompletions {
+        /// Target shell
+        shell: clap_complete::Shell,
+    },
+
     /// List states, transitions, or test paths
     List(ListArgs),
 
@@ -265,6 +279,19 @@ pub fn run(args: Args) -> miette::Result<bool> {
 /// Run a missouri subcommand with the given config directory.
 pub fn run_command(config_dir: &str, command: Command) -> miette::Result<bool> {
     match command {
+        Command::GenMan { dir } => {
+            use clap::CommandFactory as _;
+            std::fs::create_dir_all(&dir).into_diagnostic()?;
+            crate::mangen::write_man_pages(&Args::command(), dir.as_std_path()).into_diagnostic()?;
+            return Ok(true);
+        }
+
+        Command::GenCompletions { shell } => {
+            use clap::CommandFactory as _;
+            clap_complete::generate(shell, &mut Args::command(), "missouri", &mut std::io::stdout());
+            return Ok(true);
+        }
+
         Command::Run(run_args) => {
             let dir = resolve_dir(&run_args.dir)?;
 
