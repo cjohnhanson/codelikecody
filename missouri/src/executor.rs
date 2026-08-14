@@ -50,9 +50,9 @@ pub trait Backend: std::fmt::Debug + Send + Sync + AsAny {
         path_env: &str,
     ) -> Command;
 
-    /// Execute a command and return its output. Default implementation builds
-    /// a local Command and runs it. Backends that execute commands remotely
-    /// (e.g., inside a microVM) override this.
+    /// Run a command and return its output. The default builds a local
+    /// Command and runs it. A backend that runs the command elsewhere, for
+    /// example inside a microVM, overrides this method.
     fn execute(
         &self,
         command: &str,
@@ -78,21 +78,22 @@ pub trait Backend: std::fmt::Debug + Send + Sync + AsAny {
         })
     }
 
-    /// Whether this backend executes commands inside a docker VM.
-    /// When true, execute_transition uses execute() instead of build_*_command().
+    /// True when this backend runs a command inside a Docker container.
+    /// Then execute_transition calls execute() instead of
+    /// build_*_command().
     fn is_docker(&self) -> bool {
         false
     }
 
-    /// Pre-warm the backend so parallel invocations don't race on shared state.
-    /// Default is a no-op; NixBackend uses this to populate the nix store cache
-    /// before paths execute concurrently.
+    /// Warm the backend so that parallel calls never compete for shared
+    /// state. The default does nothing. NixBackend uses this method to fill
+    /// the nix store cache before the paths run at the same time.
     fn warm(&self) -> Result<(), String> {
         Ok(())
     }
 }
 
-/// No sandbox — env_clear + manual PATH construction.
+/// No sandbox. Calls env_clear and builds PATH by hand.
 #[derive(Debug)]
 pub struct BareBackend;
 
@@ -131,11 +132,19 @@ impl Backend for BareBackend {
     }
 }
 
-/// Nix shell sandbox: commands run inside `nix shell nixpkgs#pkg1 ... --command`.
+/// Nix shell sandbox. Each command runs inside
+/// `nix shell nixpkgs#pkg1 ... --command`.
 ///
-/// During warm-up, resolves `nixpkgs` to a pinned flake URL (with commit hash)
-/// and uses `--no-registries` for all subsequent commands. This prevents parallel
-/// paths from racing on the flake registry file.
+/// During warm-up, this backend resolves `nixpkgs` to a pinned flake URL
+/// that holds a commit hash. Every later command then uses
+/// `--no-use-registries`. Parallel paths therefore never compete for the
+/// flake registry file.
+///
+/// The flag must be the non-deprecated form. The deprecated
+/// `--no-registries` makes nix print a deprecation warning on stderr,
+/// and that warning merges into the stderr of the command under test,
+/// which breaks every stderr assertion in a suite that declares
+/// packages.
 #[derive(Debug)]
 pub struct NixBackend {
     /// Absolute path to the `nix` binary.
@@ -153,7 +162,7 @@ impl NixBackend {
         args.push("--extra-experimental-features".into());
         args.push("nix-command flakes".into());
         if self.pinned_nixpkgs.is_some() {
-            args.push("--no-registries".into());
+            args.push("--no-use-registries".into());
         }
         let flake_ref = self.pinned_nixpkgs.as_deref().unwrap_or("nixpkgs");
         for pkg in &self.packages {
@@ -163,9 +172,10 @@ impl NixBackend {
         args
     }
 
-    /// Resolve nixpkgs to a pinned flake URL, then run a no-op command to
-    /// populate the nix store. After this, parallel invocations use the
-    /// pinned URL with `--no-registries` to avoid the flake registry entirely.
+    /// Resolve nixpkgs to a pinned flake URL. Then run a command that does
+    /// nothing, to fill the nix store. After that, every parallel call uses
+    /// the pinned URL with `--no-use-registries` and never reads the flake
+    /// registry.
     fn warm_cache(&mut self) -> Result<(), String> {
         // Resolve nixpkgs → pinned URL with commit hash
         let output = std::process::Command::new(self.nix_bin.as_str())
@@ -218,10 +228,10 @@ impl Backend for NixBackend {
         env: &BTreeMap<String, String>,
         path_env: &str,
     ) -> Command {
-        // nix shell sets PATH to include nix packages. We prepend only the
-        // project/state bin dirs (not system PATH) so nix packages take
-        // priority over system binaries, but project wrappers still win.
-        // Extract just the non-system prefix from path_env.
+        // nix shell adds the nix packages to PATH. Prepend the project and
+        // state bin directories only, not the system PATH. The nix packages
+        // then take priority over the system binaries, and the project
+        // wrappers still win. Take the non-system prefix from path_env.
         let system_path =
             std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin:/usr/bin:/bin".into());
         let project_dirs: String = path_env
@@ -276,12 +286,14 @@ fn shell_escape(s: &str) -> String {
     }
 }
 
-/// Docker backend: transitions run inside Docker containers with hermetic
-/// network isolation (`network_mode: "none"`) and volume mounting via bollard.
+/// Docker backend. Each transition runs inside a Docker container. The
+/// container has no network access (`network_mode: "none"`), and bollard
+/// mounts the volumes.
 ///
-/// Each transition gets a fresh container that is removed after execution.
-/// The `execute` method overrides the default to run commands inside the
-/// container. The `build_*_command` methods are unused.
+/// Each transition gets a fresh container. Missouri removes the container
+/// after the command finishes. The `execute` method overrides the default
+/// and runs the command inside the container. Nothing calls the
+/// `build_*_command` methods.
 #[derive(Debug)]
 pub struct DockerBackend {
     image: String,
@@ -290,17 +302,18 @@ pub struct DockerBackend {
 /// Default Docker image for missouri test containers.
 const DEFAULT_DOCKER_IMAGE: &str = "debian:bookworm-slim";
 
-/// Image used when network replay is configured. Must have mitmdump, iptables,
-/// and the mitmproxy CA installed in the system trust store.
+/// Image for a transition that replays network traffic. It must hold
+/// mitmdump and iptables. It must also hold the mitmproxy CA in the system
+/// trust store.
 const MITM_DOCKER_IMAGE: &str = "mitm-test";
 
 impl DockerBackend {
     /// Build a Docker image from a Dockerfile in the given directory.
     /// Returns the image tag.
     ///
-    /// The Dockerfile is the user's responsibility — it can use nix, apt,
-    /// or anything else to set up the environment. Missouri just builds it
-    /// and caches the result by content hash.
+    /// The user owns the Dockerfile. It can use nix, apt, or another tool
+    /// to set up the environment. Missouri builds the Dockerfile and caches
+    /// the result by content hash. It changes nothing else.
     async fn build_image_from_dockerfile(
         &self,
         dockerfile_dir: &Utf8Path,
@@ -353,11 +366,11 @@ impl DockerBackend {
     /// Run a command inside a Docker container with network isolation and
     /// volume mounting, then capture stdout/stderr/exit_code.
     ///
-    /// When `replay_flow` is set, the container uses the mitmproxy image with
-    /// transparent interception: iptables redirects outbound 80/443 to mitmdump,
-    /// which serves pre-recorded responses from the flow file. The process under
-    /// test has no idea it's being intercepted — no proxy env vars, no application
-    /// configuration.
+    /// When `replay_flow` is set, the container uses the mitmproxy image and
+    /// intercepts traffic transparently. iptables redirects outbound port 80
+    /// and port 443 to mitmdump. mitmdump then serves the recorded responses
+    /// from the flow file. The process under test needs no proxy environment
+    /// variable and no application configuration.
     fn run_in_container(
         &self,
         command: &str,
@@ -552,9 +565,8 @@ impl DockerBackend {
         Ok(())
     }
 
-    /// Start a long-running process inside a container without waiting for it.
-    /// Used for background services like mitmdump.
-    /// Start a long-running process inside a container without waiting for it.
+    /// Start a long-running process inside a container and do not wait for
+    /// it. Missouri uses this for a background service such as mitmdump.
     async fn exec_detached(
         &self,
         docker: &bollard::Docker,
@@ -686,9 +698,10 @@ impl Backend for DockerBackend {
 /// - `SandboxConfig::Packages(pkgs)` → `NixBackend` (or `BareBackend` if preinstalled)
 /// - `SandboxConfig::Docker` → `DockerBackend`
 ///
-/// When `MISSOURI_SANDBOX=preinstalled` is set, packages config resolves to
-/// `BareBackend` — tools are assumed to already be on PATH (e.g., inside a
-/// nix derivation where packages are `nativeCheckInputs`).
+/// When `MISSOURI_SANDBOX=preinstalled` is set, a packages config resolves
+/// to `BareBackend`. Missouri then assumes that every tool is already on
+/// PATH. This happens inside a nix derivation where the packages are
+/// `nativeCheckInputs`.
 pub fn detect_sandbox(graph: &StateGraph) -> error::Result<Box<dyn Backend>> {
     // Check for preinstalled override
     if std::env::var("MISSOURI_SANDBOX").ok().as_deref() == Some("preinstalled") {
@@ -748,9 +761,9 @@ pub fn build_network_env(port: u16) -> BTreeMap<String, String> {
 /// Start mitmdump in server-replay mode using the given flow file.
 ///
 /// `path_env` is the PATH to search for the `mitmdump` binary.
-/// Returns a `MitmdumpHandle` (with the discovered port) that kills the
-/// process on drop, or an error string if mitmdump cannot be found,
-/// fails to start, or doesn't announce its listening port.
+/// Returns a `MitmdumpHandle` that holds the port it found. The handle
+/// kills the process on drop. Returns an error string when mitmdump is
+/// missing, fails to start, or prints no listening port.
 pub fn start_mitmdump_replay(
     flow: &camino::Utf8Path,
     path_env: &str,
@@ -807,9 +820,9 @@ pub fn start_mitmdump_replay(
 /// Start mitmdump in record mode, writing captured traffic to `output`.
 ///
 /// `path_env` is the PATH to search for the `mitmdump` binary.
-/// Returns a `MitmdumpHandle` (with the discovered port) that kills the
-/// process on drop, or an error string if mitmdump cannot be found,
-/// fails to start, or doesn't announce its listening port.
+/// Returns a `MitmdumpHandle` that holds the port it found. The handle
+/// kills the process on drop. Returns an error string when mitmdump is
+/// missing, fails to start, or prints no listening port.
 pub fn start_mitmdump_record(
     output: &camino::Utf8Path,
     path_env: &str,
@@ -907,11 +920,11 @@ impl Drop for ServiceHandle {
 
 /// Start a background service, capture its port from stderr, and return a handle.
 ///
-/// The service command is spawned in its own process group (via `process_group(0)`)
-/// so the entire tree can be killed on drop.
+/// The service command starts in its own process group, through
+/// `process_group(0)`. A drop can then kill the whole process tree.
 ///
-/// After the port is captured, a drain thread keeps reading stderr to prevent
-/// the service from blocking on a full pipe buffer.
+/// After the port is captured, a drain thread keeps reading stderr. This
+/// stops the service from blocking on a full pipe buffer.
 pub fn start_service(
     config: &crate::config::ServiceConfig,
     work_dir: &Utf8Path,

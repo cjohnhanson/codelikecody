@@ -1,0 +1,9 @@
+reminders:
+  - name: tisket-scratch
+    every:
+      tool_calls: 25
+    text: "Update the active tisket scratch when the state has changed since the last append."
+  - name: build-clean
+    every:
+      prompts: 15
+    text: "cargo build --workspace must show zero warnings. All tests must pass. Check this before you claim the work is done."

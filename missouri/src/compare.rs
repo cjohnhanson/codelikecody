@@ -241,8 +241,8 @@ pub fn compare_env(
     diffs
 }
 
-/// Walk a directory tree recursively, collecting all relative paths.
-/// Skips the config directory (e.g., `.missouri/`).
+/// Walk a directory tree and collect every relative path. Skips the config
+/// directory, for example `.missouri/`.
 fn walk_tree(root: &Utf8Path, config_dir: &str) -> BTreeSet<Utf8PathBuf> {
     let mut paths = BTreeSet::new();
     walk_recursive(root, root, config_dir, &mut paths);
@@ -353,8 +353,9 @@ fn run_comparator(
         shell_quote(arg2.as_str())
     );
 
-    // Comparators always run as shell commands (the inner_cmd is a shell expression).
-    // Use a dummy work_dir since comparators don't need a working directory context.
+    // A comparator always runs as a shell command, because inner_cmd is a
+    // shell expression. Pass a placeholder work_dir. A comparator needs no
+    // working directory.
     let work_dir = camino::Utf8Path::new("/");
     let output = crate::signal::run_tracked(
         &mut sandbox.build_shell_command(&inner_cmd, work_dir, state_env, &path_env),
@@ -465,12 +466,10 @@ mod tests {
             &crate::executor::BareBackend,
         );
         assert!(!result.passed);
-        assert!(
-            result
-                .file_diffs
-                .iter()
-                .any(|d| matches!(d, FileDiff::ExtraFile { path } if path.as_str() == "extra.txt"))
-        );
+        assert!(result
+            .file_diffs
+            .iter()
+            .any(|d| matches!(d, FileDiff::ExtraFile { path } if path.as_str() == "extra.txt")));
     }
 
     #[test]
@@ -498,11 +497,10 @@ mod tests {
             &crate::executor::BareBackend,
         );
         assert!(!result.passed);
-        assert!(
-            result.file_diffs.iter().any(
-                |d| matches!(d, FileDiff::MissingFile { path } if path.as_str() == "needed.txt")
-            )
-        );
+        assert!(result
+            .file_diffs
+            .iter()
+            .any(|d| matches!(d, FileDiff::MissingFile { path } if path.as_str() == "needed.txt")));
     }
 
     #[test]

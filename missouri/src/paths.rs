@@ -28,8 +28,8 @@ impl TestPath {
 
 /// Enumerate all simple paths (no repeated states) starting from each root.
 ///
-/// A "simple path" visits each state at most once. This naturally handles
-/// cycles by refusing to revisit a state already on the current path.
+/// A simple path visits each state once at most. This handles a cycle: the
+/// walk never returns to a state that is already on the current path.
 pub fn enumerate_paths(graph: &StateGraph) -> Vec<TestPath> {
     let roots = graph.roots();
     let mut all_paths = Vec::new();
@@ -46,13 +46,14 @@ pub fn enumerate_paths(graph: &StateGraph) -> Vec<TestPath> {
 
 /// Enumerate paths using subgraph boundaries.
 ///
-/// States marked `entrypoint: true` act as subgraph roots. When DFS from a
-/// graph root reaches an entrypoint, it emits the path ending there and stops.
-/// Separate paths are then enumerated starting from each entrypoint.
+/// A state marked `entrypoint: true` is a subgraph root. The depth-first
+/// search starts at a graph root. When it reaches an entrypoint, it emits
+/// the path that ends there and stops. Missouri then enumerates a separate
+/// set of paths from each entrypoint.
 ///
-/// This eliminates redundant traversal of shared prefixes: if 31 paths pass
-/// through an entrypoint, the prefix to that entrypoint is enumerated once,
-/// and downstream paths start from the entrypoint directly.
+/// This removes repeated walks over a shared prefix. If 31 paths pass
+/// through one entrypoint, missouri enumerates the prefix once. Every
+/// downstream path then starts at the entrypoint.
 pub fn enumerate_subgraph_paths(graph: &StateGraph) -> Vec<TestPath> {
     let roots = graph.roots();
     let entrypoints: HashSet<StateId> = graph.entrypoints().into_iter().collect();
@@ -100,7 +101,14 @@ fn dfs(
     current_path: &mut Vec<usize>,
     results: &mut Vec<TestPath>,
 ) {
-    dfs_with_boundaries(graph, current, visited, current_path, results, &HashSet::new())
+    dfs_with_boundaries(
+        graph,
+        current,
+        visited,
+        current_path,
+        results,
+        &HashSet::new(),
+    )
 }
 
 fn dfs_with_boundaries(
@@ -384,8 +392,15 @@ transitions:
 
         // With subgraphs: 3 paths (A→B, B→C, B→D)
         let new_paths = enumerate_subgraph_paths(&graph);
-        assert_eq!(new_paths.len(), 3, "expected 3 subgraph paths, got: {:?}",
-            new_paths.iter().map(|p| p.display(&graph)).collect::<Vec<_>>());
+        assert_eq!(
+            new_paths.len(),
+            3,
+            "expected 3 subgraph paths, got: {:?}",
+            new_paths
+                .iter()
+                .map(|p| p.display(&graph))
+                .collect::<Vec<_>>()
+        );
 
         let displays: Vec<String> = new_paths.iter().map(|p| p.display(&graph)).collect();
         assert!(displays.contains(&"a → b".to_string()));

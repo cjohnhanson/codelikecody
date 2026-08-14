@@ -178,9 +178,11 @@ impl StateGraph {
     /// Discover all states under `root` and build the graph.
     /// `config_dir` is the name of the config directory (e.g., ".missouri").
     ///
-    /// Config is loaded from one of two locations (checked in order):
-    /// 1. `<root>/missouri.yml` — root-level config, may have `test_dir` pointing elsewhere
-    /// 2. `<root>/<config_dir>/missouri.yml` — config-dir-level config (original behavior)
+    /// Loads the config from one of two locations, in this order:
+    /// 1. `<root>/missouri.yml` — the root-level config. It can set
+    ///    `test_dir` to another directory.
+    /// 2. `<root>/<config_dir>/missouri.yml` — the config-dir-level config.
+    ///    This is the original location.
     pub fn discover(root: &Utf8Path, config_dir: &str) -> Result<Self> {
         let root = root.canonicalize_utf8().map_err(Error::Io)?;
 
@@ -189,8 +191,8 @@ impl StateGraph {
         let (project_env, setup, project_bin, sandbox_config, state_root) =
             load_project_config(&root, config_dir)?;
 
-        // Phase 1: Find all directories containing <config_dir>/missouri.yml
-        // (excludes the state root itself — root config is project-level, not a state)
+        // Phase 1: Find every directory that holds <config_dir>/missouri.yml.
+        // This skips the state root. The root config is project-level, not a state.
         let mut state_paths: Vec<Utf8PathBuf> = Vec::new();
         collect_states(&state_root, config_dir, &state_root, &mut state_paths)?;
         state_paths.sort();
@@ -389,8 +391,9 @@ impl StateGraph {
 
 /// Load ignore patterns from `<root>/<config_dir>/ignore`.
 ///
-/// Uses gitignore syntax: trailing `/` matches directories, `!` negates,
-/// `**` matches across directories, `#` for comments.
+/// Uses gitignore syntax. A trailing `/` matches a directory. A `!`
+/// negates a pattern. A `**` matches across directories. A `#` starts a
+/// comment.
 fn load_ignore_patterns(root: &Utf8Path, config_dir: &str) -> Result<Gitignore> {
     let ignore_path = root.join(config_dir).join("ignore");
     let mut builder = ignore::gitignore::GitignoreBuilder::new(root);
@@ -419,12 +422,14 @@ type ProjectConfigResult = (
     Utf8PathBuf,
 );
 
-/// Load project-level config, checking two locations in order:
-/// 1. `<root>/missouri.yml` — root-level config (may include `test_dir`)
-/// 2. `<root>/<config_dir>/missouri.yml` — config-dir-level config
+/// Load the project-level config. Check two locations, in this order:
+/// 1. `<root>/missouri.yml` — the root-level config. It can include
+///    `test_dir`.
+/// 2. `<root>/<config_dir>/missouri.yml` — the config-dir-level config.
 ///
-/// `state_root` in the result is the directory where state discovery should start
-/// (may differ from `root` if `test_dir` is set in a root-level missouri.yml).
+/// `state_root` in the result is the directory where state discovery
+/// starts. It differs from `root` when a root-level missouri.yml sets
+/// `test_dir`.
 fn load_project_config(root: &Utf8Path, config_dir: &str) -> Result<ProjectConfigResult> {
     let root_yml = root.join("missouri.yml");
     let config_dir_yml = root.join(config_dir).join("missouri.yml");
@@ -514,8 +519,9 @@ fn load_project_config(root: &Utf8Path, config_dir: &str) -> Result<ProjectConfi
     Ok((project_env, setup, project_bin, sandbox_config, state_root))
 }
 
-/// Recursively find directories containing `<config_dir>/missouri.yml`.
-/// Skips the project root (its missouri.yml is project-level config, not a state).
+/// Find every directory that holds a `<config_dir>/missouri.yml` file.
+/// Skips the project root. The root's missouri.yml is the project-level
+/// config, not a state.
 fn collect_states(
     dir: &Utf8Path,
     config_dir: &str,

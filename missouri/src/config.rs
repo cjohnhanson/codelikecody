@@ -18,8 +18,8 @@ pub struct StateConfig {
     #[serde(default)]
     pub assertions: Vec<AssertionConfig>,
 
-    /// When true, this state's fixture is a complete starting point.
-    /// Paths can begin here without traversing upstream transitions.
+    /// When true, this state's fixture is a complete start point. A path
+    /// can begin here and skip the upstream transitions.
     #[serde(default)]
     pub entrypoint: bool,
 
@@ -29,15 +29,17 @@ pub struct StateConfig {
 
 /// Network interception config for a transition.
 ///
-/// Exactly one variant applies per transition:
-/// - `Replay { replay, hosts }` — replay recorded responses via mitmdump
-/// - `Record` — start mitmdump in record mode and stash the captured flow
+/// One variant applies to each transition:
+/// - `Replay { replay, hosts }` — replay the recorded responses through
+///   mitmdump.
+/// - `Record` — start mitmdump in record mode and save the captured flow.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum NetworkConfig {
-    /// Replay from a previously recorded flow file.
-    /// `hosts` lists the hostnames to intercept — each gets an /etc/hosts entry
-    /// pointing to 127.0.0.1 inside the container so the process can resolve them.
+    /// Replay a flow file that a previous run recorded.
+    /// `hosts` lists the hostnames to intercept. Each hostname gets an
+    /// /etc/hosts entry inside the container that points to 127.0.0.1, so
+    /// the process under test can resolve it.
     Replay {
         replay: Utf8PathBuf,
         #[serde(default)]
@@ -163,11 +165,12 @@ pub struct EnvComparatorConfig {
     pub ignore: bool,
 }
 
-/// A side-effect-free assertion command to verify state properties.
+/// An assertion command that verifies a state property and changes
+/// nothing.
 ///
-/// Either `command` or `agent` must be set (but not both). Command-based
-/// assertions run a shell command; agent-based assertions launch an agent
-/// eval from a markdown file in the config directory.
+/// Set `command` or `agent`, but not both. A command assertion runs a
+/// shell command. An agent assertion starts an agent eval from a markdown
+/// file in the config directory.
 #[derive(Debug, Deserialize)]
 pub struct AssertionConfig {
     /// Optional human-readable label.
@@ -222,7 +225,8 @@ pub struct ProjectConfig {
     pub packages: Vec<String>,
 
     /// Member directories for workspace mode.
-    /// When set, `missouri run` iterates each member and runs its tests independently.
+    /// When set, `missouri run` visits each member and runs its tests on
+    /// its own.
     #[serde(default)]
     pub members: Vec<Utf8PathBuf>,
 
@@ -642,7 +646,10 @@ transitions:
         let comps = config.transitions[0].comparators.as_ref().unwrap();
         assert_eq!(comps.network.len(), 2);
         assert_eq!(comps.network[0].path, "api.anthropic.com/v1/messages");
-        assert_eq!(comps.network[0].command.as_deref(), Some("compare-api-calls"));
+        assert_eq!(
+            comps.network[0].command.as_deref(),
+            Some("compare-api-calls")
+        );
         assert!(!comps.network[0].ignore);
         assert_eq!(comps.network[1].path, "*.googleapis.com/**");
         assert!(comps.network[1].ignore);
@@ -696,7 +703,10 @@ transitions:
 "#;
         let config = parse_config(yaml).unwrap();
         assert_eq!(config.transitions[0].services.len(), 1);
-        assert_eq!(config.transitions[0].services[0].command, "my-server --port 0");
+        assert_eq!(
+            config.transitions[0].services[0].command,
+            "my-server --port 0"
+        );
         assert!(config.transitions[0].services[0].shell);
         assert!(config.transitions[0].services[0].port_pattern.is_none());
         assert!(config.transitions[0].services[0].ready.is_none());
@@ -719,7 +729,10 @@ transitions:
         assert_eq!(svc.command, "/usr/bin/my-server");
         assert!(!svc.shell);
         assert_eq!(svc.port_pattern.as_deref(), Some("Serving on port (\\d+)"));
-        assert_eq!(svc.ready.as_deref(), Some("curl -sf http://localhost:$PORT/health"));
+        assert_eq!(
+            svc.ready.as_deref(),
+            Some("curl -sf http://localhost:$PORT/health")
+        );
     }
 
     #[test]
@@ -743,7 +756,10 @@ assertions:
 "#;
         let config = parse_config(yaml).unwrap();
         assert_eq!(config.assertions[0].services.len(), 1);
-        assert_eq!(config.assertions[0].services[0].command, "my-server --port 0");
+        assert_eq!(
+            config.assertions[0].services[0].command,
+            "my-server --port 0"
+        );
     }
 
     #[test]
@@ -769,8 +785,14 @@ transitions:
 "#;
         let config = parse_config(yaml).unwrap();
         assert_eq!(config.transitions[0].services.len(), 2);
-        assert_eq!(config.transitions[0].services[0].command, "server-a --port 0");
-        assert_eq!(config.transitions[0].services[1].command, "server-b --port 0");
+        assert_eq!(
+            config.transitions[0].services[0].command,
+            "server-a --port 0"
+        );
+        assert_eq!(
+            config.transitions[0].services[1].command,
+            "server-b --port 0"
+        );
         assert!(config.transitions[0].services[1].ready.is_some());
     }
 

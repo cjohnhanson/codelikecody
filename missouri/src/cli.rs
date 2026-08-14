@@ -268,7 +268,7 @@ pub fn run_command(config_dir: &str, command: Command) -> miette::Result<bool> {
         Command::Run(run_args) => {
             let dir = resolve_dir(&run_args.dir)?;
 
-            // Workspace mode: if members are configured, run each member independently.
+            // Workspace mode. When the config sets members, run each member on its own.
             if let Some(members) =
                 crate::graph::load_workspace_members(&dir, config_dir).into_diagnostic()?
             {
@@ -466,38 +466,36 @@ pub fn run_command(config_dir: &str, command: Command) -> miette::Result<bool> {
             let dir = resolve_dir(&serve_args.dir)?;
             let _run_dir =
                 crate::recorder::find_run_dir(&dir, config_dir, serve_args.run.as_deref())?;
-            // Serve is a placeholder for now — just verify runs exist
+            // Serve is a placeholder. It only checks that a run exists.
             println!("serving on http://localhost:{}", serve_args.port);
             Ok(true)
         }
 
-        Command::Docs(args) => {
-            match args.topic.as_deref() {
-                None | Some("list") => {
+        Command::Docs(args) => match args.topic.as_deref() {
+            None | Some("list") => {
+                crate::docs::list();
+                Ok(true)
+            }
+            Some("search") => {
+                let query = args.query.as_deref().unwrap_or("");
+                if query.is_empty() {
+                    eprintln!("usage: missouri docs search <query>");
+                    return Ok(false);
+                }
+                crate::docs::search(query);
+                Ok(true)
+            }
+            Some(identifier) => {
+                if crate::docs::show(identifier) {
+                    Ok(true)
+                } else {
+                    eprintln!("unknown doc: {identifier}");
+                    eprintln!();
                     crate::docs::list();
-                    Ok(true)
-                }
-                Some("search") => {
-                    let query = args.query.as_deref().unwrap_or("");
-                    if query.is_empty() {
-                        eprintln!("usage: missouri docs search <query>");
-                        return Ok(false);
-                    }
-                    crate::docs::search(query);
-                    Ok(true)
-                }
-                Some(identifier) => {
-                    if crate::docs::show(identifier) {
-                        Ok(true)
-                    } else {
-                        eprintln!("unknown doc: {identifier}");
-                        eprintln!();
-                        crate::docs::list();
-                        Ok(false)
-                    }
+                    Ok(false)
                 }
             }
-        }
+        },
 
         Command::Agent(agent_args) => match agent_args.command {
             AgentCommand::Pass => {
@@ -511,9 +509,7 @@ pub fn run_command(config_dir: &str, command: Command) -> miette::Result<bool> {
                 crate::agent_eval::write_fail(&cwd, &details).into_diagnostic()?;
                 Ok(true)
             }
-            AgentCommand::Eval(eval_args) => {
-                run_agent_eval(&eval_args, config_dir)
-            }
+            AgentCommand::Eval(eval_args) => run_agent_eval(&eval_args, config_dir),
         },
 
         Command::Doc(doc_args) => {
@@ -533,7 +529,11 @@ pub fn run_command(config_dir: &str, command: Command) -> miette::Result<bool> {
 
             let idx = doc_args.path.saturating_sub(1);
             if idx >= paths.len() {
-                eprintln!("path {} not found (have {} paths)", doc_args.path, paths.len());
+                eprintln!(
+                    "path {} not found (have {} paths)",
+                    doc_args.path,
+                    paths.len()
+                );
                 return Ok(false);
             }
             let path = &paths[idx];
@@ -553,8 +553,8 @@ pub fn run_command(config_dir: &str, command: Command) -> miette::Result<bool> {
     }
 }
 
-/// Run an agent evaluation: launch a Claude agent with the eval prompt, wait
-/// for it to write a verdict sentinel, and exit 0 (pass) or 1 (fail).
+/// Run an agent evaluation. Start a Claude agent with the eval prompt and
+/// wait for it to write a verdict sentinel. Exit 0 on pass and 1 on fail.
 fn run_agent_eval(eval_args: &AgentEvalArgs, config_dir: &str) -> miette::Result<bool> {
     let dir = resolve_dir(&eval_args.dir)?;
     let (spec, body) = crate::agent_eval::load_eval(&dir, config_dir, &eval_args.name)
@@ -589,8 +589,9 @@ fn run_agent_eval(eval_args: &AgentEvalArgs, config_dir: &str) -> miette::Result
 
     let agent_config = spec.to_agent_config(&defaults);
     let agent = clc_sdk::agent::ClaudeCodeAgent::new();
-    let mut cmd = clc_sdk::agent::Agent::build_start_command(&agent, &agent_config, dir.as_std_path())
-        .map_err(|e| miette::miette!("failed to build agent command: {e}"))?;
+    let mut cmd =
+        clc_sdk::agent::Agent::build_start_command(&agent, &agent_config, dir.as_std_path())
+            .map_err(|e| miette::miette!("failed to build agent command: {e}"))?;
 
     cmd.stdin(Stdio::piped());
     cmd.stdout(Stdio::null());
@@ -636,8 +637,8 @@ fn run_agent_eval(eval_args: &AgentEvalArgs, config_dir: &str) -> miette::Result
     }
 }
 
-/// Derive a short member label from the directory path.
-/// Uses the directory basename, or the last two components if the basename is generic.
+/// Build a short member label from the directory path. Use the directory
+/// basename. Use the last two components when the basename is generic.
 fn member_label(path: &Utf8Path, workspace_root: &Utf8Path) -> String {
     path.strip_prefix(workspace_root)
         .map(|p| p.as_str().to_string())

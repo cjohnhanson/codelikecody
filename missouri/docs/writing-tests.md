@@ -6,17 +6,17 @@ type: guide
 
 # Writing Missouri Tests
 
-States are directories. Transitions are shell commands. Missouri copies
+A state is a directory. A transition is a shell command. Missouri copies
 a state to a temp directory, runs the transition command, and diffs the
 result against the target state directory.
 
-If your CLI starts with files A and you run `my-tool init`, the result
-should look like files B. State A has a transition `my-tool init`
-targeting state B.
+Say your CLI starts with the files in state A. You run `my-tool init`,
+and the result must match the files in state B. So state A holds a
+transition with the command `my-tool init` and the target state B.
 
-States can also carry assertions: commands that verify properties not
-captured by the filesystem snapshot (exit codes, stdout content, tool
-behavior).
+A state can also carry assertions. An assertion is a command that
+verifies a property that the filesystem snapshot does not hold, such as
+an exit code, the stdout content, or the behavior of the tool.
 
 ## Directory structure
 
@@ -38,62 +38,64 @@ my-project/tests/missouri/
 │   └── ...
 ```
 
-Each state directory contains:
+Each state directory holds two things:
 
-1. A `.missouri/missouri.yml` config file (transitions, assertions, env)
-2. The actual files that represent this state (the fixture)
+1. A `.missouri/missouri.yml` config file. It declares the transitions,
+   the assertions, and the environment variables.
+2. The files that make up this state. These files are the fixture.
 
-Missouri discovers states by walking the tree looking for
-`<config_dir>/missouri.yml` files. The project root's config is
-project-level, not a state.
+Missouri finds the states by walking the tree and looking for
+`<config_dir>/missouri.yml` files. The project root's config is the
+project-level config, not a state.
 
 ## Project-level config
 
-The project-level `missouri.yml` lives either at the test suite root
-(`tests/missouri/.missouri/missouri.yml`) or as a root-level file
-(`tests/missouri/missouri.yml`). Root-level takes precedence if both exist.
+The project-level `missouri.yml` lives in one of two places. It sits at
+the test suite root (`tests/missouri/.missouri/missouri.yml`) or as a
+root-level file (`tests/missouri/missouri.yml`). The root-level file wins
+when both files exist.
 
 ```yaml
-# Project-level environment variables (inherited by all states)
+# Project-level environment variables. Every state inherits these.
 env:
   NO_COLOR: "1"
 
-# Setup commands run once before any test paths
+# Setup commands. They run once, before any test path.
 setup:
   - name: "build project"
     command: "cargo build --quiet --manifest-path ../../Cargo.toml"
 
-# Nix packages to make available during test runs
+# Nix packages to provide during a test run
 packages:
   - git
   - jq
 
-# Optional: point state discovery at a subdirectory
+# Optional: start state discovery in this subdirectory
 test_dir: tests/smoke
 
-# Optional: workspace mode -- iterate multiple member suites
+# Optional: workspace mode. Run several member suites in turn.
 members:
   - clc/tests/missouri
   - tisket/tests/missouri
 ```
 
-> **Missouri clears the environment.** Commands run with only `PATH` and whatever is declared in `env` blocks — nothing else. No `HOME`, no `TMPDIR`, no `SHELL`. If a command fails mysteriously, check whether it depends on a variable that wasn't declared.
+> **Missouri clears the environment.** A command runs with `PATH` and the variables you declare in an `env` block. It gets nothing else: no `HOME`, no `TMPDIR`, and no `SHELL`. When a command fails for no clear reason, check whether it needs a variable that you did not declare.
 
 ### Field reference (ProjectConfig)
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `env` | map | `{}` | Environment variables inherited by all states |
-| `setup` | list | `[]` | Commands to run before any test paths |
-| `packages` | list | `[]` | Nix packages to provide via `nix shell` |
-| `test_dir` | string | none | Directory for state discovery (relative to config) |
+| `env` | map | `{}` | Environment variables that every state inherits |
+| `setup` | list | `[]` | Commands to run before any test path |
+| `packages` | list | `[]` | Nix packages to provide through `nix shell` |
+| `test_dir` | string | none | The directory where state discovery starts, relative to the config |
 | `members` | list | `[]` | Workspace member directories |
 
 ### Setup commands
 
-Setup commands run sequentially before any test paths. They execute on the
-host (never inside a sandbox), from the project root directory. Common use:
-building the binary under test.
+Setup commands run in order, before any test path. They run on the host,
+never inside a sandbox, and they run from the project root directory. The
+common use is to build the binary under test.
 
 ```yaml
 setup:
@@ -103,30 +105,30 @@ setup:
     shell: false
 ```
 
-Each setup command has `command` (required), optional `name`, and optional
-`shell` (defaults to `true` -- runs via `sh -c`). Set `shell: false` to
-exec the command directly.
+Each setup command needs a `command`. The `name` and `shell` fields are
+optional. `shell` defaults to `true`, so the command runs through `sh -c`.
+Set `shell: false` to run the command directly.
 
 ### The ignore file
 
-Place an `ignore` file at `.missouri/ignore` (gitignore syntax). Patterns
-listed here are excluded from filesystem comparison across all transitions.
+Put an `ignore` file at `.missouri/ignore`. It uses gitignore syntax.
+Missouri removes every path that matches a pattern here from the
+filesystem comparison, for every transition.
 
 ```
 # .missouri/ignore
 .git/
 ```
 
-The clc test suite ignores `.git/` because git internals are
-non-deterministic. The comparison engine uses the `ignore` crate, so full
-gitignore syntax works: `*`, `**`, `!` negation, `#` comments, trailing
-`/` for directories.
+The clc test suite ignores `.git/` because the git internals are not
+deterministic. The comparison engine uses the `ignore` crate, so the full
+gitignore syntax works: `*`, `**`, `!` for negation, `#` for a comment,
+and a trailing `/` for a directory.
 
 ### The bin directory
 
-Scripts in `.missouri/bin/` are prepended to PATH during test execution.
-This is the right place for custom comparators, test helpers, and wrapper
-scripts.
+Missouri prepends `.missouri/bin/` to PATH during a test run. Put your
+custom comparators, test helpers, and wrapper scripts there.
 
 ```
 .missouri/bin/
@@ -139,19 +141,19 @@ scripts.
 
 ### Fixture files
 
-A state directory contains the files you expect to exist at that point in
-the test. When missouri runs a transition, it copies the source state to a
-temp dir, executes the command, then diffs the temp dir against the target
-state directory.
+A state directory holds the files that you expect at that point in the
+test. Missouri runs a transition in three steps. It copies the source
+state to a temp directory. It runs the command there. It then diffs the
+temp directory against the target state directory.
 
-Files in `.missouri/` are never part of the fixture -- they're config.
+Files in `.missouri/` are never part of the fixture. They are config.
 
 ### Dotfile fixtures via dot- directories
 
-Git can't track directories like `.git/` or `.clc/` inside your test
-fixtures. Missouri solves this with the `dot-` convention: a directory
-named `.missouri/dot-<name>/` gets restored as `.<name>/` in the temp dir
-at runtime.
+Git cannot track a directory such as `.git/` or `.clc/` inside a test
+fixture. Missouri works around this with the `dot-` convention. At
+runtime, it restores a directory named `.missouri/dot-<name>/` as
+`.<name>/` in the temp directory.
 
 ```
 initialized/.missouri/
@@ -163,14 +165,14 @@ initialized/.missouri/
     └── .gitkeep     # .gitkeep files are skipped during restoration
 ```
 
-`.gitkeep` files inside `dot-` directories are automatically skipped --
-they exist only to make git track the otherwise-empty directory.
+Missouri skips every `.gitkeep` file inside a `dot-` directory. Those
+files exist only to make git track an empty directory.
 
 ### Entrypoints
 
-By default, missouri traces paths starting from root states (states with no
-inbound transitions). To mark a state as a valid starting point for a
-subgraph, set `entrypoint: true`:
+By default, missouri traces each path from a root state. A root state has
+no inbound transitions. Set `entrypoint: true` to mark a state as a valid
+start point for a subgraph:
 
 ```yaml
 entrypoint: true
@@ -180,12 +182,13 @@ assertions:
     command: "test -d .clc"
 ```
 
-This is useful when a state is expensive to reach via transitions and you
-want to test from a pre-built snapshot.
+Use an entrypoint when a state costs a lot to reach through transitions
+and you want to test from a pre-built snapshot.
 
 ### Environment variables
 
-States inherit project-level env and can override or add their own:
+A state inherits the project-level environment. It can also override a
+variable or add its own:
 
 ```yaml
 env:
@@ -193,14 +196,14 @@ env:
   DB_URL: "postgres://localhost/test"
 ```
 
-Merge order: project env is the base, state env overrides. The environment
-is cleared before execution (`env_clear`), so only explicitly declared
-variables and `PATH` are available.
+The project environment is the base. The state environment overrides it.
+Missouri clears the environment before it runs a command (`env_clear`), so
+a command sees `PATH` and the declared variables only.
 
 ## Writing transitions
 
-A transition connects two states: "run this command on the source state and
-the result should match the target state."
+A transition connects two states. It says this: run this command on the
+source state, and the result must match the target state.
 
 ```yaml
 transitions:
@@ -213,20 +216,20 @@ transitions:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `name` | string | auto-generated | Human-readable label |
-| `command` | string | **required** | Shell command to execute |
-| `target` | path | **required** | Relative path to target state directory |
-| `shell` | bool | `true` | Run via `sh -c` |
-| `comparators` | object | none | Override comparison for specific files/env/network |
-| `network` | object | none | Network interception config (replay/record) |
-| `stdout` | string | none | Expected stdout (exact match) |
-| `stderr` | string | none | Expected stderr (exact match) |
+| `name` | string | auto-generated | A label for the output |
+| `command` | string | **required** | The shell command to run |
+| `target` | path | **required** | The relative path to the target state directory |
+| `shell` | bool | `true` | Run the command through `sh -c` |
+| `comparators` | object | none | Change the comparison for specific files, environment variables, or network requests |
+| `network` | object | none | The network interception config, either replay or record |
+| `stdout` | string | none | The exact stdout to expect |
+| `stderr` | string | none | The exact stderr to expect |
 | `services` | list | `[]` | Background services to run during this transition |
 
 ### Target resolution
 
-Targets are relative paths resolved from the source state directory. The
-typical pattern is `../sibling-state`:
+A target is a relative path. Missouri resolves it from the source state
+directory. The common pattern is `../sibling-state`:
 
 ```
 states/
@@ -235,15 +238,16 @@ states/
 └── after/           # target
 ```
 
-Deeper nesting works too: `../../other-suite/some-state`. The path must
-resolve to a directory that contains a `.missouri/missouri.yml`.
+Deeper nesting also works, such as `../../other-suite/some-state`. The
+path must resolve to a directory that holds a `.missouri/missouri.yml`
+file.
 
 ### Multi-step transitions
 
-A state can have multiple outgoing transitions, and a target state can have
-its own transitions. Missouri discovers all paths through the graph and
-tests each one. For chained paths (A -> B -> C), the output of
-transition A->B becomes the input for transition B->C.
+A state can have several outgoing transitions, and a target state can have
+its own transitions. Missouri finds every path through the graph and tests
+each one. In a chained path such as A -> B -> C, the output of the A->B
+transition becomes the input to the B->C transition.
 
 ```yaml
 # state-a/missouri.yml
@@ -259,13 +263,13 @@ transitions:
     target: "../state-c"
 ```
 
-Missouri will discover the path `state-a -> state-b -> state-c` and run
-both transitions in sequence.
+Missouri finds the path `state-a -> state-b -> state-c` and runs both
+transitions in order.
 
 ### Branching
 
-A single state can have multiple transitions to different targets, modeling
-different outcomes:
+One state can have several transitions to different targets. Use this to
+model different outcomes:
 
 ```yaml
 transitions:
@@ -280,18 +284,19 @@ transitions:
     target: "../has-two-issues"
 ```
 
-Each branch becomes a separate test path.
+Each branch becomes its own test path.
 
 ### Shell vs direct execution
 
-By default, commands run via `sh -c`, so pipes, redirects, and
+By default a command runs through `sh -c`, so pipes, redirects, and
 multi-statement commands work:
 
 ```yaml
 command: "git init -q -b main && my-tool init"
 ```
 
-Set `shell: false` for direct execution (no shell interpretation):
+Set `shell: false` to run the command directly. The shell then reads
+nothing:
 
 ```yaml
 command: "/usr/bin/my-tool"
@@ -300,7 +305,7 @@ shell: false
 
 ### Stdout and stderr assertions on transitions
 
-To assert exact command output alongside the filesystem diff:
+Check the exact command output next to the filesystem diff:
 
 ```yaml
 transitions:
@@ -311,13 +316,14 @@ transitions:
     stderr: ""
 ```
 
-These are exact-match comparisons. When omitted, output is not checked.
+These are exact-match comparisons. Missouri checks no output when you omit
+both fields.
 
 ## Writing assertions
 
-Assertions are commands attached to a state that verify properties not
-captured by the filesystem snapshot. They run against the state's fixture
-(copied to a temp dir).
+An assertion is a command attached to a state. It verifies a property that
+the filesystem snapshot does not hold. It runs against a copy of the
+state's fixture in a temp directory.
 
 ```yaml
 assertions:
@@ -336,29 +342,30 @@ assertions:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `name` | string | auto-generated | Human-readable label |
-| `command` | string | **required** | Command to execute |
-| `shell` | bool | `true` | Run via `sh -c` |
-| `stdout` | string | none | Expected stdout (exact match) |
-| `stderr` | string | none | Expected stderr (exact match) |
+| `name` | string | auto-generated | A label for the output |
+| `command` | string | **required** | The command to run |
+| `shell` | bool | `true` | Run the command through `sh -c` |
+| `stdout` | string | none | The exact stdout to expect |
+| `stderr` | string | none | The exact stderr to expect |
 | `should_fail` | bool | `false` | Pass when the command exits non-zero |
 | `services` | list | `[]` | Background services to run during this assertion |
 
 ### When to use assertions vs transitions
 
-Use **transitions** when you're testing a state transformation: "command X
-on state A produces state B." The filesystem diff is the primary check.
+Use a **transition** to test a state change. It says that command X on
+state A produces state B. The filesystem diff is the main check.
 
-Use **assertions** when you're testing properties of a state in place:
-command exit codes, stdout content, behavior that depends on runtime state
-(like git branches).
+Use an **assertion** to test a property of a state in place. Examples are
+a command exit code, the stdout content, and behavior that depends on
+runtime state such as a git branch.
 
-A state can have both transitions and assertions. Assertions run against the
-state fixture; transitions run against it and then diff the result.
+A state can hold both transitions and assertions. An assertion runs
+against the state fixture. A transition runs against the fixture and then
+diffs the result.
 
 ### Expecting failure
 
-To assert that a command *should* fail:
+Check that a command *must* fail:
 
 ```yaml
 assertions:
@@ -368,13 +375,14 @@ assertions:
     stderr: "error: already initialized (tisket.yml exists)\n"
 ```
 
-When `should_fail: true`, the assertion passes if the command exits
-non-zero. Combine with `stderr` to verify the error message.
+With `should_fail: true`, the assertion passes when the command exits
+non-zero. Add `stderr` to verify the error message too.
 
 ### States with only assertions (no transitions)
 
-Terminal states (no outgoing transitions) commonly carry only assertions.
-They verify the result of the transition that led there:
+A terminal state has no outgoing transitions. Such a state often carries
+assertions only. The assertions verify the result of the transition that
+reached the state:
 
 ```yaml
 # issue-closed/.missouri/missouri.yml
@@ -383,8 +391,8 @@ assertions:
     command: "grep -q 'status: done' .tisket/default/fix-the-widget.md"
 ```
 
-Root states can also be assertion-only. Combined with `entrypoint: true`,
-these are useful for verifying a pre-built snapshot:
+A root state can also hold assertions only. Add `entrypoint: true` to
+verify a pre-built snapshot:
 
 ```yaml
 entrypoint: true
@@ -398,9 +406,10 @@ assertions:
 
 ## Agent assertions
 
-Agent assertions use an LLM to evaluate state properties that are difficult
-to check with deterministic commands. Instead of a `command:`, specify an
-`agent:` field pointing to a markdown eval file in the config directory.
+An agent assertion uses an LLM to check a state property that a
+deterministic command checks poorly. Set an `agent:` field instead of a
+`command:` field. The `agent:` field names a markdown eval file in the
+config directory.
 
 ```yaml
 assertions:
@@ -411,9 +420,9 @@ assertions:
 
 ### Eval files
 
-The eval file lives at `<config_dir>/<name>.md` (e.g.,
-`.missouri/eval-skill-commands.md`) with optional YAML frontmatter for
-agent configuration:
+The eval file lives at `<config_dir>/<name>.md`, for example
+`.missouri/eval-skill-commands.md`. It can hold YAML frontmatter that
+configures the agent:
 
 ```markdown
 ---
@@ -433,41 +442,45 @@ its flags, fail with details about which command and what went wrong.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `model` | string | sonnet | Model to use for the evaluation |
-| `max_cost_cents` | integer | none | Budget cap in cents |
-| `max_turns` | integer | none | Max agentic turns (reserved, not yet enforced) |
-| `allowed_tools` | list | none | Additional tools the agent can use beyond defaults |
-| `extra_args` | list | none | Additional CLI arguments for the agent |
+| `model` | string | sonnet | The model to use for the evaluation |
+| `max_cost_cents` | integer | none | The budget cap, in cents |
+| `max_turns` | integer | none | The maximum number of agent turns. Missouri reserves this field and does not enforce it yet |
+| `allowed_tools` | list | none | Extra tools the agent can use, beyond the defaults |
+| `extra_args` | list | none | Extra CLI arguments for the agent |
 
-All fields are optional. The markdown body after the frontmatter becomes
+Every field is optional. The markdown body after the frontmatter becomes
 the agent's evaluation prompt.
 
 ### How it works
 
-The eval agent receives the markdown body as its prompt, with a preamble
-explaining the working directory and the verdict protocol. The agent
-inspects files, runs read-only commands, and renders a verdict by calling
-`missouri agent pass` or `missouri agent fail <details>`.
+The eval agent gets the markdown body as its prompt. Missouri adds a
+preamble that names the working directory and describes the verdict
+protocol. The agent reads files and runs read-only commands. It then
+returns a verdict by calling `missouri agent pass` or
+`missouri agent fail <details>`.
 
-By default, eval agents have access to `Read`, `Glob`, `Grep`, and
-`Bash(missouri agent*)`. Additional tools can be granted via the
-`allowed_tools` frontmatter field.
+By default an eval agent can use `Read`, `Glob`, `Grep`, and
+`Bash(missouri agent*)`. Grant more tools with the `allowed_tools`
+frontmatter field.
 
 ### When to use agent assertions
 
-Use agent assertions for properties that require judgment:
+Use an agent assertion for a property that needs judgment. Three
+examples:
 
-- "Do the error messages in this module follow our style guide?"
-- "Does this skill file reference commands that actually exist?"
-- "Is this generated documentation coherent and complete?"
+- Do the error messages in this module follow the style guide?
+- Does this skill file name commands that exist?
+- Is this generated documentation clear and complete?
 
-For deterministic checks (file exists, output matches, exit code), use
-regular command assertions — they're faster, cheaper, and reproducible.
+Use a command assertion for a deterministic check, such as a file that
+must exist, output that must match, or an exit code. A command assertion
+is faster, cheaper, and repeatable.
 
 ## Custom comparators
 
-By default, missouri does a recursive file-by-file diff between the actual
-output and the expected target state. To override this for specific paths:
+By default missouri runs a recursive file-by-file diff between the actual
+output and the expected target state. Change that diff for specific paths
+like this:
 
 ```yaml
 transitions:
@@ -485,16 +498,16 @@ transitions:
 
 ### File comparators
 
-Each entry under `comparators.files` has:
+Each entry under `comparators.files` holds these fields:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `path` | string | Relative path. Trailing `/` matches a directory subtree |
-| `command` | string | Custom comparator command (receives actual and expected as args) |
-| `ignore` | bool | Exclude this path from comparison entirely |
+| `path` | string | A relative path. A trailing `/` matches a directory subtree |
+| `command` | string | A custom comparator command. Missouri passes the actual path and the expected path as arguments |
+| `ignore` | bool | Remove this path from the comparison |
 
-A custom comparator command receives two arguments: the actual file path
-and the expected file path. Exit 0 to pass, non-zero to fail.
+A custom comparator command gets two arguments: the actual file path, then
+the expected file path. Exit 0 to pass. Exit non-zero to fail.
 
 ```bash
 #!/usr/bin/env bash
@@ -507,8 +520,8 @@ jq -e '.hooks' "$1" >/dev/null || { echo "FAIL: missing hooks"; exit 1; }
 
 ### Ignoring paths
 
-The `ignore: true` flag is for paths that change non-deterministically or
-aren't part of what you're testing:
+Use `ignore: true` on a path that changes at random, or on a path that
+your test does not cover:
 
 ```yaml
 comparators:
@@ -521,12 +534,12 @@ comparators:
       ignore: true
 ```
 
-This is per-transition. For project-wide ignores, use the `.missouri/ignore`
-file instead.
+A comparator applies to one transition. Use the `.missouri/ignore` file to
+ignore a path across the whole project.
 
 ### Environment variable comparators
 
-Override comparison for specific environment variables:
+Change the comparison for a specific environment variable:
 
 ```yaml
 comparators:
@@ -539,8 +552,8 @@ comparators:
 
 ### Network request comparators
 
-When using network interception, override comparison for specific request
-patterns:
+Change the comparison for a request pattern when a transition intercepts
+network traffic:
 
 ```yaml
 comparators:
@@ -553,8 +566,9 @@ comparators:
 
 ## Background services
 
-Transitions and assertions can start background services (servers, daemons)
-that are automatically started before the command runs and killed afterward.
+A transition or an assertion can start a background service, such as a
+server or a daemon. Missouri starts the service before the command runs
+and stops it afterward.
 
 ```yaml
 transitions:
@@ -564,22 +578,23 @@ transitions:
       - command: "my-server --port 0"
 ```
 
-Missouri watches the service's stderr for a port announcement (default
-pattern: `listening.*:(\d+)`), captures the port, and exposes it as `$PORT`
-in the transition/assertion command's environment.
+Missouri reads the service's stderr and waits for the port line. The
+default pattern is `listening.*:(\d+)`. Missouri takes the port from that
+line and sets `$PORT` in the environment of the transition command or the
+assertion command.
 
 ### Field reference (ServiceConfig)
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `command` | string | **required** | Command to start the service |
-| `shell` | bool | `true` | Run via `sh -c` |
-| `port_pattern` | string | `listening.*:(\d+)` | Regex to extract port from stderr (one capture group) |
-| `ready` | string | none | Readiness check command. `$PORT` is available. Retried with backoff |
+| `command` | string | **required** | The command that starts the service |
+| `shell` | bool | `true` | Run the command through `sh -c` |
+| `port_pattern` | string | `listening.*:(\d+)` | A regex that reads the port from stderr. It must hold one capture group |
+| `ready` | string | none | A readiness check command. `$PORT` is set. Missouri retries it with backoff |
 
 ### Readiness checks
 
-If the service needs time to become ready, use `ready`:
+Use `ready` when the service needs time to start:
 
 ```yaml
 services:
@@ -589,13 +604,13 @@ services:
     ready: "curl -sf http://localhost:$PORT/health"
 ```
 
-The readiness check retries up to 10 times with exponential backoff
-(starting at 100ms, capped at 5s).
+Missouri retries the readiness check up to 10 times with exponential
+backoff. The wait starts at 100ms and stops growing at 5s.
 
 ### Multiple services
 
-With multiple services, ports are exposed as `$PORT_0`, `$PORT_1`, etc.
-`$PORT` is always set to the first service's port.
+With several services, missouri sets `$PORT_0`, `$PORT_1`, and so on.
+`$PORT` always holds the first service's port.
 
 ```yaml
 services:
@@ -606,7 +621,7 @@ services:
 
 ### Services on assertions
 
-Works the same way:
+A service on an assertion works the same way:
 
 ```yaml
 assertions:
@@ -617,12 +632,12 @@ assertions:
 
 ## Network interception
 
-Transitions can intercept HTTP/HTTPS traffic via mitmproxy for
-record/replay testing.
+A transition can intercept HTTP and HTTPS traffic through mitmproxy. Use
+this to record traffic and to replay it.
 
 ### Replay mode
 
-Replay previously recorded traffic:
+Replay traffic that you recorded earlier:
 
 ```yaml
 transitions:
@@ -632,11 +647,11 @@ transitions:
       replay: .missouri/recordings/worker.flow
 ```
 
-The `replay` path is relative to the source state directory.
+Missouri resolves the `replay` path against the source state directory.
 
 ### Record mode
 
-Record traffic during a transition:
+Record the traffic during a transition:
 
 ```yaml
 transitions:
@@ -646,29 +661,29 @@ transitions:
       record: true
 ```
 
-When recording, missouri starts mitmdump, sets `HTTPS_PROXY`, `HTTP_PROXY`,
-and `NODE_EXTRA_CA_CERTS` in the command's environment, and saves the
-captured flow file.
+In record mode, missouri starts mitmdump. It sets `HTTPS_PROXY`,
+`HTTP_PROXY`, and `NODE_EXTRA_CA_CERTS` in the command's environment. It
+then saves the captured flow file.
 
 ## Running tests
 
 ```bash
-# Run all test paths
+# Run every test path
 missouri run -d tests/missouri
 
-# Verbose output (show passing steps too)
+# Verbose output. Show the passing steps too.
 missouri run -d tests/missouri -v
 
-# Keep temp directories for debugging
+# Keep the temp directories for debugging
 missouri run -d tests/missouri --keep-temp
 
-# Run only assertions (skip transitions and filesystem comparison)
+# Run the assertions only. Skip the transitions and the filesystem comparison.
 missouri run -d tests/missouri --check-only
 
-# Run only transitions and filesystem comparison (skip assertions)
+# Run the transitions and the filesystem comparison only. Skip the assertions.
 missouri run -d tests/missouri --no-check
 
-# Record transition output
+# Record the transition output
 missouri run -d tests/missouri --record
 ```
 
@@ -680,24 +695,24 @@ missouri run -d tests/missouri --record
 | `--check-only` | no | no | yes |
 | `--no-check` | yes | yes | no |
 
-`--check-only` is useful for fast iteration on assertions without
-re-running transitions. `--no-check` is useful for updating fixtures
-after a change -- run transitions, inspect the diff, update expected state.
+Use `--check-only` to work on the assertions quickly. It does not run the
+transitions again. Use `--no-check` to update the fixtures after a change.
+Run the transitions, read the diff, then update the expected state.
 
 ### Debugging failures
 
-**Verbose output** (`-v`): Shows passing steps, not just failures. All
-assertion output, command stdout/stderr, and comparison details.
+**Verbose output** (`-v`): shows the passing steps as well as the
+failures. It prints all assertion output, the command stdout and stderr,
+and the comparison details.
 
-**Keep temp directories** (`--keep-temp`): After a run, the temp directories
-where transitions executed are preserved instead of cleaned up. The paths
-are printed in the output. Inspect them to see exactly what the command
-produced.
+**Keep temp directories** (`--keep-temp`): missouri keeps the temp
+directories where the transitions ran instead of deleting them. It prints
+the paths in the output. Read them to see what the command produced.
 
-**List paths** before running to understand the graph:
+**List paths** before a run to understand the graph:
 
 ```bash
-missouri list paths -d tests/missouri
+missouri list --show paths
 missouri list states -d tests/missouri
 missouri list transitions -d tests/missouri
 ```
@@ -706,8 +721,8 @@ missouri list transitions -d tests/missouri
 
 ### Pattern: build-then-test with setup
 
-Both clc and tisket test suites build the binary under test in the setup
-phase, ensuring the PATH binary matches the current source:
+The clc and tisket test suites both build the binary under test in the
+setup phase. The binary on PATH then matches the current source:
 
 ```yaml
 # .missouri/missouri.yml
@@ -721,8 +736,8 @@ packages:
 
 ### Pattern: ignore non-deterministic paths per transition
 
-When a transition creates or modifies files that aren't the point of the
-test, ignore them:
+Ignore the files that a transition creates or changes when those files are
+not the point of the test:
 
 ```yaml
 transitions:
@@ -737,15 +752,17 @@ transitions:
 
 ### Pattern: assertion-heavy root states
 
-The clc `initialized` state has dozens of assertions verifying the result
-of `clc init` -- checking file existence, JSON structure, hook wiring,
-command behavior. This catches regressions in the initialization path
-without needing separate transitions for each check.
+The clc `initialized` state carries dozens of assertions. They verify the
+result of `clc init`. They check that files exist, that the JSON structure
+is right, that the hooks are wired, and that the commands behave. Together
+they catch regressions in the initialization path. No separate transition
+is needed for each check.
 
 ### Pattern: custom comparator scripts in bin/
 
-For files with non-deterministic content (like JSON with embedded paths),
-write a comparator script that validates structure rather than exact bytes:
+Some files hold content that changes between runs, such as JSON with
+embedded paths. Write a comparator script for those files. The script
+checks the structure instead of the exact bytes:
 
 ```bash
 #!/usr/bin/env bash
@@ -756,7 +773,7 @@ jq empty "$1" || { echo "FAIL: not valid JSON"; exit 1; }
 jq -e '.hooks' "$1" >/dev/null || { echo "FAIL: missing hooks"; exit 1; }
 ```
 
-Then reference it by name (it's on PATH):
+Then name the script in the config. It is on PATH:
 
 ```yaml
 comparators:
@@ -767,8 +784,8 @@ comparators:
 
 ### Pattern: multi-command transitions
 
-Transitions can be complex multi-step shell commands when the setup is part
-of the transition itself:
+A transition command can run several shell steps. Use this when the setup
+is part of the transition:
 
 ```yaml
 transitions:
@@ -789,7 +806,7 @@ transitions:
 
 ### Pattern: should_fail for error paths
 
-Test that commands fail correctly with expected error messages:
+Check that a command fails and prints the expected error message:
 
 ```yaml
 assertions:
@@ -806,6 +823,6 @@ assertions:
 
 ## Further reading
 
-- [What is Missouri?](/missouri/what-is-missouri) — how state graphs work, why env_clear, comparison rules
-- [CLI Reference](/missouri/cli-reference) — full command and config schema reference
-- [Getting Started](/missouri/getting-started) — build your first test suite from scratch
+- [What is Missouri?](/missouri/what-is-missouri) — how a state graph works, why missouri uses env_clear, and the comparison rules
+- [CLI Reference](/missouri/cli-reference) — the full command and config schema reference
+- [Getting Started](/missouri/getting-started) — build your first test suite step by step

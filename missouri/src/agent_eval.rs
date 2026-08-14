@@ -1,12 +1,13 @@
 //! Agent evaluation support for missouri assertions.
 //!
-//! An agent eval is a markdown file in the `.missouri/` config directory
-//! with YAML frontmatter parsed as an [`AgentSpec`]. The markdown body
-//! becomes the agent's prompt. The agent renders a verdict by calling
+//! An agent eval is a markdown file in the `.missouri/` config directory.
+//! Missouri parses its YAML frontmatter as an [`AgentSpec`]. The markdown
+//! body becomes the agent's prompt. The agent returns a verdict by calling
 //! `missouri agent pass` or `missouri agent fail <details>`.
 //!
-//! Verdict protocol: the agent writes a sentinel file whose contents
-//! determine pass/fail. This avoids needing a sidecar process or socket.
+//! Verdict protocol: the agent writes a sentinel file. The contents of
+//! that file decide pass or fail. This needs no sidecar process and no
+//! socket.
 
 use std::path::Path;
 
@@ -25,8 +26,9 @@ pub struct EvalVerdict {
 
 /// Load an agent eval markdown file from the config directory.
 ///
-/// Looks for `<config_dir>/<name>.md`, parses frontmatter as `AgentSpec`,
-/// returns the spec and the markdown body (the evaluation prompt).
+/// Looks for `<config_dir>/<name>.md` and parses the frontmatter as an
+/// `AgentSpec`. Returns the spec and the markdown body. The body is the
+/// evaluation prompt.
 pub fn load_eval(
     state_dir: &Utf8Path,
     config_dir: &str,
@@ -37,8 +39,8 @@ pub fn load_eval(
         return Err(format!("eval file not found: {eval_path}"));
     }
 
-    let content =
-        std::fs::read_to_string(&eval_path).map_err(|e| format!("failed to read {eval_path}: {e}"))?;
+    let content = std::fs::read_to_string(&eval_path)
+        .map_err(|e| format!("failed to read {eval_path}: {e}"))?;
 
     AgentSpec::from_markdown(&content)
         .map_err(|e| format!("failed to parse frontmatter in {eval_path}: {e}"))
@@ -56,8 +58,8 @@ pub fn write_fail(work_dir: &Path, details: &str) -> std::io::Result<()> {
     std::fs::write(path, format!("fail\n{details}\n"))
 }
 
-/// Read and parse a verdict sentinel file. Returns `None` if no verdict
-/// was written (the agent didn't call pass or fail).
+/// Read and parse a verdict sentinel file. Returns `None` when the agent
+/// wrote no verdict, that is, when it called neither pass nor fail.
 pub fn read_verdict(work_dir: &Path) -> Option<EvalVerdict> {
     let path = work_dir.join(VERDICT_FILE);
     let content = std::fs::read_to_string(path).ok()?;
@@ -190,7 +192,11 @@ mod tests {
 
     #[test]
     fn eval_path_construction() {
-        let path = eval_path(Utf8Path::new("/project/tests/initialized"), ".missouri", "eval-commands");
+        let path = eval_path(
+            Utf8Path::new("/project/tests/initialized"),
+            ".missouri",
+            "eval-commands",
+        );
         assert_eq!(
             path,
             Utf8PathBuf::from("/project/tests/initialized/.missouri/eval-commands.md")

@@ -7,7 +7,7 @@ pub enum Error {
     #[error("config file not found: {path}")]
     #[diagnostic(
         code(missouri::config::not_found),
-        help("each state directory must contain .missouri/missouri.yml")
+        help("each state directory must contain a .missouri/missouri.yml file")
     )]
     ConfigNotFound { path: Utf8PathBuf },
 
@@ -34,7 +34,9 @@ pub enum Error {
     #[error("transition target not found: {target} (from {from_state})")]
     #[diagnostic(
         code(missouri::graph::missing_target),
-        help("the target path must point to a directory containing .missouri/missouri.yml")
+        help(
+            "the target path must point to a directory that contains a .missouri/missouri.yml file"
+        )
     )]
     MissingTarget {
         from_state: Utf8PathBuf,
@@ -44,7 +46,7 @@ pub enum Error {
     #[error("no entry points found (all states have inbound transitions)")]
     #[diagnostic(
         code(missouri::graph::no_roots),
-        help("at least one state must have no inbound transitions to serve as a test entry point")
+        help("at least one state must have no inbound transitions. that state is the test entry point")
     )]
     NoRoots,
 
@@ -59,28 +61,28 @@ pub enum Error {
     #[error("invalid ignore pattern \"{pattern}\": {detail}")]
     #[diagnostic(
         code(missouri::config::ignore_pattern),
-        help("check glob syntax in <config_dir>/ignore")
+        help("check the glob syntax in <config_dir>/ignore")
     )]
     IgnorePattern { pattern: String, detail: String },
 
     #[error("nix sandbox configured but `nix` binary not found on PATH (project root: {root})")]
     #[diagnostic(
         code(missouri::sandbox::nix_not_found),
-        help("install nix (https://nixos.org) or remove packages config from missouri.yml")
+        help("install nix (https://nixos.org), or remove the packages config from missouri.yml")
     )]
     NixNotFound { root: Utf8PathBuf },
 
     #[error("nix sandbox cache warm failed: {message}")]
     #[diagnostic(
         code(missouri::sandbox::warm_failed),
-        help("check nix installation and network connectivity")
+        help("check the nix installation and the network connection")
     )]
     SandboxWarm { message: String },
 
     #[error("project already initialized at {path}")]
     #[diagnostic(
         code(missouri::init::already_initialized),
-        help("remove {path} to reinitialize")
+        help("remove {path} to initialize the project again")
     )]
     AlreadyInitialized { path: Utf8PathBuf },
 
@@ -91,14 +93,14 @@ pub enum Error {
     #[error("source state \"{name}\" not found")]
     #[diagnostic(
         code(missouri::state::source_not_found),
-        help("the --from state must be an existing state directory")
+        help("the --from state must name an existing state directory")
     )]
     SourceStateNotFound { name: String },
 
     #[error("no recorded runs found")]
     #[diagnostic(
         code(missouri::report::no_runs),
-        help("run `missouri run --record` first to create a recording")
+        help("run `missouri run --record` first to make a recording")
     )]
     NoRecordedRuns,
 
